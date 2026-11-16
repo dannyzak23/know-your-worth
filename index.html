@@ -159,7 +159,7 @@ details summary{cursor:pointer;font-weight:700}
 <header class="top">
   <div class="shell gutter">
     <div class="brand">
-      <div id="brandhead"><h1>Know Your <span>Worth</span></h1><small>Prices, costs and tax for people who work for themselves</small></div>
+      <div id="brandhead"><h1>Know Your <span>Worth</span></h1><small>Prices, costs and tax for beauty businesses</small></div>
       <span id="exflag" class="example-flag" hidden>Example figures</span>
     </div>
     <nav class="tabs" id="tabs" aria-label="Sections"></nav>
@@ -245,37 +245,43 @@ function compute(state){
   const s=state.setup, R=RULES;
   const region=s.region==='sco'?'sco':'ruk';
   const team=teamCosts(s,R);
-  const billable=billableHoursMonth(s)+team.hours;
-  const overheads=overheadsMonth(s)+team.month;
+  const capacity=billableHoursMonth(s)+team.hours;
+  const overheads=overheadsMonth(s)+team.month;            // running costs, including any staff wages
+  const wk=(52-(+s.weeksOff||0))/12;
+  const hoursBooked=state.treatments.reduce((a,t)=>a+(+t.perWeek||0)*((+t.clientMin||0)+(+t.prepMin||0)),0)/60*wk;
+  const billable= hoursBooked>0 ? hoursBooked : capacity;  // the hours the running costs are shared across
+  const overheadRate= billable>0 ? overheads/billable : 0;
+  const profitRate= s.profitHour==null ? 20 : (+s.profitHour||0); // profit wanted per hour with a client; 0 = break even
+  const hourly=overheadRate+profitRate;
+  // the target take-home does NOT feed prices: it is only used for "how many treatments do I need"
   const needYear=profitNeeded((+s.takeHome||0)*12, region, R, taxOpts(s));
   const needMonth=needYear/12;
-  const hourly= billable>0 ? (overheads+needMonth)/billable : 0;
-  const overheadRate= billable>0 ? overheads/billable : 0;
   const products=productCosts(state);
   const pmap=Object.fromEntries(products.map(p=>[p.id,p]));
   const card=+s.cardPct||0, fixed=+s.cardFixed||0;
-  const comm= billable>0 ? team.commHours/billable : 0; // self-employed team members' share
+  const comm= capacity>0 ? team.commHours/capacity : 0; // self-employed team members' share
   const pct=card+comm;
   const noShowF=1+(+s.noShow||0)*(1-(+s.deposit||0));
   const vatF= s.vat ? 1.2 : 1;
-  const margin=+s.margin||0, roundTo=+s.roundTo||1;
+  const roundTo=+s.roundTo||1;
+  const gross=x=>(x+fixed)/(1-pct)*noShowF*vatF;   // the price needed for x to reach you
+  const net=pr=>pr/vatF/noShowF*(1-pct)-fixed;     // what reaches you from a price
   const treatments=state.treatments.map(t=>{
-    const mins=(+t.clientMin||0)+(+t.prepMin||0);
+    const mins=(+t.clientMin||0)+(+t.prepMin||0), hrs=mins/60;
     const productCost=treatmentProductCost(t,pmap);
-    const timeCost=mins/60*hourly;
-    const cost=timeCost+productCost;
-    const minimum=(cost+fixed)/(1-pct)*noShowF*vatF;
-    const suggested=Math.ceil(((cost/(1-margin))+fixed)/(1-pct)*noShowF*vatF/roundTo - 1e-9)*roundTo;
-    const exVat=suggested/vatF;
-    const earnings=exVat*(1-pct)-fixed-productCost-mins/60*overheadRate;
-    const perHour= mins>0 ? earnings/(mins/60) : 0;
+    const timeCost=hrs*overheadRate;               // this treatment's share of the running costs
+    const cost=productCost+timeCost;
+    const minimum=gross(cost);                     // break-even price
+    const suggested=Math.ceil(gross(cost+hrs*profitRate)/roundTo - 1e-9)*roundTo;
     const price=+t.price||0;
-    let flag='none'; if(price>0){ flag= price<minimum ? 'below' : (price<suggested ? 'under' : 'ok'); }
-    return {...t, mins, productCost, timeCost, cost, minimum, suggested, earnings, perHour, flag};
+    const profitNow= price>0 ? net(price)-cost : null;
+    const earnings=net(suggested)-cost;
+    const perHour= hrs>0 ? earnings/hrs : 0;
+    const contribNow= price>0 ? net(price)-productCost : null, contribSug=net(suggested)-productCost;
+    let flag='none'; if(price>0){ flag= price<minimum-0.005 ? 'below' : (price<suggested ? 'under' : 'ok'); }
+    return {...t, mins, productCost, timeCost, cost, minimum, suggested, profitNow, earnings, perHour, contribNow, contribSug, flag};
   });
-  const wk=(52-(+s.weeksOff||0))/12;
   const bookingsMonth=treatments.reduce((a,t)=>a+(+t.perWeek||0),0)*wk;
-  const hoursBooked=treatments.reduce((a,t)=>a+(+t.perWeek||0)*t.mins,0)/60*wk;
   const productsMonth=treatments.reduce((a,t)=>a+(+t.perWeek||0)*t.productCost,0)*wk;
   function month(priceKey, f=1){
     const takings=treatments.reduce((a,t)=>a+(+t.perWeek||0)*(priceKey==='suggested'?t.suggested:(+t.price||0)*f),0)*wk/vatF;
@@ -283,8 +289,18 @@ function compute(state){
     const noShows=takings*(+s.noShow||0)*(1-(+s.deposit||0));
     return {takings,fees,noShows,profit:takings-fees-productsMonth-overheads-noShows};
   }
-  return {team, running:overheadsMonth(s), billable, overheads, needYear, needMonth, hourly, overheadRate, products, treatments,
+  // How many treatments to cover running costs, and to reach the target, using her usual mix
+  const mix=treatments.filter(t=>(+t.perWeek||0)>0), pool= mix.length ? mix : treatments.filter(t=>!t.addon);
+  const wOf=t=>mix.length?(+t.perWeek||0):1, wsum=pool.reduce((a,t)=>a+wOf(t),0)||1;
+  function plan(key){
+    const avg=pool.reduce((a,t)=>a+wOf(t)*(key==='now'?(t.contribNow??t.contribSug):(t.flag==='ok'?t.contribNow:t.contribSug)),0)/wsum;
+    if(!(avg>0)) return null;
+    const target=(overheads+needMonth)/avg;
+    return {avg, breakEven:overheads/avg, target, perWeek:target/wk, perDay:target/wk/Math.max(1,+s.daysPerWeek||5)};
+  }
+  return {team, running:overheadsMonth(s), capacity, billable, overheads, needYear, needMonth, hourly, overheadRate, profitRate, products, treatments,
           hoursBooked, productsMonth, bookingsMonth, scenario:f=>month('current',f), atSuggested:month('suggested'), atCurrent:month('current'),
+          planNow:plan('now'), planSug:plan('sug'),
           taxShare: needYear>0 ? (needYear-(+s.takeHome||0)*12)/needYear : 0};
 }
 function taxYearOf(dateStr){ const d=new Date(dateStr+'T12:00:00'); const y=d.getFullYear(), m=d.getMonth(), day=d.getDate();
@@ -428,7 +444,7 @@ function overheadsFromOld(s){ return [
 function migrateProducts(){ state.products.forEach(p=>{ if(p.size==null) Object.assign(p, parsePack(p.pack)); }); }
 
 function blankSetup(){ return {done:false, region:'ruk', takeHome:2000, hours:35, weeksOff:6, busy:.8, app:'fresha', cardPct:.014, cardFixed:.25,
-  deposit:.5, noShow:.05, industry:'beauty', industries:['beauty'], staff:[], employmentAllowance:false, brand:{palette:'berry'}, studentLoan:'none', postgrad:false, otherIncome:0, patchValidDays:180, lastBackup:'', overheads:defaultOverheads(), rent:400, insuranceYear:180, otherMonthly:96, otherYearly:600, equipment:529, equipmentYears:3, vat:false, margin:.10, nonClient:.15, roundTo:1, potSaved:0}; }
+  deposit:.5, noShow:.05, industry:'beauty', industries:['beauty'], profitHour:20, daysPerWeek:5, staff:[], employmentAllowance:false, brand:{palette:'berry'}, studentLoan:'none', postgrad:false, otherIncome:0, patchValidDays:180, lastBackup:'', overheads:defaultOverheads(), rent:400, insuranceYear:180, otherMonthly:96, otherYearly:600, equipment:529, equipmentYears:3, vat:false, margin:.10, nonClient:.15, roundTo:1, potSaved:0}; }
 function blankState(){ return {v:2, example:false, setup:blankSetup(), treatments:[], products:[], income:[], expenses:[], bookings:[], holidays:[], clients:[], trips:[], rules:{...RULES}}; }
 function exampleState(){
   const s=blankState(); s.example=true; s.setup.done=true;
@@ -1032,7 +1048,7 @@ function applyBrand(){
   const h=document.getElementById('brandhead');
   if(h) h.innerHTML = b.businessName
     ? `<div class="row" style="gap:10px;flex-wrap:nowrap">${b.logo?`<img src="${b.logo}" alt="" style="width:40px;height:40px;border-radius:10px;object-fit:cover">`:''}<div><h1>${esc(b.businessName)}</h1><small>Know Your Worth</small></div></div>`
-    : `<h1>Know Your <span>Worth</span></h1><small>Prices, costs and tax for people who work for themselves</small>`;
+    : `<h1>Know Your <span>Worth</span></h1><small>Prices, costs and tax for beauty businesses</small>`;
 }
 function afterRender(){ applyBrand(); initSig(); }
 function supData(){ return `<datalist id="sup-list">${supplierList().map(x=>`<option value="${esc(x)}"></option>`).join('')}</datalist>`; }
@@ -2010,6 +2026,121 @@ document.addEventListener('change', e=>{
   else if(el.dataset.pf && el.dataset.f!=='inStock' && el.dataset.f!=='reorderAt'){ s._prodEdited=true; save(); }
   else if(el.dataset.rf){ s._prodEdited=true; save(); }
 });
+
+
+// ===================== MODULE: beauty only, prices from costs =====================
+// Prices are built from what a treatment costs (products + a share of running costs, which includes any staff wages)
+// plus the profit she wants for each hour with a client. What she wants to take home no longer changes prices:
+// it only feeds the "how many treatments do I need" sum.
+const ALL_TRADES=false; // set to true to bring the other kinds of work back
+if(!ALL_TRADES){ IND_GROUPS.length=0; IND_GROUPS.push(['Tick all that apply',['beauty','therapy','makeup']]); }
+INDUSTRIES.makeup.label='Make-up';
+APPS.other.note='Type in your own fee';
+const profitHourOf=s=>s.profitHour==null?20:(+s.profitHour||0);
+
+wizSteps=function(){ const app=BASIC.find(b=>b.type==='app');
+  return [{type:'welcome'},{type:'industry'},{type:'pickTreat'},{type:'quicklist'},{type:'costq'},{type:'profitq'},{...app},{type:'targetq'}]; };
+const quickStepBase=quickStep;
+quickStep=function(st){
+  const s=state.setup;
+  if(st.type==='welcome') return {q:'Find out what you should be charging', why:'Answer a few questions about your work and see what each treatment really costs you.',
+    body:`<div class="stack">
+      <div class="notice info"><b>About 2 minutes.</b> Eight short questions.</div>
+      <div class="notice info"><b>You get:</b> what each treatment costs you, the price that covers it, and how many you need to do to earn what you want.</div>
+      <div class="notice info"><b>Private.</b> Everything you type stays on this phone. We cannot see it.</div></div>`};
+  if(st.type==='profitq'){ const v=profitHourOf(s);
+    return {q:'How much profit do you want from each hour with a client?', why:'This is what is left for you after products and running costs. A 30-minute treatment gets half of it. Pick the first one to see break-even prices only.',
+      body:`<div class="choices">${[[0,'Just cover my costs','Break-even prices, no profit'],[10,'£10 an hour'],[15,'£15 an hour'],[20,'£20 an hour'],[25,'£25 an hour'],[30,'£30 an hour']].map(([n,l,sub])=>`<button class="choice" data-act="wiz-chip" data-key="profitHour" data-v="${n}" aria-pressed="${v===n}">${l}${sub?`<small>${sub}</small>`:''}</button>`).join('')}</div>
+        <label class="field">Or type your own amount per hour<span class="money-in"><input id="wiz-profitHour" type="number" inputmode="decimal" min="0" step="1" value="${esc(v)}" data-set="profitHour"></span></label>`};
+  }
+  if(st.type==='app') return {q:'How do clients mostly pay you?', why:'Card fees come off every payment, so they are part of what a treatment costs you.',
+    body:`<div class="choices">${Object.entries(APPS).map(([k,a])=>`<button class="choice" data-act="wiz-app" data-k="${k}" aria-pressed="${s.app===k}">${a.label}<small>${a.note}</small></button>`).join('')}</div>
+      ${s.app==='other'?`<div class="fields"><label class="field">Card fee (%)<span class="hint">It is on your card reader's price list</span><input id="wiz-cardPct" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(Math.round((+s.cardPct||0)*10000)/100)}" data-set="cardPct" data-scale="100"></label>
+        <label class="field">Plus pence per payment<span class="hint">0 if there is none</span><input id="wiz-cardFixed" type="number" inputmode="decimal" min="0" step="1" value="${esc(Math.round((+s.cardFixed||0)*100))}" data-set="cardFixed" data-scale="100"></label></div>`:''}`};
+  if(st.type==='targetq') return {q:'What would you like to take home each month?', why:'This does not change your prices. We use it to work out how many treatments you need to do.',
+    body:`<label class="field">Amount each month, after tax<span class="money-in"><input id="wiz-takeHome" type="number" inputmode="decimal" min="0" step="50" value="${esc(s.takeHome)}" data-set="takeHome"></span></label>
+      <div class="chips">${[1000,1500,2000,2500,3000].map(c=>`<button class="chip" data-act="wiz-chip" data-key="takeHome" data-v="${c}" aria-pressed="${+s.takeHome===c}">${gbp0(c)}</button>`).join('')}</div>
+      <div class="fields" style="margin-top:6px"><label class="field">Days a week you work<input id="wiz-days" type="number" inputmode="decimal" min="1" max="7" step="1" value="${esc(s.daysPerWeek||5)}" data-set="daysPerWeek"></label>
+      <label class="field">Where you live<select id="wiz-region" data-setsel="region"><option value="ruk" ${s.region!=='sco'?'selected':''}>England, Wales or N. Ireland</option><option value="sco" ${s.region==='sco'?'selected':''}>Scotland</option></select></label></div>`};
+  return quickStepBase(st);
+};
+
+vPrices=function(){
+  const c=compute(state), s=state.setup, be=c.profitRate===0, T=W().many;
+  if(!state.treatments.length) return `<div class="card"><h2>Nothing to price yet</h2><p>Add the ${T} you do and their prices will appear here.</p><button class="btn" data-tab="treatments">Add ${T}</button></div>`;
+  const all=c.treatments, up=all.filter(t=>t.flag==='below'||t.flag==='under'), anyPrice=all.some(t=>+t.price>0), hasBookings=c.bookingsMonth>0, cur=c.atCurrent;
+  const aim= be ? 'covers what it costs you' : `covers what it costs you and makes you ${gbp0(c.profitRate)} an hour`;
+  const head = up.length ? `<section class="card"><div><h2>Put up ${up.length} price${up.length>1?'s':''}</h2><p class="muted">So each one ${aim}.</p></div>
+      <div class="list">${up.map(t=>`<div class="item"><div class="grow"><p style="white-space:normal"><b>${esc(t.name)}</b></p><p class="small muted" style="white-space:normal"><span class="num">${money(t.price)}</span> → <b class="num" style="color:var(--accent)">${money(t.suggested)}</b>${t.flag==='below'?' · costs you more than you charge':''}</p></div><button class="btn small" data-act="use-price" data-id="${t.id}">Use ${money(t.suggested)}</button></div>`).join('')}</div>
+      ${up.length>1?`<button class="btn ghost" data-act="use-all-prices">Use all the suggested prices</button>`:''}</section>`
+    : !anyPrice ? `<section class="card"><div><h2>Your suggested prices</h2><p class="muted">Each one ${aim}.</p></div></section>`
+    : `<section class="card"><div><h2>Your prices are right</h2><p class="muted">Each one ${aim}, or more.</p></div></section>`;
+  const region=s.region==='sco'?'sco':'ruk', yr=Math.max(0,cur.profit*12), keep=(yr-taxOnProfit(yr,region,RULES,taxOpts(s)))/12;
+  const earn = !hasBookings ? `<section class="card"><h3>What you make</h3><p class="muted">Tell us roughly how many of each you do in a week and we will show what you make in a month.</p><button class="btn ghost" data-tab="treatments">Add how many I do</button></section>`
+    : !anyPrice ? ''
+    : `<section class="card"><h3>What you make in a month</h3>
+      <p>About <b class="num">${gbp0(Math.max(0,cur.profit))}</b> before tax, from about ${Math.round(c.bookingsMonth)} ${T}.</p>
+      <p class="small muted">${cur.profit>0?`About ${gbp0(keep)} of that is yours to take home after tax. `:''}That is after ${W().items}, card fees and running costs of ${gbp0(c.overheads)}.</p></section>`;
+  const p=anyPrice?c.planNow:c.planSug, days=Math.max(1,+s.daysPerWeek||5);
+  const target = `<section class="card"><h3>Your target</h3>
+      ${moneyField('tg-takeHome','What you want to take home each month, after tax','',s.takeHome,'data-set="takeHome"')}
+      ${!(+s.takeHome>0) ? `<p class="muted">Type an amount to see how many ${T} you need to do.</p>`
+       : !p ? `<p class="muted">Add your prices to see how many ${T} you need to do.</p>`
+       : `<p>You need to do about <b class="num">${Math.ceil(p.target)}</b> ${T} a month. That is about <b class="num">${Math.ceil(p.perWeek)}</b> a week, or <b class="num">${Math.ceil(p.perDay)}</b> a day over ${days} days.</p>
+          ${hasBookings?`<p class="small muted">You do about ${Math.round(c.bookingsMonth)} a month now${c.bookingsMonth>=p.target?', so you are there':`, so you need about ${Math.ceil(p.target-c.bookingsMonth)} more`}.</p>`:''}
+          <p class="small muted">Just to cover your running costs you need about ${Math.ceil(p.breakEven)} a month.${up.length&&c.planSug&&anyPrice&&Math.ceil(c.planSug.target)<Math.ceil(p.target)?` If you put those prices up, the target drops to about ${Math.ceil(c.planSug.target)} a month.`:''}</p>
+          <p class="small muted">This uses ${anyPrice?'your prices':'the suggested prices'} and your usual mix of ${T}. Changing the target does not change your prices.</p>`}
+    </section>`;
+  const rows=all.map(t=>{ const [cls,lab]=FLAG[t.flag];
+    return `<details class="fold"><summary><span class="grow">${esc(t.name)}</span><span class="num">${+t.price>0?money(t.price):money(t.suggested)}</span><span class="pill ${cls}">${t.flag==='none'?'Suggested':t.flag==='below'?'Below cost':lab}</span></summary>
+      <div class="prices"><div><div class="k">Your price</div><div class="v">${+t.price>0?money(t.price):'–'}</div></div>
+        <div><div class="k">Break-even</div><div class="v">${gbp(t.minimum)}</div></div>
+        <div class="sugg"><div class="k">Suggested</div><div class="v">${money(t.suggested)}</div></div></div>
+      <p class="small muted">It costs you about <b>${gbp(t.cost)}</b> to do: ${gbp(t.productCost)} of ${W().items} and ${gbp(t.timeCost)} towards your running costs (${fmtTime(t.mins,t)} with set-up). ${t.profitNow!=null?`At your price you make ${gbp(t.profitNow)} each time. `:''}At the suggested price you make ${gbp(t.earnings)}.${t.patch?' Needs a patch test.':''}</p>
+      <button class="btn small ghost" data-act="edit-treat" data-id="${t.id}">Change this ${W().one}</button></details>`; }).join('');
+  return `${head}${earn}${target}
+  ${!s._prodEdited?`<div class="notice info">The cost of your ${W().items} is a typical figure for now. <button class="btn small ghost" data-tab="stock">Check my ${W().items}</button></div>`:''}
+  <section class="stack"><h3>All your prices</h3>${rows}</section>
+  <details class="fold"><summary><span class="grow">How we worked this out</span></summary><div class="stack">
+    <p><b>What a treatment costs you</b> is its ${W().items} plus a share of your running costs${c.team.people.length?' and team wages':''}.</p>
+    <p>Your running costs are <b class="num">${gbp0(c.overheads)}</b> a month. Shared across about <b>${Math.round(c.billable)}</b> hours of ${T} a month, that is <b class="num">${gbp(c.overheadRate)}</b> for each hour.${hasBookings?'':' We have assumed a typical working month until you tell us how many you do.'}</p>
+    <p><b>Break-even</b> is the price where you cover that cost and the card fee, and make nothing.</p>
+    <p><b>Suggested</b> adds ${be?'nothing on top, because you chose break-even prices':`the ${gbp0(c.profitRate)} an hour you want to make`}, then rounds up.${s.vat?' VAT is added.':''} You can change this under More.</p>
+    <p class="small muted">These are estimates, not tax advice.</p></div></details>
+  ${priceExtras(c)}`;
+};
+
+vMore=function(){
+  const s=state.setup;
+  const num=(key,label,hint,stepv,scale)=>`<label class="field">${label}${hint?`<span class="hint">${hint}</span>`:''}<input id="m-${key}" type="number" inputmode="decimal" step="${stepv||1}" value="${esc(Math.round((+(s[key]??0))*(scale||1)*1000)/1000)}" data-set="${key}" data-scale="${scale||1}"></label>`;
+  const sec=(key,title,sub,body)=>`<details class="fold" data-sec="${key}" ${moreOpen===key?'open':''}><summary><span class="grow">${title}<small>${sub}</small></span></summary><div class="stack">${body}</div></details>`;
+  const ph=profitHourOf(s);
+  return `<section class="stack"><h2>More</h2>
+  ${sec('pricing','Profit and card fees',`${ph?gbp0(ph)+' an hour profit':'Break-even prices'}`,`<div class="fields">
+      <label class="field">Profit you want from each hour with a ${W().cust}<span class="hint">0 for break-even prices</span><span class="money-in"><input id="m-profitHour" type="number" inputmode="decimal" min="0" step="1" value="${esc(ph)}" data-set="profitHour"></span></label>
+      ${num('roundTo','Round prices up to the nearest (£)','1 or 5')}
+      ${num('cardPct','Card fee (%)','What your card reader or app takes',0.01,100)}${num('cardFixed','Card fee per payment (pence)','',1,100)}
+      ${num('noShow','Clients who do not turn up (%)','',1,100)}${num('deposit','How much of a no-show your deposit covers (%)','0 if you take no deposit',5,100)}
+      ${IND().patch?num('patchValidDays','How long a patch test lasts (days)','Follow your insurer'):''}</div>
+      <label class="row small"><input type="checkbox" id="m-vat" data-setbool="vat" ${s.vat?'checked':''}> I am VAT registered (most people working alone are not)</label>`)}
+  ${sec('costs','Running costs',`${gbp0(overheadsMonth(s))} a month`,overheadEditor())}
+  ${sec('team','People who work for you',(s.staff||[]).length?`${s.staff.length} on the team`:'Nobody yet',staffEditor())}
+  ${sec('pay','Your target',`${gbp0(s.takeHome)} a month`,`<div class="fields">
+      <label class="field">What you want to take home each month<span class="hint">Does not change your prices</span><span class="money-in"><input id="m-takeHome" type="number" inputmode="decimal" step="50" value="${esc(s.takeHome)}" data-set="takeHome"></span></label>
+      ${num('daysPerWeek','Days a week you work')}
+      <label class="field">Where you live<select id="m-region" data-setsel="region"><option value="ruk" ${s.region!=='sco'?'selected':''}>England, Wales or Northern Ireland</option><option value="sco" ${s.region==='sco'?'selected':''}>Scotland</option></select></label></div>`)}
+  ${sec('tax','A job or student loan',+s.otherIncome>0||s.studentLoan!=='none'?'Added':'Not added',taxExtraEditor())}
+  ${sec('brand','Your name, logo and colours',esc((s.brand||{}).businessName||'Not set'),brandEditor())}
+  ${sec('backup','Back up and restore',s.lastBackup?`Last backup ${fmtDay(s.lastBackup)}`:'No backup yet',`<p class="muted">Everything is kept on this phone only. Copy a backup and keep it somewhere safe, like your notes or an email to yourself.</p>
+      <label class="row small"><input type="checkbox" id="bk-photos"> Include receipt photos (much bigger)</label>
+      <div class="row"><button class="btn ghost" data-act="backup">Copy backup</button><button class="btn ghost" data-act="restore-open">Restore a backup</button></div>`)}
+  ${sec('lock','Lock the app',lockKey?'On':'Off',lockCard())}
+  ${sec('questions','Answer the questions again','Takes about 2 minutes',`<p class="muted">Your money records, diary and ${W().cust}s stay as they are.</p><button class="btn ghost" data-act="rerun-quick">Start the questions</button>`)}
+  ${sec('privacy','Privacy and feedback','How your data is kept',privacyCard())}
+  ${sec('reset','Start again','Delete everything on this phone',`<p class="muted">This deletes everything on this phone, including receipt photos.</p>
+      <button class="btn ${resetArmed?'danger':'ghost'}" data-act="reset">${resetArmed?'Tap again to delete everything':'Delete all my data'}</button>`)}
+  <p class="small muted">Know Your Worth is a test version. Prices and tax are estimates using 2026/27 rates, not tax or financial advice.</p></section>`;
+};
 
 render();
 </script>
