@@ -573,8 +573,7 @@ function vWizard(){
   if(st.type==='industry'){
     q='What do you do?'; why='Tick everything you offer. The questions and starter lists follow what you pick, and you can add your own as you go.';
     body=IND_GROUPS.map(([title,keys])=>`<p class="part" style="margin-top:6px">${title}</p><div class="choices" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">${keys.map(k=>`<button class="choice" data-act="wiz-ind" data-k="${k}" aria-pressed="${selInds().includes(k)}">${selInds().includes(k)?'✓ ':''}${esc(INDUSTRIES[k].label)}</button>`).join('')}</div>`).join('')
-      + `<p class="part" style="margin-top:6px">Often done together</p><div class="chips">${COMBOS.map(([label,keys])=>`<button class="chip" data-act="wiz-combo" data-k="${keys.join(',')}" aria-pressed="${keys.length===selInds().length && keys.every(k=>selInds().includes(k))}">${esc(label)}</button>`).join('')}</div>
-      <p class="live">You have picked: ${selInds().map(k=>esc(INDUSTRIES[k].label)).join(' + ')}</p>`;
+      + `<p class="live">You have picked: ${selInds().map(k=>esc(INDUSTRIES[k].label)).join(' + ')}</p>`;
   } else if(st.type==='pickTreat'){
     q=`Which ${W().many} do you do?`; why=`Tick all that apply, or add your own. Next you go through each ${W().one} and the ${W().items} it uses, then your business costs. Prices are worked out at the end.`;
     const custom=state.treatments.filter(t=>!CAT().some(c=>c.id===t.id));
