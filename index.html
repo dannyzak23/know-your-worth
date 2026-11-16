@@ -358,12 +358,19 @@ const INDUSTRIES={
   paint:{label:'Painting and decorating',w:TRADE_W,hours:true,patch:false,example:'e.g. Wallpaper a feature wall',newItem:'e.g. Wallpaper paste'},
   other:{label:'Something else',w:{one:'service',many:'services',One:'Service',Many:'Services',item:'item',items:'items',Item:'Item',Items:'Items',cust:'customer'},hours:false,patch:false,example:'e.g. One-hour session',newItem:'e.g. Printer ink'}
 };
-function IND(){ return INDUSTRIES[(state.setup||{}).industry]||INDUSTRIES.beauty; }
+function selInds(){ const st=state.setup||{}; const a=(Array.isArray(st.industries)&&st.industries.length?st.industries:[st.industry||'beauty']).filter(k=>INDUSTRIES[k]); return a.length?a:['beauty']; }
+// One kind of work: its own settings. Several: shared wording where they agree, plain 'services' where they do not.
+function IND(){ const list=selInds().map(k=>INDUSTRIES[k]), first=list[0]; if(list.length===1) return first;
+  const sameW=list.every(i=>i.w.one===first.w.one && i.w.item===first.w.item);
+  return {...first, w: sameW?first.w:{...SERVICE_W, cust:list.every(i=>i.w.cust===first.w.cust)?first.w.cust:'customer'},
+    hours:list.every(i=>i.hours), patch:list.some(i=>i.patch), big:list.some(i=>i.big), onLabel:null, prepLabel:null, multi:true}; }
+// which kind of work a service belongs to (its own go by the first one ticked)
+function indOf(t){ const ks=selInds(); const k=t?ks.find(k=>(CATALOGUES[k]||[]).some(c=>c.id===t.id)):null; return INDUSTRIES[k||ks[0]]; }
 function W(){ return IND().w; }
-function CAT(){ return CATALOGUES[(state.setup||{}).industry||'beauty']||[]; }
-function fmtTime(m){ return IND().hours ? `${nf(m/60)} h` : `${m} min`; }
-function timeField(id,kind,t,f){ const h=IND().hours;
-  const label= kind==='on' ? (IND().onLabel || (h?'Hours on the job':`Minutes with the ${W().cust}`)) : (IND().prepLabel || (h?'Hours setting up, travelling and clearing away':'Minutes to set up and clean down'));
+function CAT(){ const seen=new Set(), out=[]; selInds().forEach(k=>(CATALOGUES[k]||[]).forEach(c=>{ if(!seen.has(c.id)){ seen.add(c.id); out.push(c); } })); return out; }
+function fmtTime(m,t){ return (t?indOf(t):IND()).hours ? `${nf(m/60)} h` : `${m} min`; }
+function timeField(id,kind,t,f){ const I=indOf(t), h=I.hours;
+  const label= kind==='on' ? (I.onLabel || (h?'Hours on the job':`Minutes with the ${W().cust}`)) : (I.prepLabel || (h?'Hours setting up, travelling and clearing away':'Minutes to set up and clean down'));
   return numField(id,label,'',h?nf((+t[f]||0)/60):t[f],`data-tf="${t.id}" data-f="${f}" data-mul="${h?60:1}"`,`step="${h?0.5:5}"`); }
 const UNITS=['ml','litres','g','kg','oz','fl oz','metres','pieces','pairs','trays','packs'];
 const SINGULAR={litres:'litre',metres:'metre',pieces:'piece',pairs:'pair',trays:'tray',packs:'pack'};
@@ -397,7 +404,7 @@ function overheadsFromOld(s){ return [
 function migrateProducts(){ state.products.forEach(p=>{ if(p.size==null) Object.assign(p, parsePack(p.pack)); }); }
 
 function blankSetup(){ return {done:false, region:'ruk', takeHome:2000, hours:35, weeksOff:6, busy:.8, app:'fresha', cardPct:.014, cardFixed:.25,
-  deposit:.5, noShow:.05, industry:'beauty', staff:[], employmentAllowance:false, brand:{palette:'berry'}, studentLoan:'none', postgrad:false, otherIncome:0, patchValidDays:180, lastBackup:'', overheads:defaultOverheads(), rent:400, insuranceYear:180, otherMonthly:96, otherYearly:600, equipment:529, equipmentYears:3, vat:false, margin:.10, nonClient:.15, roundTo:1, potSaved:0}; }
+  deposit:.5, noShow:.05, industry:'beauty', industries:['beauty'], staff:[], employmentAllowance:false, brand:{palette:'berry'}, studentLoan:'none', postgrad:false, otherIncome:0, patchValidDays:180, lastBackup:'', overheads:defaultOverheads(), rent:400, insuranceYear:180, otherMonthly:96, otherYearly:600, equipment:529, equipmentYears:3, vat:false, margin:.10, nonClient:.15, roundTo:1, potSaved:0}; }
 function blankState(){ return {v:2, example:false, setup:blankSetup(), treatments:[], products:[], income:[], expenses:[], bookings:[], holidays:[], clients:[], trips:[], rules:{...RULES}}; }
 function exampleState(){
   const s=blankState(); s.example=true; s.setup.done=true;
@@ -564,12 +571,17 @@ function vWizard(){
   const st=steps[step], s=state.setup, total=steps.length;
   let q='', why='', body='';
   if(st.type==='industry'){
-    q='What do you do?'; why='So the questions and starter lists fit your work. You can add your own as you go.';
-    body=IND_GROUPS.map(([title,keys])=>`<p class="part" style="margin-top:6px">${title}</p><div class="choices" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">${keys.map(k=>`<button class="choice" data-act="wiz-ind" data-k="${k}" aria-pressed="${(s.industry||'beauty')===k}">${esc(INDUSTRIES[k].label)}</button>`).join('')}</div>`).join('');
+    q='What do you do?'; why='Tick everything you offer. The questions and starter lists follow what you pick, and you can add your own as you go.';
+    body=IND_GROUPS.map(([title,keys])=>`<p class="part" style="margin-top:6px">${title}</p><div class="choices" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">${keys.map(k=>`<button class="choice" data-act="wiz-ind" data-k="${k}" aria-pressed="${selInds().includes(k)}">${selInds().includes(k)?'✓ ':''}${esc(INDUSTRIES[k].label)}</button>`).join('')}</div>`).join('')
+      + `<p class="part" style="margin-top:6px">Often done together</p><div class="chips">${COMBOS.map(([label,keys])=>`<button class="chip" data-act="wiz-combo" data-k="${keys.join(',')}" aria-pressed="${keys.length===selInds().length && keys.every(k=>selInds().includes(k))}">${esc(label)}</button>`).join('')}</div>
+      <p class="live">You have picked: ${selInds().map(k=>esc(INDUSTRIES[k].label)).join(' + ')}</p>`;
   } else if(st.type==='pickTreat'){
     q=`Which ${W().many} do you do?`; why=`Tick all that apply, or add your own. Next you go through each ${W().one} and the ${W().items} it uses, then your business costs. Prices are worked out at the end.`;
     const custom=state.treatments.filter(t=>!CAT().some(c=>c.id===t.id));
-    body=`<div class="stack">${CAT().map(c=>`<label class="pick"><input type="checkbox" data-act="pick-treat" data-id="${c.id}" ${state.treatments.some(t=>t.id===c.id)?'checked':''}><span>${esc(c.name)}${c.addon?'<small>Add-on</small>':''}</span></label>`).join('')}
+    const pickRow=c=>`<label class="pick"><input type="checkbox" data-act="pick-treat" data-id="${c.id}" ${state.treatments.some(t=>t.id===c.id)?'checked':''}><span>${esc(c.name)}${c.addon?'<small>Add-on</small>':''}</span></label>`;
+    const shown=new Set();
+    const groups=selInds().map(k=>{ const items=(CATALOGUES[k]||[]).filter(c=>!shown.has(c.id)); items.forEach(c=>shown.add(c.id)); return (selInds().length>1 && items.length?`<p class="part" style="margin-top:6px">${esc(INDUSTRIES[k].label)}</p>`:'')+items.map(pickRow).join(''); }).join('');
+    body=`<div class="stack">${groups}
       ${custom.map(t=>`<label class="pick"><input type="checkbox" data-act="pick-treat" data-id="${t.id}" checked><span>${esc(t.name)}<small>Your own</small></span></label>`).join('')}
       <div class="row"><input id="new-treat" placeholder="Add your own ${esc(IND().example)}" style="flex:1"><button class="btn ghost" data-act="add-custom-treat">Add</button></div></div>`;
   } else if(st.type==='treatment'){
@@ -686,7 +698,7 @@ function vPrices(){
   </section>
   <section class="stack">
     ${c.treatments.map(t=>{ const [cls,lab]=FLAG[t.flag]; return `<article class="treat">
-      <div class="treat-head"><div><h3>${esc(t.name)}</h3><p class="muted small">${fmtTime(t.mins)} with set-up · ${W().items} ${gbp(t.productCost)} · your time ${gbp(t.timeCost)}${t.patch?' · patch test needed':''}</p></div><span class="pill ${cls}">${lab}</span></div>
+      <div class="treat-head"><div><h3>${esc(t.name)}</h3><p class="muted small">${fmtTime(t.mins,t)} with set-up · ${W().items} ${gbp(t.productCost)} · your time ${gbp(t.timeCost)}${t.patch?' · patch test needed':''}</p></div><span class="pill ${cls}">${lab}</span></div>
       <div class="prices"><div><div class="k">Your price</div><div class="v">${t.price?gbp(+t.price):'–'}</div></div>
         <div><div class="k">Minimum</div><div class="v">${gbp(t.minimum)}</div></div>
         <div class="sugg"><div class="k">Suggested</div><div class="v">${gbp(t.suggested)}</div></div></div>
@@ -887,7 +899,10 @@ document.addEventListener('click', async e=>{
   const tab=e.target.closest('[data-tab]'); if(tab){ view=tab.dataset.tab; resetArmed=false; render(); window.scrollTo(0,0); return; }
   const el=e.target.closest('[data-act]'); if(!el) return;
   const act=el.dataset.act, s=state.setup;
-  if(act==='wiz-ind'){ s.industry=el.dataset.k; if(!s.done && !s._ohEdited) s.overheads=overheadsFor(s.industry); save(); render(); }
+  if(act==='wiz-ind' || act==='wiz-combo'){ let ks;
+    if(act==='wiz-combo') ks=el.dataset.k.split(',');
+    else { ks=selInds().slice(); const k=el.dataset.k, i=ks.indexOf(k); if(i>=0){ if(ks.length>1) ks.splice(i,1); else toast('Keep at least one ticked'); } else if(!s._indTouched && !s.done) ks=[k]; else ks.push(k); }
+    s._indTouched=true; s.industries=ks; s.industry=ks[0]; if(!s.done && !s._ohEdited) s.overheads=overheadsForAll(ks); save(); render(); }
   else if(act==='st-add'){ s.staff=[...(s.staff||[]),{id:uid(),name:'',pay:'hourly',rate:13,hours:30,weeksOff:6}]; save(); render(); }
   else if(act==='st-del'){ s.staff=(s.staff||[]).filter(x=>x.id!==el.dataset.id); save(); render(); }
   else if(act==='st-ea'){ s.employmentAllowance=el.checked; save(); render(); }
@@ -983,7 +998,7 @@ const SUPPLIERS={
   beauty:['Salons Direct','Salon Services','Capital Hair & Beauty','Sweet Squared','Ellisons','Louella Belle','The Gel Bottle','Mylee','Sally Beauty','Amazon'],
   trades:['Screwfix','Toolstation','B&Q','Wickes','Travis Perkins','Jewson','Dulux Decorator Centre','Brewers','Amazon']
 };
-function supplierList(){ return SUPPLIERS[IND().sup||'beauty']||SUPPLIERS.beauty; }
+function supplierList(){ const out=[]; selInds().forEach(k=>(SUPPLIERS[INDUSTRIES[k].sup||'beauty']||[]).forEach(x=>{ if(!out.includes(x)) out.push(x); })); return out; }
 function isDark(){ const t=document.documentElement.dataset.theme; return t==='dark' || (t!=='light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }
 function applyBrand(){
   const b=state.setup.brand||{}, pal=PALETTES[b.palette]||PALETTES.berry, r=document.documentElement.style, dk=isDark();
@@ -1092,7 +1107,7 @@ function renderBkForm(){
     <div class="fields"><label class="field">Price<span class="money-in"><input id="bk-price" type="number" min="0" step="0.01" value="${esc(nf(price))}" data-bkf="price"></span></label>
       <label class="field">Deposit taken<span class="money-in"><input id="bk-dep" type="number" min="0" step="0.01" value="${esc(d.deposit||0)}" data-bkf="deposit"></span></label></div>
     <label class="field">Notes<input id="bk-notes" value="${esc(d.notes||'')}" data-bkf="notes"></label>
-    <p class="small muted">Takes about ${fmtTime(bkMins(d))}${d.time?`, finishing around ${fromMin(toMin(d.time)+bkMins(d))}`:''}.</p>
+    <p class="small muted">Takes about ${fmtTime(bkMins(d),svc(d.serviceId))}${d.time?`, finishing around ${fromMin(toMin(d.time)+bkMins(d))}`:''}.</p>
     ${warns.map(x=>`<div class="notice warn">${esc(x)}</div>`).join('')}
     <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="bk-close">Cancel</button><button class="btn" type="submit">Save booking</button></div>
   </form>`;
@@ -1721,6 +1736,10 @@ Object.assign(SUPPLIERS,{
   cake:['Booker','Costco','Supermarket','The Cake Decorating Company','Hobbycraft','Amazon'],
   general:['Amazon','Supermarket','Costco','Booker']});
 
+const COMBOS=[['Nails, lashes and brows + waxing and facials',['beauty','therapy']],['Hair + nails and beauty',['hair','beauty']],['Hair + barber',['hair','barber']],
+  ['Hair + make-up (weddings)',['hair','makeup']],['Builder + decorating',['build','paint']],['Builder + plastering and tiling',['build','plaster']],
+  ['Builder + carpentry',['build','joiner']],['Plumbing + tiling (bathrooms)',['plumb','plaster']],['Gardening + cleaning',['garden','clean']],['Cleaning + car valeting',['clean','valet']]];
+function overheadsForAll(keys){ const out=[]; keys.forEach(k=>overheadsFor(k).forEach(o=>{ if(!out.some(x=>x.group===o.group && x.name===o.name)) out.push(o); })); return out; }
 // ---------- running costs to start from, by kind of work ----------
 function overheadsFor(ind){
   const g={beauty:'salon',therapy:'salon',makeup:'mobile',hair:'salon',barber:'salon',dog:'dog',build:'van',paint:'van',plaster:'van',electric:'van',plumb:'van',joiner:'van',garden:'van',clean:'clean',valet:'valet',cake:'cake',other:'mobile'}[ind]||'salon';
