@@ -1,0 +1,1744 @@
+<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="robots" content="noindex"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Know Your Worth"><meta name="theme-color" content="#a3285f"><style>body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}</style></head><body><title>Know Your Worth</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: phone-first app shell. Sticky header + tab strip, one column of working cards, numbers in mono. Palette: gel-polish berry on a cool lilac-grey, teal for money that is fine, amber and red for flags. */
+:root{
+  --bg:#f6f4f8; --surface:#ffffff; --sunk:#efecf3; --ink:#1d1a26; --muted:#655f72; --line:#e0dbe7;
+  --accent:#a3285f; --accent-ink:#ffffff; --accent-soft:#f6e3ec;
+  --ok:#17766f; --ok-soft:#dcf1ee; --warn:#a86500; --warn-soft:#fbefd9; --bad:#b3261e; --bad-soft:#fbe4e2;
+  --display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --body:"Figtree","Segoe UI",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  --r:12px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141218; --surface:#1d1a23; --sunk:#25212d; --ink:#ece8f2; --muted:#a39caf; --line:#332e3c;
+  --accent:#f07aae; --accent-ink:#1d0d15; --accent-soft:#3b1f2d;
+  --ok:#5cc9bd; --ok-soft:#173330; --warn:#f2b24e; --warn-soft:#3a2b14; --bad:#f2867d; --bad-soft:#3d1d1b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141218; --surface:#1d1a23; --sunk:#25212d; --ink:#ece8f2; --muted:#a39caf; --line:#332e3c;
+  --accent:#f07aae; --accent-ink:#1d0d15; --accent-soft:#3b1f2d;
+  --ok:#5cc9bd; --ok-soft:#173330; --warn:#f2b24e; --warn-soft:#3a2b14; --bad:#f2867d; --bad-soft:#3d1d1b; color-scheme:dark}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.5}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+.gutter{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.shell{max-width:760px;margin:0 auto}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:12px 8px}
+.brand h1{font-family:var(--display);font-weight:800;font-size:1.5rem;margin:0;letter-spacing:-.01em}
+.brand h1 span{color:var(--accent)}
+.brand small{color:var(--muted);font-size:.8rem}
+nav.tabs{display:flex;gap:4px;overflow-x:auto;padding-bottom:8px;scrollbar-width:none}
+nav.tabs::-webkit-scrollbar{display:none}
+nav.tabs button{flex:0 0 auto;border:0;background:transparent;color:var(--muted);font:600 .92rem var(--body);padding:8px 12px;border-radius:999px;cursor:pointer}
+nav.tabs button[aria-current="page"]{background:var(--accent);color:var(--accent-ink)}
+main{padding-block:20px 64px;display:flex;flex-direction:column;gap:18px}
+h2{font-family:var(--display);font-weight:800;font-size:1.6rem;line-height:1.15;margin:0;text-wrap:balance}
+h3{font-family:var(--display);font-weight:600;font-size:1.15rem;margin:0}
+p{margin:0}
+.muted{color:var(--muted)}
+.small{font-size:.85rem}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.stack{display:flex;flex-direction:column;gap:12px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.fields label.field > :last-child{margin-top:auto}
+@media (max-width:420px){.fields{grid-template-columns:minmax(0,1fr)}}
+.stat{background:var(--sunk);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.stat .label{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.stat .value{font-family:var(--mono);font-size:1.35rem;font-weight:500}
+.stat.hero{background:var(--accent-soft)}
+.stat.hero .value{color:var(--accent);font-size:1.7rem}
+label.field{display:flex;flex-direction:column;gap:4px;font-size:.88rem;font-weight:600;min-width:0}
+label.field span.hint{font-weight:400;color:var(--muted);font-size:.8rem}
+input,select,textarea{font:500 1rem var(--body);color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;min-width:0}
+input[type="checkbox"]{width:22px;height:22px;flex:0 0 auto;accent-color:var(--accent)}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.money-in{position:relative;display:block}
+.money-in::before{content:"£";position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-weight:600}
+.money-in input{padding-left:26px}
+.btn{border:0;border-radius:10px;padding:12px 16px;font:700 1rem var(--body);cursor:pointer;background:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+.btn.small{padding:7px 11px;font-size:.88rem}
+.btn.danger{background:var(--bad);color:#fff}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.choices{display:grid;gap:10px}
+.choice{text-align:left;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);border-radius:12px;padding:14px 16px;font:600 1.05rem var(--body);cursor:pointer;display:flex;flex-direction:column;gap:2px}
+.choice small{font-weight:400;color:var(--muted);font-size:.85rem}
+.choice[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1.5px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 12px;font:600 .9rem var(--body);cursor:pointer}
+.chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.progress{height:6px;background:var(--sunk);border-radius:3px;overflow:hidden}
+.progress i{display:block;height:100%;background:var(--accent);transition:width .25s}
+@media (prefers-reduced-motion: reduce){.progress i{transition:none}}
+.part{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--accent)}
+.q{font-family:var(--display);font-weight:800;font-size:1.6rem;line-height:1.15;text-wrap:balance;margin:0}
+.live{background:var(--accent-soft);border-radius:10px;padding:12px 14px;font-weight:600}
+.live .num{color:var(--accent);font-size:1.15rem}
+.pill{display:inline-block;font-size:.75rem;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.pill.info{background:var(--sunk);color:var(--muted)}
+.treat{border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px;background:var(--surface);min-width:0}
+.treat-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.treat-head h3{font-size:1.05rem}
+.prices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.prices div{background:var(--sunk);border-radius:8px;padding:8px}
+.prices .k{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.prices .v{font-family:var(--mono);font-size:1.05rem}
+.prices .sugg{background:var(--accent-soft)}
+.prices .sugg .v{color:var(--accent);font-weight:500}
+.notice{border-radius:10px;padding:12px 14px;font-size:.92rem}
+.notice.warn{background:var(--warn-soft);color:var(--ink)}
+.notice.bad{background:var(--bad-soft);color:var(--ink)}
+.notice.ok{background:var(--ok-soft);color:var(--ink)}
+.notice.info{background:var(--sunk);color:var(--ink)}
+.tablebox{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;background:var(--sunk)}
+td.r,th.r{text-align:right}
+td input,td select{padding:6px 8px;font-size:.92rem;min-width:70px}
+.list{display:flex;flex-direction:column}
+.item{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);min-width:0}
+.item:last-child{border-bottom:0}
+.item .grow{flex:1;min-width:0}
+.item .grow p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pick{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer;font-weight:600;min-width:0}
+.pick small{display:block;font-weight:400;color:var(--muted)}
+.pick:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.uses{display:grid;grid-template-columns:auto minmax(0,1fr) 90px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.uses:last-child{border-bottom:0}
+.thumb{width:44px;height:44px;border-radius:8px;object-fit:cover;background:var(--sunk);border:1px solid var(--line);cursor:pointer;flex:0 0 auto}
+.iconbtn{border:0;background:transparent;color:var(--muted);font:700 1.1rem var(--body);cursor:pointer;padding:6px 8px;border-radius:8px}
+.iconbtn:hover{background:var(--sunk);color:var(--bad)}
+.bar{height:10px;background:var(--sunk);border-radius:5px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ok)}
+.bar.short i{background:var(--warn)}
+.overlay{position:fixed;inset:0;background:rgba(10,8,14,.75);display:flex;align-items:center;justify-content:center;z-index:20;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.overlay img{max-height:85vh;border-radius:10px}
+.toast[hidden]{display:none!important}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;z-index:30}
+details summary{cursor:pointer;font-weight:700}
+.example-flag{background:var(--warn-soft);color:var(--warn);font-weight:700;font-size:.8rem;padding:4px 10px;border-radius:999px}
+</style>
+
+<header class="top">
+  <div class="shell gutter">
+    <div class="brand">
+      <div id="brandhead"><h1>Know Your <span>Worth</span></h1><small>Prices, costs and tax for people who work for themselves</small></div>
+      <span id="exflag" class="example-flag" hidden>Example figures</span>
+    </div>
+    <nav class="tabs" id="tabs" aria-label="Sections"></nav>
+  </div>
+</header>
+<main class="shell gutter" id="main"></main>
+<div id="overlay" class="overlay" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<div id="undobar" class="toast" hidden style="bottom:calc(72px + env(safe-area-inset-bottom,0px));display:flex;gap:12px;align-items:center">Done. <button class="btn small" data-act="undo">Undo</button></div>
+
+<script>
+// ===================== CALC-START (pure maths, tested outside the page) =====================
+const RULES = { // 2026/27. Checked against published sources in November 2026, not yet by an accountant. Update every April.
+  pa:12570, higherStart:50270, basic:.20, higher:.40, ni4Main:.06, ni4Upper:.02, ni4UPL:50270,
+  scoBasic:16537, scoInter:29526, scoHigher:43662, scoAdv:75000, // Scotland 2026/27; the 48% top rate above £125,140 is not modelled
+  scoStarterRate:.19, scoBasicRate:.20, scoInterRate:.21, scoHigherRate:.42, scoAdvRate:.45,
+  tradingAllowance:1000, vatThreshold:90000,
+  mileage:[.45,.25,10000], // pence per mile, then after 10,000 miles. Assumed: check gov.uk
+  sl:{plan1:[26900,.09],plan2:[29385,.09],plan4:[33795,.09],plan5:[25000,.09]}, pg:[21000,.06], // student loan thresholds 2026/27
+  empNI:.15, empNIThreshold:5000, employmentAllowance:10500, pensionRate:.03, pensionLower:6240, pensionUpper:50270, pensionTrigger:10000, // employer costs, assumed: check gov.uk
+  mtd:[{from:'April 2026',over:50000},{from:'April 2027',over:30000},{from:'April 2028',over:20000}]
+};
+function incomeTax(income, region, R){
+  const b = region==='sco' ? [[R.pa,R.scoStarterRate],[R.scoBasic,R.scoBasicRate],[R.scoInter,R.scoInterRate],[R.scoHigher,R.scoHigherRate],[R.scoAdv,R.scoAdvRate]]
+                           : [[R.pa,R.basic],[R.higherStart,R.higher]];
+  let tax=0; b.forEach(([from,rate],i)=>{ const to=i<b.length-1?b[i+1][0]:Infinity; if(income>from) tax+=(Math.min(income,to)-from)*rate; }); return tax;
+}
+function class4(profit, R){ return Math.max(0,Math.min(profit,R.ni4UPL)-R.pa)*R.ni4Main + Math.max(0,profit-R.ni4UPL)*R.ni4Upper; }
+function loanDue(income, o, R){ let d=0; const pl=(R.sl||{})[o.plan]; if(pl) d+=Math.max(0,income-pl[0])*pl[1]; if(o.postgrad && R.pg) d+=Math.max(0,income-R.pg[0])*R.pg[1]; return d; }
+// Self-employed profit sits on top of any job income: the job uses the tax-free allowance first.
+function taxParts(profit, region, R, o){ o=o||{}; const other=+o.other||0; if(profit<=0) return {tax:0,ni:0,loan:0,total:0};
+  const tax=incomeTax(other+profit,region,R)-incomeTax(other,region,R), ni=class4(profit,R), loan=loanDue(other+profit,o,R)-loanDue(other,o,R);
+  return {tax,ni,loan,total:tax+ni+loan}; }
+function taxOnProfit(profit, region, R, o){ return taxParts(profit,region,R,o).total; }
+function profitNeeded(takeHomeYear, region, R, o){ if(takeHomeYear<=0) return 0; let lo=takeHomeYear, hi=takeHomeYear*3+1000;
+  for(let i=0;i<60;i++){ const mid=(lo+hi)/2; if(mid-taxOnProfit(mid,region,R,o)<takeHomeYear) lo=mid; else hi=mid; } return hi; }
+function taxOpts(s){ return {other:+s.otherIncome||0, plan:s.studentLoan, postgrad:!!s.postgrad}; }
+function teamCosts(s, R){
+  const list=Array.isArray(s.staff)?s.staff:[];
+  let gross=0, ni=0, pension=0, hours=0, commHours=0;
+  const people=list.map(p=>{
+    const h=(+p.hours||0)*(52-(+p.weeksOff||0))/12*(1-(+s.nonClient||0))*(+s.busy||0); // their realistic working hours a month
+    let g=0, n=0, pe=0, c=0;
+    if(p.pay==='self') c=(+p.rate||0)/100; // self-employed: they keep a share of what they take, no wages, NI or pension
+    else {
+      g= p.pay==='salary' ? (+p.rate||0) : (+p.rate||0)*(+p.hours||0)*52; // hourly staff are paid for holidays too
+      n=Math.max(0,g-R.empNIThreshold)*R.empNI;
+      pe= g>R.pensionTrigger ? R.pensionRate*Math.max(0,Math.min(g,R.pensionUpper)-R.pensionLower) : 0;
+    }
+    gross+=g; ni+=n; pension+=pe; hours+=h; commHours+=c*h;
+    return {...p, billable:h, gross:g, ni:n, pension:pe, yearCost:g+n+pe, commission:c};
+  });
+  const niAfter= s.employmentAllowance ? Math.max(0, ni-R.employmentAllowance) : ni;
+  const year=gross+niAfter+pension;
+  return {people, gross, ni, niAfter, pension, year, month:year/12, hours, commHours};
+}
+function overheadsMonth(s){
+  if(Array.isArray(s.overheads)) return s.overheads.reduce((a,o)=>a+(o.group==='monthly' ? (+o.amount||0)
+    : o.group==='yearly' ? (+o.amount||0)/12 : (+o.amount||0)/(Math.max(1,+o.years||3)*12)),0);
+  return (+s.rent||0) + (+s.insuranceYear||0)/12 + (+s.otherMonthly||0) + (+s.otherYearly||0)/12
+       + ((+s.equipment||0) / (Math.max(1,+s.equipmentYears||3)*12));
+}
+function billableHoursMonth(s){ return (+s.hours||0) * (52-(+s.weeksOff||0))/12 * (1-(+s.nonClient||0)) * (+s.busy||0); }
+// Each recipe line says how many of that treatment one pack does: "one 15 ml bottle of base coat does 15 gel manicures".
+// If a product goes off once opened before it is used up, the thrown-away part is spread over the treatments that use it.
+function productCosts(state){
+  const raw={};
+  state.treatments.forEach(t=>(t.recipe||[]).forEach(r=>{ if(+r.perPack>0) raw[r.productId]=(raw[r.productId]||0)+(+t.perWeek||0)/(+r.perPack); }));
+  return state.products.map(p=>{
+    const rawPPW=raw[p.id]||0, shelf=+p.shelfWeeks||0;
+    const packsPerWeek=(shelf>0 && rawPPW>0) ? Math.max(rawPPW, 1/shelf) : rawPPW; // you open at least one every shelf period
+    const factor= rawPPW>0 ? packsPerWeek/rawPPW : 1;
+    const lost= 1-1/factor;
+    const weeksLeft= packsPerWeek>0 ? (+p.inStock||0)/packsPerWeek : null;
+    const reorder=(+p.inStock||0) <= (+p.reorderAt||0);
+    return {...p, packsPerWeek, factor, lost, weeksLeft, reorder};
+  });
+}
+function lineCost(r, pmap){ const p=pmap[r.productId]; return (p && +r.perPack>0) ? (+p.packCost||0)/(+r.perPack)*p.factor : 0; }
+function treatmentProductCost(t, pmap){ return (t.recipe||[]).reduce((a,r)=>a+lineCost(r,pmap),0); }
+function compute(state){
+  const s=state.setup, R=RULES;
+  const region=s.region==='sco'?'sco':'ruk';
+  const team=teamCosts(s,R);
+  const billable=billableHoursMonth(s)+team.hours;
+  const overheads=overheadsMonth(s)+team.month;
+  const needYear=profitNeeded((+s.takeHome||0)*12, region, R, taxOpts(s));
+  const needMonth=needYear/12;
+  const hourly= billable>0 ? (overheads+needMonth)/billable : 0;
+  const overheadRate= billable>0 ? overheads/billable : 0;
+  const products=productCosts(state);
+  const pmap=Object.fromEntries(products.map(p=>[p.id,p]));
+  const card=+s.cardPct||0, fixed=+s.cardFixed||0;
+  const comm= billable>0 ? team.commHours/billable : 0; // self-employed team members' share
+  const pct=card+comm;
+  const noShowF=1+(+s.noShow||0)*(1-(+s.deposit||0));
+  const vatF= s.vat ? 1.2 : 1;
+  const margin=+s.margin||0, roundTo=+s.roundTo||1;
+  const treatments=state.treatments.map(t=>{
+    const mins=(+t.clientMin||0)+(+t.prepMin||0);
+    const productCost=treatmentProductCost(t,pmap);
+    const timeCost=mins/60*hourly;
+    const cost=timeCost+productCost;
+    const minimum=(cost+fixed)/(1-pct)*noShowF*vatF;
+    const suggested=Math.ceil(((cost/(1-margin))+fixed)/(1-pct)*noShowF*vatF/roundTo - 1e-9)*roundTo;
+    const exVat=suggested/vatF;
+    const earnings=exVat*(1-pct)-fixed-productCost-mins/60*overheadRate;
+    const perHour= mins>0 ? earnings/(mins/60) : 0;
+    const price=+t.price||0;
+    let flag='none'; if(price>0){ flag= price<minimum ? 'below' : (price<suggested ? 'under' : 'ok'); }
+    return {...t, mins, productCost, timeCost, cost, minimum, suggested, earnings, perHour, flag};
+  });
+  const wk=(52-(+s.weeksOff||0))/12;
+  const bookingsMonth=treatments.reduce((a,t)=>a+(+t.perWeek||0),0)*wk;
+  const hoursBooked=treatments.reduce((a,t)=>a+(+t.perWeek||0)*t.mins,0)/60*wk;
+  const productsMonth=treatments.reduce((a,t)=>a+(+t.perWeek||0)*t.productCost,0)*wk;
+  function month(priceKey, f=1){
+    const takings=treatments.reduce((a,t)=>a+(+t.perWeek||0)*(priceKey==='suggested'?t.suggested:(+t.price||0)*f),0)*wk/vatF;
+    const fees=takings*pct+bookingsMonth*fixed; // card fees plus self-employed shares
+    const noShows=takings*(+s.noShow||0)*(1-(+s.deposit||0));
+    return {takings,fees,noShows,profit:takings-fees-productsMonth-overheads-noShows};
+  }
+  return {team, running:overheadsMonth(s), billable, overheads, needYear, needMonth, hourly, overheadRate, products, treatments,
+          hoursBooked, productsMonth, bookingsMonth, scenario:f=>month('current',f), atSuggested:month('suggested'), atCurrent:month('current'),
+          taxShare: needYear>0 ? (needYear-(+s.takeHome||0)*12)/needYear : 0};
+}
+function taxYearOf(dateStr){ const d=new Date(dateStr+'T12:00:00'); const y=d.getFullYear(), m=d.getMonth(), day=d.getDate();
+  return (m>3 || (m===3 && day>=6)) ? y : y-1; }
+function taxYearSummary(state, startYear){
+  const R=RULES, region=state.setup.region==='sco'?'sco':'ruk';
+  const inYear=x=>taxYearOf(x.date)===startYear;
+  const income=state.income.filter(inYear).reduce((a,x)=>a+(+x.amount||0),0);
+  const byCat={}; let expenses=0;
+  state.expenses.filter(inYear).forEach(x=>{ byCat[x.category]=(byCat[x.category]||0)+(+x.amount||0); expenses+=(+x.amount||0); });
+  const miles=(state.trips||[]).filter(inYear).reduce((a,x)=>a+(+x.miles||0),0);
+  const mileage=Math.min(miles,R.mileage[2])*R.mileage[0]+Math.max(0,miles-R.mileage[2])*R.mileage[1];
+  if(mileage>0){ byCat['Car, van and travel']=(byCat['Car, van and travel']||0)+mileage; expenses+=mileage; }
+  const useAllowance= expenses < R.tradingAllowance && income>0;
+  const deduction= useAllowance ? Math.min(R.tradingAllowance, income) : expenses;
+  const profit=Math.max(0, income-deduction);
+  const parts=taxParts(profit, region, R, taxOpts(state.setup));
+  return {income, expenses, byCat, useAllowance, deduction, profit, miles, mileage, parts, tax:parts.total};
+}
+// ===================== CALC-END =====================
+
+const CATEGORIES=['Products and stock','Rent, rates, power and insurance','Repairs and maintenance','Car, van and travel',
+  'Phone, software and office','Advertising and marketing','Accountant and professional fees','Bank, card and booking app fees',
+  'Training and other costs','Equipment (lamps, drills, furniture)'];
+const APPS={
+  fresha:{label:'Fresha',pct:.014,fixed:.25,note:'Online card payments 1.40% + 25p'},
+  booksy:{label:'Booksy',pct:.0129,fixed:.20,note:'Card payments 1.29% + 20p'},
+  timely:{label:'Timely',pct:.0159,fixed:.05,note:'In-person card payments 1.59% + 5p'},
+  other:{label:'Another card reader',pct:.0175,fixed:0,note:'Using 1.75%. Change it under More if yours is different'},
+  none:{label:'Mostly cash or bank transfer',pct:0,fixed:0,note:'No card fees'}
+};
+// Example figures only: every tech should put in her own.
+const LIBRARY=[
+  ['builder','Builder gel (BIAB)','15 ml pot',18,20,0,2,1],['base','Base coat','15 ml bottle',12,15,0,2,1],
+  ['top','Top coat','15 ml bottle',12,40,0,2,1],['colour','Colour gel','10 ml bottle',9,25,0,6,2],
+  ['remover','Gel remover','500 ml bottle',10,30,0,2,1],['tips','Nail tips','box of 500',15,50,0,2,1],
+  ['files','Nail files','pack of 50',20,50,0,1,1],['buffers','Buffers','pack of 50',15,50,0,3,1],
+  ['wipes','Lint-free wipes','pack of 500',8,100,0,2,1],['foils','Foil wraps','pack of 100',4,10,0,2,1],
+  ['oil','Cuticle oil','30 ml bottle',8,100,0,2,1],['glue','Lash glue','5 ml bottle',25,15,6,1,1],
+  ['trays','Classic lash trays','1 tray',14,2,0,4,2],['pads','Under-eye pads','pack of 50 pairs',8,50,0,2,1],
+  ['brushes','Micro brushes','pack of 100',5,40,0,2,1],['tint','Brow tint','15 ml tube',9,15,12,2,1],
+  ['dev','Developer','100 ml bottle',5,50,12,2,1]
+].map(([id,name,pack,packCost,clientsPerPack,shelfWeeks,inStock,reorderAt])=>({id,name,...parsePack(pack),packCost,clientsPerPack,shelfWeeks,inStock,reorderAt}));
+const CATALOGUE=[
+  {id:'gelmani',name:'Gel manicure',clientMin:45,prepMin:10,perWeek:4,price:36,patch:false,recipe:[['base',15],['colour',25],['top',40],['wipes',100],['files',50],['buffers',50],['oil',100]]},
+  {id:'biabfull',name:'BIAB full set with tips',clientMin:75,prepMin:10,perWeek:3,price:50,patch:false,recipe:[['builder',20],['base',15],['colour',25],['top',40],['tips',50],['files',50],['buffers',50],['wipes',100],['oil',100]]},
+  {id:'biabinfill',name:'BIAB infill',clientMin:60,prepMin:10,perWeek:4,price:38,patch:false,recipe:[['builder',33],['colour',25],['top',40],['files',50],['buffers',50],['wipes',100],['oil',100]]},
+  {id:'removal',name:'Gel removal only',clientMin:20,prepMin:5,perWeek:2,price:15,patch:false,recipe:[['remover',30],['foils',10],['wipes',100],['buffers',50]]},
+  {id:'art',name:'Nail art',addon:true,unitLabel:'nail',clientMin:5,prepMin:0,perWeek:8,price:4,patch:false,recipe:[['colour',250]]},
+  {id:'removaladd',name:'Removal before a new set',addon:true,clientMin:15,prepMin:0,perWeek:3,price:8,patch:false,recipe:[['remover',30],['foils',10]]},
+  {id:'french',name:'French tips',addon:true,clientMin:10,prepMin:0,perWeek:2,price:5,patch:false,recipe:[['colour',100]]},
+  {id:'pedi',name:'Gel pedicure',clientMin:60,prepMin:10,perWeek:2,price:42,patch:false,recipe:[['base',12],['colour',19],['top',31],['files',50],['buffers',50],['wipes',100],['oil',100]]},
+  {id:'lashfull',name:'Classic lash full set',clientMin:120,prepMin:10,perWeek:1,price:75,patch:true,recipe:[['trays',2],['glue',15],['pads',50],['brushes',40]]},
+  {id:'lashinfill',name:'Classic lash infill',clientMin:60,prepMin:10,perWeek:2,price:45,patch:true,recipe:[['trays',4],['glue',30],['pads',50],['brushes',80]]},
+  {id:'brow',name:'Brow tint and shape',clientMin:30,prepMin:5,perWeek:3,price:22,patch:true,recipe:[['tint',15],['dev',50],['brushes',80]]}
+].map(t=>({...t,recipe:t.recipe.map(([productId,perPack])=>({productId,perPack}))}));
+LIBRARY.push(...[ // hair, building and decorating starters. Example figures only
+  ['hcol','Permanent hair colour','60 ml',6.5,1,0,10,4],['hdev','Hair developer','1000 ml',8,15,0,2,1],['bleach','Bleach powder','500 g',18,8,0,1,1],
+  ['hfoil','Hair foils','100 pieces',6,2,0,3,1],['shamp','Backwash shampoo','1000 ml',12,40,0,2,1],['cond','Backwash conditioner','1000 ml',12,40,0,2,1],
+  ['styl','Styling products','250 ml',9,40,0,3,1],['capes','Disposable capes','100 pieces',15,100,0,1,1],
+  ['screws','Screws (mixed box)','200 pieces',9,10,0,2,1],['sandp','Sandpaper','10 pieces',6,5,0,2,1],['dust','Dust sheet','1 pieces',8,20,0,3,1],
+  ['mplast','Multi-finish plaster','25 kg',10,0.25,0,4,2],['adhes','Tile adhesive','20 kg',15,0.33,0,3,1],['grout','Grout','5 kg',9,1,0,2,1],
+  ['sealant','Silicone sealant','310 ml',6,2,0,3,1],['fill','Filler','1 kg',8,5,0,2,1],
+  ['emul','Emulsion paint','10 litres',45,1,0,3,1],['gloss','Gloss paint','2.5 litres',30,8,0,2,1],['under','Undercoat','2.5 litres',25,8,0,2,1],
+  ['tape','Masking tape','50 m',4,3,0,4,2],['caulk','Decorators caulk','380 ml',4,3,0,4,2],['roller','Roller sleeve','1 pieces',5,3,0,3,1]
+].map(([id,name,pack,packCost,clientsPerPack,shelfWeeks,inStock,reorderAt])=>({id,name,...parsePack(pack),packCost,clientsPerPack,shelfWeeks,inStock,reorderAt})));
+const mkCat=a=>a.map(t=>({patch:false,...t,recipe:t.recipe.map(([productId,perPack])=>({productId,perPack}))}));
+const CATALOGUES={ beauty:CATALOGUE,
+  hair:mkCat([
+    {id:'cutblow',name:'Cut and blow-dry',clientMin:45,prepMin:10,perWeek:10,price:40,recipe:[['shamp',40],['cond',40],['styl',40],['capes',100]]},
+    {id:'gents',name:'Gents cut',clientMin:30,prepMin:5,perWeek:8,price:18,recipe:[['shamp',40],['capes',100]]},
+    {id:'blowdry',name:'Blow-dry',clientMin:30,prepMin:5,perWeek:4,price:25,recipe:[['shamp',40],['cond',40],['styl',30]]},
+    {id:'fullcol',name:'Full head colour',clientMin:90,prepMin:10,perWeek:3,price:65,patch:true,recipe:[['hcol',0.5],['hdev',15],['shamp',40],['cond',40],['capes',100]]},
+    {id:'halfhl',name:'Half head highlights',clientMin:120,prepMin:10,perWeek:2,price:75,patch:true,recipe:[['bleach',8],['hdev',12],['hfoil',2],['shamp',40],['cond',40]]}]),
+  build:mkCat([
+    {id:'labourday',name:'Day rate (labour)',clientMin:480,prepMin:60,perWeek:2,price:200,recipe:[['screws',10],['sandp',5],['dust',20]]},
+    {id:'halfday',name:'Half day (labour)',clientMin:240,prepMin:30,perWeek:1,price:110,recipe:[['screws',20],['dust',40]]},
+    {id:'door',name:'Fit an internal door',clientMin:180,prepMin:30,perWeek:1,price:120,recipe:[['screws',10],['sandp',5],['fill',10]]},
+    {id:'skim',name:'Skim a room',clientMin:480,prepMin:60,perWeek:1,price:350,recipe:[['mplast',0.25],['dust',10]]},
+    {id:'tilewall',name:'Tile a bathroom wall',clientMin:960,prepMin:60,perWeek:0.5,price:600,recipe:[['adhes',0.33],['grout',1],['sealant',2],['dust',10]]}]),
+  paint:mkCat([
+    {id:'room',name:'Paint a room (walls and ceiling)',clientMin:480,prepMin:60,perWeek:2,price:260,recipe:[['emul',1],['tape',3],['caulk',3],['dust',20],['fill',5],['sandp',5],['roller',3]]},
+    {id:'paintdoor',name:'Paint a door (both sides)',clientMin:120,prepMin:15,perWeek:2,price:60,recipe:[['gloss',8],['under',8],['sandp',5]]},
+    {id:'skirting',name:'Gloss skirting and frames (one room)',clientMin:180,prepMin:15,perWeek:1,price:90,recipe:[['gloss',6],['under',6],['tape',4],['caulk',4]]},
+    {id:'exterior',name:'Exterior painting (day)',clientMin:480,prepMin:60,perWeek:1,price:220,recipe:[['dust',20],['tape',4]]}]),
+  other:[] };
+const ALLCAT=Object.values(CATALOGUES).flat();
+const clone=o=>JSON.parse(JSON.stringify(o));
+const BEAUTY_W={one:'treatment',many:'treatments',One:'Treatment',Many:'Treatments',item:'product',items:'products',Item:'Product',Items:'Products',cust:'client'};
+const TRADE_W={one:'job',many:'jobs',One:'Job',Many:'Jobs',item:'material',items:'materials',Item:'Material',Items:'Materials',cust:'customer'};
+const INDUSTRIES={
+  beauty:{label:'Nails, lashes or brows',w:BEAUTY_W,hours:false,patch:true,example:'e.g. Russian volume lashes',newItem:'e.g. Primer'},
+  hair:{label:'Hair',w:BEAUTY_W,hours:false,patch:true,example:'e.g. Balayage',newItem:'e.g. Toner'},
+  build:{label:'Building and trades',w:TRADE_W,hours:true,patch:false,example:'e.g. Fit a kitchen worktop',newItem:'e.g. Wood glue'},
+  paint:{label:'Painting and decorating',w:TRADE_W,hours:true,patch:false,example:'e.g. Wallpaper a feature wall',newItem:'e.g. Wallpaper paste'},
+  other:{label:'Something else',w:{one:'service',many:'services',One:'Service',Many:'Services',item:'item',items:'items',Item:'Item',Items:'Items',cust:'customer'},hours:false,patch:false,example:'e.g. One-hour session',newItem:'e.g. Printer ink'}
+};
+function IND(){ return INDUSTRIES[(state.setup||{}).industry]||INDUSTRIES.beauty; }
+function W(){ return IND().w; }
+function CAT(){ return CATALOGUES[(state.setup||{}).industry||'beauty']||[]; }
+function fmtTime(m){ return IND().hours ? `${nf(m/60)} h` : `${m} min`; }
+function timeField(id,kind,t,f){ const h=IND().hours;
+  const label= kind==='on' ? (IND().onLabel || (h?'Hours on the job':`Minutes with the ${W().cust}`)) : (IND().prepLabel || (h?'Hours setting up, travelling and clearing away':'Minutes to set up and clean down'));
+  return numField(id,label,'',h?nf((+t[f]||0)/60):t[f],`data-tf="${t.id}" data-f="${f}" data-mul="${h?60:1}"`,`step="${h?0.5:5}"`); }
+const UNITS=['ml','litres','g','kg','oz','fl oz','metres','pieces','pairs','trays','packs'];
+const SINGULAR={litres:'litre',metres:'metre',pieces:'piece',pairs:'pair',trays:'tray',packs:'pack'};
+function parsePack(str){ // turns old text like "15 ml bottle" or "pack of 500" into a size and a unit
+  str=String(str||''); let m;
+  if((m=str.match(/(?:pack|box) of (\d+)\s*(pairs)?/i))) return {size:+m[1],unit:m[2]?'pairs':'pieces'};
+  if((m=str.match(/([\d.]+)\s*(fl oz|ml|litres?|kg|g|oz|l|m)\b/i))){ const u=m[2].toLowerCase(); return {size:+m[1],unit:u.startsWith('l')?'litres':u==='m'?'metres':u}; }
+  if((m=str.match(/([\d.]+)\s*(tray|pair|piece|pack)s?/i))) return {size:+m[1],unit:m[2].toLowerCase()+'s'};
+  return {size:1,unit:'packs'};
+}
+function packLabel(p){ const n=+p.size||0; const u=(n===1 && SINGULAR[p.unit])||p.unit||''; return `${nf(n)} ${u}`.trim(); }
+const OVERHEAD_GROUPS=[
+  {key:'monthly',title:'Monthly costs',add:'Add a monthly cost',per:'a month',
+   options:['Room, chair or desk rent','Booking app subscription','Phone and internet','Marketing and ads','Design and admin apps','Laundry','Card machine rental','Electricity and heating','Business rates','Loan interest']},
+  {key:'yearly',title:'Yearly costs',add:'Add a yearly cost',per:'a year',
+   options:['Insurance','Accountant','Training and courses','Council licence','Professional membership','Website and domain']},
+  {key:'equipment',title:'Equipment you have bought',add:'Add equipment',per:'',
+   options:['UV/LED lamp','E-file / drill','Nail desk','Treatment couch','Lash lamp','Steriliser','Card reader','Chair or stool']}
+];
+function defaultOverheads(){ return [
+  ['monthly','Room, chair or desk rent',400],['monthly','Booking app subscription',15],['monthly','Phone and internet',20],
+  ['monthly','Marketing and ads',30],['monthly','Design and admin apps',11],['monthly','Laundry',20],
+  ['yearly','Insurance',180],['yearly','Accountant',300],['yearly','Training and courses',300],
+  ['equipment','UV/LED lamp',120,2],['equipment','E-file / drill',250,3],['equipment','Card reader',99,3]
+].map(([group,name,amount,years])=>({id:uid(),group,name,amount,years:years||3})); }
+function overheadsFromOld(s){ return [
+  ['monthly','Room, chair or desk rent',s.rent],['monthly','Other monthly costs',s.otherMonthly],
+  ['yearly','Insurance',s.insuranceYear],['yearly','Other yearly costs',s.otherYearly],
+  ['equipment','Equipment',s.equipment,s.equipmentYears]
+].filter(x=>+x[2]>0).map(([group,name,amount,years])=>({id:uid(),group,name,amount:+amount,years:+years||3})); }
+function migrateProducts(){ state.products.forEach(p=>{ if(p.size==null) Object.assign(p, parsePack(p.pack)); }); }
+
+function blankSetup(){ return {done:false, region:'ruk', takeHome:2000, hours:35, weeksOff:6, busy:.8, app:'fresha', cardPct:.014, cardFixed:.25,
+  deposit:.5, noShow:.05, industry:'beauty', staff:[], employmentAllowance:false, brand:{palette:'berry'}, studentLoan:'none', postgrad:false, otherIncome:0, patchValidDays:180, lastBackup:'', overheads:defaultOverheads(), rent:400, insuranceYear:180, otherMonthly:96, otherYearly:600, equipment:529, equipmentYears:3, vat:false, margin:.10, nonClient:.15, roundTo:1, potSaved:0}; }
+function blankState(){ return {v:2, example:false, setup:blankSetup(), treatments:[], products:[], income:[], expenses:[], bookings:[], holidays:[], clients:[], trips:[], rules:{...RULES}}; }
+function exampleState(){
+  const s=blankState(); s.example=true; s.setup.done=true;
+  const EX=['gelmani','biabfull','biabinfill','removal','art','removaladd','french','pedi','lashfull','lashinfill','brow'];
+  s.treatments=clone(CATALOGUE.filter(t=>EX.includes(t.id))); const used=new Set(s.treatments.flatMap(t=>t.recipe.map(r=>r.productId))); s.products=clone(LIBRARY.filter(p=>used.has(p.id)));
+  const ty=taxYearOf(todayStr()); const d=(m,day)=>{ const y=m>=3?ty:ty+1; return `${y}-${String(m+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`; };
+  s.income=[{id:uid(),date:d(3,10),desc:'April takings (example)',amount:2950,method:'Card'},{id:uid(),date:d(4,12),desc:'May takings (example)',amount:3100,method:'Card'},
+            {id:uid(),date:d(5,9),desc:'June takings (example)',amount:2870,method:'Card'}];
+  s.expenses=[{id:uid(),date:d(3,1),supplier:'Room rent (example)',amount:400,category:CATEGORIES[1]},{id:uid(),date:d(3,14),supplier:'Gel order (example)',amount:96.40,category:CATEGORIES[0]},
+              {id:uid(),date:d(4,1),supplier:'Room rent (example)',amount:400,category:CATEGORIES[1]},{id:uid(),date:d(4,20),supplier:'Insurance (example)',amount:180,category:CATEGORIES[1]},
+              {id:uid(),date:d(5,1),supplier:'Room rent (example)',amount:400,category:CATEGORIES[1]},{id:uid(),date:d(5,18),supplier:'Lash supplies (example)',amount:64.20,category:CATEGORIES[0]}];
+  s.setup.potSaved=900;
+  const td=todayStr();
+  s.clients=[{id:'ex1',name:'Example client A',patchTests:[{id:'p1',date:addDays(td,-30),product:'Lash glue',result:'clear'}]},{id:'ex2',name:'Example client B',patchTests:[]}];
+  s.bookings=[{id:'b1',date:td,time:'10:00',staffId:'me',clientId:'ex1',serviceId:'gelmani',addons:[{id:'art',qty:2}],mins:55,price:44,deposit:10,notes:'',status:'booked'},
+              {id:'b2',date:addDays(td,1),time:'13:00',staffId:'me',clientId:'ex2',serviceId:'lashfull',addons:[],mins:120,price:75,deposit:20,notes:'',status:'booked'}];
+  return s;
+}
+function uid(){ return Math.random().toString(36).slice(2,10); }
+function todayStr(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+const gbp=v=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP'}).format(v||0);
+const gbp0=v=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:0}).format(v||0);
+const pct=v=>(Math.round((v||0)*1000)/10)+'%';
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nf=v=>(Math.round((+v||0)*100)/100).toString();
+
+// ---------- storage ----------
+const KEY='taxpot-v1';
+let lockKey=null, lockSalt=null, locked=false; // passcode lock, see the lock module
+let state=blankState();
+try{ const raw=localStorage.getItem(KEY); if(raw){ const s=JSON.parse(raw); if(s && s.setup && !Array.isArray(s.setup.overheads)) s.setup.overheads=overheadsFromOld({...blankSetup(),...s.setup});
+  if(s && s.v===2){ state={...blankState(),...s,setup:{...blankSetup(),...s.setup}};
+    state.treatments.forEach(t=>(t.recipe||[]).forEach(r=>{ if(r.perPack==null){ const pr=state.products.find(x=>x.id===r.productId); r.perPack=(pr&&+pr.clientsPerPack&&+r.uses)?Math.round(pr.clientsPerPack/r.uses):0; } })); }
+  else if(s && s.v===1) state={...blankState(), income:s.income||[], expenses:s.expenses||[], setup:{...blankSetup(),...s.setup,done:false}}; // old test data: keep money records, ask the questions again
+} }catch(e){}
+migrateProducts();
+let storageOk=true;
+function save(){ if(locked) return; if(lockKey){ saveLocked(); return; } try{ localStorage.setItem(KEY, JSON.stringify(state)); storageOk=true; }catch(e){ storageOk=false; } }
+let dbp=null;
+function db(){ if(!dbp) dbp=new Promise((res,rej)=>{ try{ const r=indexedDB.open('taxpot',1); r.onupgradeneeded=()=>r.result.createObjectStore('receipts'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);}catch(e){rej(e);} }); return dbp; }
+async function putReceipt(id,blob){ const d=await db(); return new Promise((res,rej)=>{ const tx=d.transaction('receipts','readwrite'); tx.objectStore('receipts').put(blob,id); tx.oncomplete=res; tx.onerror=()=>rej(tx.error); }); }
+async function getReceipt(id){ const d=await db(); return new Promise((res,rej)=>{ const r=d.transaction('receipts').objectStore('receipts').get(id); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+async function delReceipt(id){ try{ const d=await db(); d.transaction('receipts','readwrite').objectStore('receipts').delete(id); }catch(e){} }
+async function shrink(file){
+  try{ const bmp=await createImageBitmap(file); const k=Math.min(1,1400/Math.max(bmp.width,bmp.height));
+    const c=document.createElement('canvas'); c.width=Math.round(bmp.width*k); c.height=Math.round(bmp.height*k);
+    c.getContext('2d').drawImage(bmp,0,0,c.width,c.height); return await new Promise(r=>c.toBlob(b=>r(b||file),'image/jpeg',.72)); }
+  catch(e){ return file; }
+}
+const thumbCache={};
+async function hydrateThumbs(){
+  for(const img of document.querySelectorAll('img[data-receipt]')){
+    const id=img.dataset.receipt;
+    try{ if(!thumbCache[id]){ const b=await getReceipt(id); if(b) thumbCache[id]=URL.createObjectURL(b); } if(thumbCache[id]) img.src=thumbCache[id]; }catch(e){}
+  }
+}
+
+// ---------- UI helpers ----------
+let view = state.setup.done ? 'prices' : 'wizard';
+let step = 0;
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.hidden=false; clearTimeout(toast.h); toast.h=setTimeout(()=>t.hidden=true,2200); }
+async function copyText(text){
+  try{ await navigator.clipboard.writeText(text); toast('Copied'); }
+  catch(e){ const o=document.getElementById('overlay'); o.innerHTML=`<div class="card" style="max-width:640px;width:100%"><h3>Copy this</h3><textarea id="copybox" rows="10">${esc(text)}</textarea><button class="btn" data-act="close-overlay">Done</button></div>`; o.hidden=false; const tb=document.getElementById('copybox'); tb.focus(); tb.select(); }
+}
+const TABS=()=>[['prices','Prices'],['diary','Diary'],['clients',W().cust==='client'?'Clients':'Customers'],['treatments',W().Many],['stock','Stock'],['money','Money in and out'],['taxyear','Tax year'],['report','Report'],['more','More']];
+function renderTabs(){
+  const n=document.getElementById('tabs');
+  n.innerHTML = (view==='wizard'||view==='lock') ? '' : TABS().map(([k,l])=>`<button data-tab="${k}" ${view===k?'aria-current="page"':''}>${l}</button>`).join('');
+  document.getElementById('exflag').hidden=!state.example;
+}
+function render(){
+  renderTabs();
+  const m=document.getElementById('main');
+  const views={lock:vLock,wizard:vWizard,prices:vPrices,diary:vDiary,clients:vClients,treatments:vTreatments,stock:vStock,money:vMoney,taxyear:vTaxYear,report:vReport,more:vMore};
+  m.innerHTML=(views[view]||vPrices)();
+  if(!storageOk) m.insertAdjacentHTML('afterbegin','<div class="notice bad">This browser is not letting the page save. Your entries will be lost when you close it. Try a normal (not private) window.</div>');
+  hydrateThumbs();
+  afterRender();
+}
+
+// ---------- QUESTIONS ----------
+// Order: what you do, which services, then each one with what it uses, then your business and pay, then your tax pot. Nothing is priced until the end.
+const PARTS=['','What you do','Each one and what it uses','Your business and pay','Your tax pot'];
+const partName=n=>n===2?`Each ${W().one} and its ${W().items}`:PARTS[n];
+const BASIC=[
+  {q:'Where do you live?', why:'Scotland has different income tax bands.', type:'choice', key:'region',
+   opts:[['ruk','England'],['ruk','Wales'],['ruk','Northern Ireland'],['sco','Scotland']]},
+  {q:'How much do you want in your pocket each month, after tax?', why:'Include anything you want to save or put in a pension.', type:'money', key:'takeHome', chips:[1500,2000,2500,3000]},
+  {q:'How many hours a week do you work?', why:'Everything: clients, breaks, admin, cleaning down.', type:'number', key:'hours', chips:[20,30,35,40,45], unit:'hours'},
+  {q:'How many weeks off do you take a year?', why:'Holidays, bank holidays, sick days and training days.', type:'number', key:'weeksOff', chips:[4,6,8,10], unit:'weeks'},
+  {q:'How busy is your diary usually?', why:'Most people are not fully booked, and prices need to allow for that.', type:'choice', key:'busy',
+   opts:[[.95,'Fully booked','Hardly any gaps'],[.8,'Mostly full','A few gaps most weeks'],[.55,'About half full','Plenty of gaps'],[.35,'Quiet','Still building up clients']]},
+  {q:'How do clients mostly pay you?', why:'Card fees come off every payment, so they go into your prices.', type:'app'},
+  {q:'Do you take deposits?', why:'A deposit covers some of the cost when someone does not turn up.', type:'choice', key:'deposit',
+   opts:[[0,'No deposits'],[.5,'Yes, part of the price'],[1,'Yes, the full price up front']]},
+  {q:'How often do clients not turn up or cancel last minute?', why:'This is built into prices so the people who do turn up cover it.', type:'choice', key:'noShow',
+   opts:[[.02,'Rarely','About 1 in 50 bookings'],[.05,'Sometimes','About 1 in 20 bookings'],[.10,'Often','About 1 in 10 bookings']]},
+  {q:'What does it cost to run your business?', why:'Not stock or materials, you have done those. Pick each cost from the list, or choose Something else and type it. Tap + to add more.', type:'costs'},
+  {q:'Does anyone work for you?', why:'Employees, apprentices, or self-employed people working in your business. Leave it empty if it is just you.', type:'team'},
+  {q:'Do you also have a job or a student loan?', why:'Both change how much tax to put aside. Skip it if neither applies.', type:'taxextra'},
+  {q:'Are you VAT registered?', why:'Most solo techs are not. You only have to register if your takings go over £90,000 a year.', type:'choice', key:'vat',
+   opts:[[false,'No'],[true,'Yes'],[false,'Not sure','Then the answer is almost certainly no']]},
+  {q:'How much extra profit do you want on top?', why:'Your pay is already covered. This is a cushion for slow weeks, new kit and growing the business.', type:'choice', key:'margin',
+   opts:[[.05,'A little','5%'],[.10,'Normal','10%'],[.20,'Healthy','20%']]}
+];
+function wizSteps(){
+  const st=[{type:'industry',part:1},{type:'pickTreat',part:1}];
+  state.treatments.forEach(t=>st.push({type:'treatment',id:t.id,part:2}));
+  BASIC.forEach(b=>st.push({...b,part:3}));
+  st.push({type:'pot',part:4});
+  return st;
+}
+function suggestedProductIds(){ const ids=new Set(); state.treatments.forEach(t=>{ const c=ALLCAT.find(x=>x.id===t.id); (c?c.recipe:[]).forEach(r=>ids.add(r.productId)); }); return ids; }
+function moneyField(id,label,hint,value,attrs){ return `<label class="field">${label}${hint?`<span class="hint">${hint}</span>`:''}<span class="money-in"><input id="${id}" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(value)}" ${attrs}></span></label>`; }
+function numField(id,label,hint,value,attrs,extra=''){ return `<label class="field">${label}${hint?`<span class="hint">${hint}</span>`:''}<input id="${id}" type="number" inputmode="decimal" min="0" value="${esc(value)}" ${attrs} ${extra}></label>`; }
+
+function staffEditor(){
+  const s=state.setup, R=RULES, tm=teamCosts(s,R);
+  const PAY={hourly:'Paid by the hour',salary:'Yearly salary',self:'Self-employed, keeps a % of what they take'};
+  const rows=tm.people.map(m=>`<article class="card">
+    <div class="treat-head"><input id="st-name-${m.id}" placeholder="Name or job title, e.g. Junior stylist" value="${esc(m.name)}" data-st="${m.id}" data-f="name" style="font-weight:700">
+      <button class="iconbtn" aria-label="Remove" data-act="st-del" data-id="${m.id}">✕</button></div>
+    <label class="field">How are they paid?<select id="st-pay-${m.id}" data-st="${m.id}" data-f="pay">${Object.entries(PAY).map(([k,v])=>`<option value="${k}" ${m.pay===k?'selected':''}>${v}</option>`).join('')}</select></label>
+    <div class="fields">
+      ${m.pay==='self' ? `<label class="field">Their share of what they take (%)<input id="st-rate-${m.id}" type="number" min="0" max="100" step="1" value="${esc(m.rate)}" data-st="${m.id}" data-f="rate"></label>`
+        : `<label class="field">${m.pay==='salary'?'Salary a year':'Pay per hour'}<span class="money-in"><input id="st-rate-${m.id}" type="number" min="0" step="0.01" value="${esc(m.rate)}" data-st="${m.id}" data-f="rate"></span></label>`}
+      <label class="field">Hours a week<input id="st-hrs-${m.id}" type="number" min="0" step="0.5" value="${esc(m.hours)}" data-st="${m.id}" data-f="hours"></label>
+      <label class="field">Weeks off a year<input id="st-off-${m.id}" type="number" min="0" step="1" value="${esc(m.weeksOff)}" data-st="${m.id}" data-f="weeksOff"></label>
+    </div>
+    <p class="small muted">${m.pay==='self' ? `No wages, NI or pension from you. Their ${nf(m.rate)}% comes off what they take, and your prices allow for it.`
+      : `Costs you about <b class="num">${gbp0(m.yearCost)}</b> a year: pay ${gbp0(m.gross)}, employer NI ${gbp0(m.ni)}, pension ${gbp0(m.pension)}. Adds about ${nf(m.billable)} working hours a month.`}</p>
+  </article>`).join('');
+  const anyEmp=tm.people.some(m=>m.pay!=='self');
+  return `<div class="stack">${rows || `<p class="muted">Nobody yet. If it is just you, leave this empty and press Next.</p>`}
+    <button class="btn ghost" data-act="st-add">+ Add a person</button>
+    ${anyEmp?`<label class="row small"><input type="checkbox" data-act="st-ea" ${s.employmentAllowance?'checked':''}> I claim Employment Allowance (cuts the employer NI bill. Most small businesses with staff can, but not a limited company whose only employee is the director)</label>`:''}
+    ${tm.people.length?`<p class="live">Your team costs about <span class="num">${gbp(tm.month)}</span> a month.</p>`:''}
+    <p class="small muted">Uses 2026/27 employer NI (15% above £5,000) and the £10,500 Employment Allowance. Pension is the 3% minimum.</p></div>`;
+}
+function overheadEditor(){
+  const s=state.setup, list=s.overheads||[];
+  const groups=OVERHEAD_GROUPS.map(g=>{
+    const items=list.filter(o=>o.group===g.key);
+    const sub=items.reduce((a,o)=>a+(+o.amount||0),0);
+    return `<article class="card"><div class="treat-head"><h3>${g.title}</h3>${items.length?`<span class="num muted">${gbp(sub)}${g.per?' '+g.per:''}</span>`:''}</div>
+      ${items.map(o=>{ const other=o.custom || (o.name && !g.options.includes(o.name));
+        return `<div class="stack" style="gap:8px;padding-bottom:12px;border-bottom:1px solid var(--line)">
+          <div class="row" style="flex-wrap:nowrap;gap:8px">
+            <select id="oh-sel-${o.id}" aria-label="What is it?" data-oh="${o.id}" data-f="sel" style="flex:1">
+              ${g.options.map(x=>`<option ${!other&&x===o.name?'selected':''}>${esc(x)}</option>`).join('')}
+              <option value="__other" ${other?'selected':''}>Something else (type it)</option></select>
+            <button class="iconbtn" aria-label="Remove" data-act="oh-del" data-id="${o.id}">✕</button></div>
+          ${other?`<input id="oh-name-${o.id}" placeholder="What is it?" value="${esc(o.name)}" data-oh="${o.id}" data-f="name">`:''}
+          <div class="fields">
+            <label class="field">${g.key==='equipment'?'What it cost':'How much'}${g.per?` (${g.per})`:''}<span class="money-in"><input id="oh-amt-${o.id}" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(o.amount)}" data-oh="${o.id}" data-f="amount"></span></label>
+            ${g.key==='equipment'?`<label class="field">How many years it lasts<input id="oh-yrs-${o.id}" type="number" inputmode="decimal" min="1" step="1" value="${esc(o.years)}" data-oh="${o.id}" data-f="years"></label>`:''}
+          </div></div>`; }).join('')}
+      <button class="btn ghost" data-act="oh-add" data-g="${g.key}">+ ${g.add}</button></article>`; }).join('');
+  return `<div class="stack">${groups}<p class="live">Your running costs come to <span class="num">${gbp(overheadsMonth(s))}</span> a month.</p></div>`;
+}
+function vWizard(){
+  const steps=wizSteps(); if(step>=steps.length) step=steps.length-1;
+  const st=steps[step], s=state.setup, total=steps.length;
+  let q='', why='', body='';
+  if(st.type==='industry'){
+    q='What do you do?'; why='So the questions and starter lists fit your work. You can add your own as you go.';
+    body=IND_GROUPS.map(([title,keys])=>`<p class="part" style="margin-top:6px">${title}</p><div class="choices" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">${keys.map(k=>`<button class="choice" data-act="wiz-ind" data-k="${k}" aria-pressed="${(s.industry||'beauty')===k}">${esc(INDUSTRIES[k].label)}</button>`).join('')}</div>`).join('');
+  } else if(st.type==='pickTreat'){
+    q=`Which ${W().many} do you do?`; why=`Tick all that apply, or add your own. Next you go through each ${W().one} and the ${W().items} it uses, then your business costs. Prices are worked out at the end.`;
+    const custom=state.treatments.filter(t=>!CAT().some(c=>c.id===t.id));
+    body=`<div class="stack">${CAT().map(c=>`<label class="pick"><input type="checkbox" data-act="pick-treat" data-id="${c.id}" ${state.treatments.some(t=>t.id===c.id)?'checked':''}><span>${esc(c.name)}${c.addon?'<small>Add-on</small>':''}</span></label>`).join('')}
+      ${custom.map(t=>`<label class="pick"><input type="checkbox" data-act="pick-treat" data-id="${t.id}" checked><span>${esc(t.name)}<small>Your own</small></span></label>`).join('')}
+      <div class="row"><input id="new-treat" placeholder="Add your own ${esc(IND().example)}" style="flex:1"><button class="btn ghost" data-act="add-custom-treat">Add</button></div></div>`;
+  } else if(st.type==='treatment'){
+    const t=state.treatments.find(x=>x.id===st.id); const c=compute(state); const tc=c.treatments.find(x=>x.id===st.id);
+    const pmap=Object.fromEntries(c.products.map(p=>[p.id,p]));
+    const n=state.treatments.indexOf(t)+1;
+    // a product shared by several treatments is asked about in full on the first one, then shown as already set
+    const firstOwner=pid=>state.treatments.find(x=>x.recipe.some(r=>r.productId===pid));
+    const notUsed=state.products.filter(p=>!t.recipe.some(r=>r.productId===p.id));
+    q=t.name; why=`${W().One} ${n} of ${state.treatments.length}. First the ${W().one}, then each of the ${W().items} you use for it.${IND().big?' Leave out big things you buy for one job, like timber, tiles or a boiler, and quote those on top.':''}`;
+    body=`<div class="stack">${supData()}
+      <div class="grid2">${timeField('wc-'+t.id,'on',t,'clientMin')}
+      ${timeField('wp-'+t.id,'prep',t,'prepMin')}
+      ${numField('ww-'+t.id,'How many do you do a week?','A rough guess is fine',t.perWeek,`data-tf="${t.id}" data-f="perWeek"`,'step="0.5"')}
+      ${moneyField('wr-'+t.id,'What do you charge now?','Leave blank if new',t.price||'',`data-tf="${t.id}" data-f="price"`)}</div>
+      ${IND().patch?`<label class="row" style="font-weight:600"><input type="checkbox" data-tf="${t.id}" data-f="patch" ${t.patch?'checked':''}> Needs a patch test first</label>`:''}
+      <label class="row small"><input type="checkbox" data-tf="${t.id}" data-f="addon" ${t.addon?'checked':''}> This is an add-on to another ${W().one}, like nail art or a removal</label>${t.addon?`<label class="field">Priced per<input id="ul-${t.id}" value="${esc(t.unitLabel||'')}" placeholder="e.g. nail. Leave blank if it is a flat price" data-tf="${t.id}" data-f="unitLabel"></label>`:''}
+      <h3 style="margin-top:8px">${W().Items} you use for a ${esc(t.name)}</h3>
+      <p class="small muted">We have filled in the usual ones. Change anything that is not right for you.</p>
+      ${t.recipe.map(r=>{ const p=state.products.find(x=>x.id===r.productId); if(!p) return ''; const cp=pmap[p.id];
+        const owner=firstOwner(p.id); const askedBefore=owner && owner.id!==t.id;
+        const fields=`<div class="fields"><label class="field">What size do you buy?<span class="row" style="flex-wrap:nowrap;gap:8px"><input id="pp-${t.id}-${p.id}" type="number" inputmode="decimal" min="0" step="any" aria-label="Size" value="${esc(p.size)}" data-pf="${p.id}" data-f="size" style="flex:1"><select id="pu2-${t.id}-${p.id}" aria-label="Unit" data-pf="${p.id}" data-f="unit" style="flex:1">${UNITS.map(u=>`<option ${u===p.unit?'selected':''}>${u}</option>`).join('')}</select></span></label>
+          ${moneyField('pc-'+t.id+'-'+p.id,'What does one cost you?','',p.packCost,`data-pf="${p.id}" data-f="packCost"`)}
+          <label class="field">Where do you buy it?<input id="sp-${t.id}-${p.id}" list="sup-list" placeholder="Pick one or type your own" value="${esc(p.supplier||'')}" data-pf="${p.id}" data-f="supplier"></label>
+          ${numField('ps-'+t.id+'-'+p.id,'Goes off after (weeks)','Blank if it keeps',p.shelfWeeks||'',`data-pf="${p.id}" data-f="shelfWeeks" placeholder="Keeps"`,'step="1"')}
+          ${numField('pi-'+t.id+'-'+p.id,'How many have you got?','',p.inStock,`data-pf="${p.id}" data-f="inStock"`,'step="1"')}
+          ${numField('pr-'+t.id+'-'+p.id,'Reorder when down to','',p.reorderAt,`data-pf="${p.id}" data-f="reorderAt"`,'step="1"')}</div>`;
+        return `<article class="card">
+          <div class="treat-head"><div><h3>${esc(p.name)}</h3><p class="small muted">${esc(packLabel(p))} · ${gbp(+p.packCost)}</p></div>
+            <button class="iconbtn" aria-label="Not used for this ${W().one}" title="Not used for this ${W().one}" data-act="wiz-rm-prod" data-t="${t.id}" data-p="${p.id}">✕</button></div>
+          ${askedBefore ? `<details><summary>Already set up under ${esc(owner.name)}. Change it</summary><div class="stack" style="margin-top:10px">${fields}</div></details>` : fields}
+          <div class="fields">${numField('pu-'+t.id+'-'+p.id,`How many uses can you get from ${esc(packLabel(p))} of ${esc(p.name)}?`,'',r.perPack||'',`data-ru="${t.id}" data-p="${p.id}"`,'step="1"')}</div>
+          ${+r.perPack>0?`<p class="live">That is <span class="num">${gbp(lineCost(r,pmap))}</span> of ${esc(p.name)} per ${esc(t.name)}${cp.factor>1.01?' (it goes off before you use it all, so this includes the waste)':''}.</p>`:''}
+        </article>`; }).join('') || `<p class="muted">No ${W().items} yet. Add the ones you use below, or leave it empty if you do not use any.</p>`}
+      <article class="card"><h3>Add ${an(W().item)} ${W().item}</h3>
+        ${notUsed.length?`<div class="row"><select id="add-existing-${t.id}" aria-label="Product you already have" style="flex:1">${notUsed.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select><button class="btn ghost" data-act="wiz-add-prod" data-t="${t.id}">Add</button></div>`:''}
+        <div class="row"><input id="add-new-${t.id}" placeholder="Something new, ${esc(IND().newItem)}" style="flex:1"><button class="btn ghost" data-act="wiz-new-prod" data-t="${t.id}">Add new</button></div>
+      </article>
+      <p class="live">${W().Items} for one ${esc(t.name)}: <span class="num">${gbp(tc.productCost)}</span></p></div>`;
+  } else if(st.type==='pot'){
+    q='Have you put any money aside for tax since 6 April?'; why='We will keep track of it on the Tax year tab and tell you how much more to save.';
+    body=moneyField('wiz-pot','Amount put aside so far','Put 0 if nothing yet',s.potSaved,'data-set="potSaved"')+
+      `<div class="chips"><button class="chip" data-act="wiz-chip" data-key="potSaved" data-v="0">Nothing yet</button></div>`;
+  } else {
+    q=st.q; why=st.why;
+    if(st.type==='choice'){
+      body=`<div class="choices">${st.opts.map(([v,l,sub],i)=>`<button class="choice" data-act="wiz-choice" data-i="${i}" aria-pressed="${s['_pick_'+st.key]!=null ? s['_pick_'+st.key]===l : String(s[st.key])===String(v)}">${esc(l)}${sub?`<small>${esc(sub)}</small>`:''}</button>`).join('')}</div>`;
+    } else if(st.type==='money' || st.type==='number'){
+      body=`<label class="field">${st.type==='money'?'Amount':'Number of '+st.unit}<span class="${st.type==='money'?'money-in':''}"><input id="wiz-${st.key}" type="number" inputmode="decimal" min="0" step="1" value="${esc(s[st.key])}" data-set="${st.key}"></span></label>
+        <div class="chips">${st.chips.map(c=>`<button class="chip" data-act="wiz-chip" data-key="${st.key}" data-v="${c}" aria-pressed="${+s[st.key]===c}">${st.type==='money'?gbp0(c):c+' '+st.unit}</button>`).join('')}</div>`;
+    } else if(st.type==='app'){
+      body=`<div class="choices">${Object.entries(APPS).map(([k,a])=>`<button class="choice" data-act="wiz-app" data-k="${k}" aria-pressed="${s.app===k}">${a.label}<small>${a.note}</small></button>`).join('')}</div>`;
+    } else if(st.type==='costs'){
+      body=overheadEditor();
+    } else if(st.type==='team'){
+      body=staffEditor();
+    } else if(st.type==='taxextra'){
+      body=taxExtraEditor();
+    }
+  }
+  const last=step===total-1;
+  return `<section class="stack">
+    <div class="progress" aria-hidden="true"><i style="width:${(step+1)/total*100}%"></i></div>
+    <p class="part">Part ${st.part} of 4 · ${partName(st.part)}</p>
+    <h2 class="q">${esc(q)}</h2>
+    <p class="muted">${esc(why)}</p>
+    ${body}
+    <div class="row" style="justify-content:space-between;margin-top:8px">
+      <button class="btn ghost" data-act="wiz-back" ${step===0?'disabled':''}>Back</button>
+      <span class="small muted">${step+1} of ${total}</span>
+      <button class="btn" data-act="wiz-next">${last?'Work out my prices':'Next'}</button>
+    </div>
+    ${step===0 && !state.setup.done ? `<div class="notice info">Just looking? <button class="btn small ghost" data-act="load-example">Try it with example figures</button></div>`:''}
+  </section>`;
+}
+function wizNext(){
+  const steps=wizSteps(), st=steps[step];
+  if(st.type==='pickTreat' && !state.treatments.length){ toast(`Tick at least one ${W().one}`); return; }
+  if(st.type==='treatment'){ const t=state.treatments.find(x=>x.id===st.id);
+    const missing=t.recipe.filter(r=>!(+r.perPack>0)).map(r=>state.products.find(p=>p.id===r.productId)).filter(Boolean);
+    if(missing.length){ toast(`Say how many uses you get from ${missing[0].name}`); return; } }
+  if(step<steps.length-1){ step++; render(); window.scrollTo(0,0); return; }
+  state.setup.done=true; state.example=false; save(); view='prices'; render(); window.scrollTo(0,0);
+}
+
+// ---------- PRICES ----------
+const FLAG={below:['bad','Below break-even'],under:['warn','Under-priced'],ok:['ok','Good'],none:['info','No price yet']};
+function vPrices(){
+  const c=compute(state), s=state.setup;
+  if(!state.treatments.length) return `<div class="card"><h2>No ${W().many} yet</h2><p>Add your ${W().many} to see prices.</p><button class="btn" data-tab="treatments">Add ${W().many}</button></div>`;
+  const a=c.atSuggested, cur=c.atCurrent;
+  const fill=c.billable>0?c.hoursBooked/c.billable:0;
+  const diary= fill>1.05 ? `<div class="notice warn">The bookings you entered need <b class="num">${c.hoursBooked.toFixed(0)}</b> hours a month, but you only have about <b class="num">${c.billable.toFixed(0)}</b> realistic working hours. Lower the numbers a week, or work more hours.</div>`
+    : fill<0.9 ? `<div class="notice info">The bookings you entered fill about ${pct(fill)} of your realistic hours. Prices assume you fill them, so the money check below may look short.</div>` : '';
+  const curPct=c.needMonth>0?Math.max(0,Math.min(1,cur.profit/c.needMonth)):0;
+  const counts={below:0,under:0}; c.treatments.forEach(t=>{ if(counts[t.flag]!=null) counts[t.flag]++; });
+  return `
+  <section class="card">
+    <div><h2>Your prices</h2><p class="muted">To take home ${gbp0(s.takeHome)} a month after tax.</p></div>
+    <div class="grid2">
+      <div class="stat hero"><span class="label">Every working hour must earn</span><span class="value">${gbp(c.hourly)}</span></div>
+      <div class="stat"><span class="label">Put aside for tax</span><span class="value">${pct(c.taxShare)}</span><span class="small muted">of your profit</span></div>
+      <div class="stat"><span class="label">Working hours a month</span><span class="value">${c.billable.toFixed(0)}</span><span class="small muted">${c.team.people.length?'you and your team, after gaps':'realistic, after gaps'}</span></div>
+      ${c.team.people.length?`<div class="stat"><span class="label">Team costs</span><span class="value">${gbp0(c.team.month)}</span><span class="small muted">a month, in your prices</span></div>`:''}
+    </div>
+    ${diary}
+  </section>
+  <section class="card">
+    <h3>At your current prices</h3>
+    <div class="bar ${cur.profit<c.needMonth?'short':''}" role="img" aria-label="${pct(curPct)} of what you need"><i style="width:${curPct*100}%"></i></div>
+    <p>${cur.profit>=c.needMonth ? `You make about <b class="num">${gbp0(cur.profit)}</b> a month before tax. That covers what you need (<span class="num">${gbp0(c.needMonth)}</span>).`
+       : `You make about <b class="num">${gbp0(cur.profit)}</b> a month before tax, but need <b class="num">${gbp0(c.needMonth)}</b>. That is <b class="num">${gbp0(c.needMonth-cur.profit)}</b> short.`}</p>
+    <p class="muted small">At the suggested prices: about ${gbp0(a.profit)} a month. ${counts.below?`${counts.below} ${counts.below>1?W().many+' are':W().one+' is'} below break-even. `:''}${counts.under?`${counts.under} under-priced.`:''}</p>
+  </section>
+  <section class="stack">
+    ${c.treatments.map(t=>{ const [cls,lab]=FLAG[t.flag]; return `<article class="treat">
+      <div class="treat-head"><div><h3>${esc(t.name)}</h3><p class="muted small">${fmtTime(t.mins)} with set-up · ${W().items} ${gbp(t.productCost)} · your time ${gbp(t.timeCost)}${t.patch?' · patch test needed':''}</p></div><span class="pill ${cls}">${lab}</span></div>
+      <div class="prices"><div><div class="k">Your price</div><div class="v">${t.price?gbp(+t.price):'–'}</div></div>
+        <div><div class="k">Minimum</div><div class="v">${gbp(t.minimum)}</div></div>
+        <div class="sugg"><div class="k">Suggested</div><div class="v">${gbp(t.suggested)}</div></div></div>
+      <p class="small muted">At the suggested price you earn about <span class="num">${gbp(t.perHour)}</span> an hour from this, before tax.</p>
+    </article>`; }).join('')}
+  </section>
+  ${priceExtras(c)}
+  <p class="small muted">Minimum covers time, ${W().items}, ${c.team.people.length?'your team, ':''}card fees, no-shows${s.vat?' and VAT':''} with no extra profit. Suggested adds your profit cushion and rounds up. Estimates only, not tax advice.</p>`;
+}
+
+// ---------- TREATMENTS ----------
+function vTreatments(){
+  const c=compute(state); const pmap=Object.fromEntries(c.products.map(p=>[p.id,p]));
+  const opts=sel=>state.products.map(p=>`<option value="${p.id}" ${p.id===sel?'selected':''}>${esc(p.name)}</option>`).join('');
+  return `<section class="stack"><div><h2>${W().Many}</h2><p class="muted">Times, prices and the ${W().items} each one uses. Add your own at the bottom.</p></div>
+  ${c.treatments.map(t=>`<article class="card">
+    <div class="treat-head"><input id="tn-${t.id}" aria-label="${W().One} name" value="${esc(t.name)}" data-tf="${t.id}" data-f="name" style="font-weight:700"><button class="iconbtn" aria-label="Remove ${esc(t.name)}" data-act="del-treat" data-id="${t.id}">✕</button></div>
+    <div class="grid2">
+      ${timeField('tc-'+t.id,'on',t,'clientMin')}
+      ${timeField('tp-'+t.id,'prep',t,'prepMin')}
+      ${numField('tw-'+t.id,'How many a week','',t.perWeek,`data-tf="${t.id}" data-f="perWeek"`,'step="0.5"')}
+      ${moneyField('tr-'+t.id,'Your price','',t.price||'',`data-tf="${t.id}" data-f="price"`)}
+    </div>
+    ${IND().patch?`<label class="row small"><input type="checkbox" data-tf="${t.id}" data-f="patch" ${t.patch?'checked':''}> Needs a patch test first</label>`:''}
+      <label class="row small"><input type="checkbox" data-tf="${t.id}" data-f="addon" ${t.addon?'checked':''}> This is an add-on to another ${W().one}, like nail art or a removal</label>${t.addon?`<label class="field">Priced per<input id="ul-${t.id}" value="${esc(t.unitLabel||'')}" placeholder="e.g. nail. Leave blank if it is a flat price" data-tf="${t.id}" data-f="unitLabel"></label>`:''}
+    <details ${t.recipe.length?'':'open'}><summary>${W().Items} used · ${gbp(t.productCost)} a time</summary>
+      <div class="tablebox" style="margin-top:10px"><table><thead><tr><th>${W().Item}</th><th class="r">Uses from one</th><th class="r">Cost each time</th><th></th></tr></thead><tbody>
+      ${t.recipe.map((r,i)=>{ const p=pmap[r.productId]; return `<tr><td><select aria-label="Product" data-rf="${t.id}" data-i="${i}" data-f="productId">${opts(r.productId)}</select></td>
+        <td class="r"><input type="number" min="0" step="1" aria-label="Uses from one" value="${esc(r.perPack||'')}" data-rf="${t.id}" data-i="${i}" data-f="perPack" style="width:90px"></td>
+        <td class="r num">${gbp(lineCost(r,pmap))}</td>
+        <td><button class="iconbtn" aria-label="Remove product" data-act="del-recipe" data-id="${t.id}" data-i="${i}">✕</button></td></tr>`; }).join('')}
+      </tbody></table></div>
+      <p class="small muted" style="margin-top:6px">How many uses you get from one of each, for this ${W().one}.</p>
+      <button class="btn small ghost" style="margin-top:10px" data-act="add-recipe" data-id="${t.id}" ${state.products.length?'':'disabled'}>Add ${W().item=='item'?'an':'a'} ${W().item}</button>
+    </details>
+  </article>`).join('')}
+  <button class="btn" data-act="add-treat">+ Add your own ${W().one}</button></section>`;
+}
+
+// ---------- STOCK ----------
+function vStock(){
+  const c=compute(state);
+  const reorder=c.products.filter(p=>p.reorder), expiring=c.products.filter(p=>p.lost>0.05);
+  return `<section class="stack">${supData()}<div><h2>Stock</h2><p class="muted">What you have, how fast it goes, and when to reorder. How many uses each one gives is set on the ${W().Many} tab.</p></div>
+  ${reorder.length?`<div class="notice warn"><b>Reorder:</b> ${reorder.map(p=>esc(p.name)).join(', ')}</div>`:'<div class="notice ok">Nothing needs reordering.</div>'}
+  ${expiring.map(p=>`<div class="notice info"><b>${esc(p.name)}</b> goes off before you use it up. About <b>${pct(p.lost)}</b> of each ${esc(packLabel(p))} gets thrown away, so it costs ${pct(p.factor-1)} more per ${W().one} than it looks. That is already in your prices.</div>`).join('')}
+  <div class="tablebox"><table>
+    <thead><tr><th>${W().Item}</th><th>Supplier</th><th>Size</th><th class="r">Cost £</th><th class="r">Lasts once open (weeks)</th><th class="r">In stock</th><th class="r">Reorder at</th><th class="r">Used a week</th><th class="r">Weeks left</th><th></th></tr></thead>
+    <tbody>${c.products.map(p=>`<tr>
+      <td><input aria-label="Product name" value="${esc(p.name)}" data-pf="${p.id}" data-f="name" style="min-width:160px"></td>
+      <td><input aria-label="Supplier" list="sup-list" placeholder="Pick or type" value="${esc(p.supplier||'')}" data-pf="${p.id}" data-f="supplier" style="min-width:140px"></td>
+      <td><span class="row" style="flex-wrap:nowrap;gap:6px"><input type="number" min="0" step="any" aria-label="Size" value="${esc(p.size)}" data-pf="${p.id}" data-f="size" style="width:80px"><select aria-label="Unit" data-pf="${p.id}" data-f="unit" style="width:auto">${UNITS.map(u=>`<option ${u===p.unit?'selected':''}>${u}</option>`).join('')}</select></span></td>
+      <td class="r"><input type="number" min="0" step="0.01" aria-label="Cost of one" value="${esc(p.packCost)}" data-pf="${p.id}" data-f="packCost" style="width:80px"></td>
+      <td class="r"><input type="number" min="0" aria-label="Weeks it lasts once open" value="${esc(p.shelfWeeks||'')}" placeholder="keeps" data-pf="${p.id}" data-f="shelfWeeks" style="width:80px"></td>
+      <td class="r"><input type="number" min="0" aria-label="In stock" value="${esc(p.inStock)}" data-pf="${p.id}" data-f="inStock" style="width:70px"></td>
+      <td class="r"><input type="number" min="0" aria-label="Reorder at" value="${esc(p.reorderAt)}" data-pf="${p.id}" data-f="reorderAt" style="width:70px"></td>
+      <td class="r num">${p.packsPerWeek?p.packsPerWeek.toFixed(2):'–'}</td>
+      <td class="r num">${p.weeksLeft==null?'–':p.weeksLeft.toFixed(1)} ${p.reorder?'<span class="pill warn">Reorder</span>':''}</td>
+      <td><button class="iconbtn" aria-label="Remove ${esc(p.name)}" data-act="del-product" data-id="${p.id}">✕</button></td></tr>`).join('')}</tbody></table></div>
+  <button class="btn" data-act="add-product">Add ${W().item=='item'?'an':'a'} ${W().item}</button>
+  <p class="small muted">Weeks left uses how many ${W().many} a week you entered. A dash means nothing uses it yet.</p></section>`;
+}
+
+// ---------- MONEY ----------
+let moneyYear=null;
+function fmtDate(d){ try{ return new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}); }catch(e){ return d; } }
+function vMoney(){
+  const ty=moneyYear ?? taxYearOf(todayStr());
+  const inc=state.income.filter(x=>taxYearOf(x.date)===ty).sort((a,b)=>b.date.localeCompare(a.date));
+  const exp=state.expenses.filter(x=>taxYearOf(x.date)===ty).sort((a,b)=>b.date.localeCompare(a.date));
+  const sumI=inc.reduce((a,x)=>a+(+x.amount||0),0), sumE=exp.reduce((a,x)=>a+(+x.amount||0),0);
+  return `<section class="stack"><div><h2>Money in and out</h2><p class="muted">Tax year ${ty}/${String((ty+1)%100).padStart(2,'0')} (6 April to 5 April). Snap receipts as you go.</p></div>
+  <div class="grid2"><div class="stat"><span class="label">Money in</span><span class="value">${gbp(sumI)}</span></div><div class="stat"><span class="label">Money out</span><span class="value">${gbp(sumE)}</span></div></div>
+  <article class="card"><h3>Quick add ${an(W().one)} ${W().one} you did today</h3>
+    <div class="chips">${state.treatments.filter(t=>+t.price>0).map(t=>`<button class="chip" data-act="quick-income" data-id="${t.id}">${esc(t.name)} · ${gbp(+t.price)}</button>`).join('') || '<span class="muted small">Add prices on the ${W().Many} tab to get one-tap buttons.</span>'}</div>
+  </article>
+  <form class="card" id="form-income"><h3>Add money in</h3>
+    <div class="grid2"><label class="field">Date<input id="i-date" type="date" name="date" value="${todayStr()}" required></label>
+    <label class="field">Amount<span class="money-in"><input id="i-amount" type="number" name="amount" step="0.01" min="0" inputmode="decimal" required></span></label></div>
+    <label class="field">What for<input id="i-desc" name="desc" placeholder="e.g. Saturday takings, or a payout from Fresha"></label>
+    <label class="field">Paid by<select id="i-method" name="method"><option>Card</option><option>Cash</option><option>Bank transfer</option><option>App payout</option></select></label>
+    <button class="btn" type="submit">Add money in</button></form>
+  <form class="card" id="form-expense"><h3>Add money out</h3>
+    <div class="grid2"><label class="field">Date<input id="e-date" type="date" name="date" value="${todayStr()}" required></label>
+    <label class="field">Amount<span class="money-in"><input id="e-amount" type="number" name="amount" step="0.01" min="0" inputmode="decimal" required></span></label></div>
+    <label class="field">Who you paid<input id="e-supplier" name="supplier" placeholder="e.g. nail supplier, landlord" required></label>
+    <label class="field">What kind of cost<select id="e-cat" name="category">${CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></label>
+    <label class="field">Receipt photo<span class="hint">Take a photo or pick one. It stays on this device.</span><input id="e-photo" type="file" name="photo" accept="image/*" capture="environment"></label>
+    <button class="btn" type="submit">Add money out</button></form>
+  <article class="card"><h3>Mileage</h3>
+    <p class="small muted">Business trips in your own car or van, not your normal journey to work. Claimed at ${Math.round(RULES.mileage[0]*100)}p a mile for the first ${RULES.mileage[2].toLocaleString('en-GB')} miles a year, then ${Math.round(RULES.mileage[1]*100)}p. Do not also claim fuel or running costs for the same vehicle.</p>
+    <form class="fields" id="form-trip"><label class="field">Date<input id="tr-date" type="date" name="date" value="${todayStr()}" required></label>
+      <label class="field">Miles (there and back)<input id="tr-miles" type="number" name="miles" min="0" step="0.1" inputmode="decimal" required></label>
+      <label class="field">Where to<input id="tr-route" name="route" placeholder="e.g. Client in Solihull"></label><label class="field">&nbsp;<button class="btn" type="submit">Add trip</button></label></form>
+    <div class="list">${state.trips.filter(x=>taxYearOf(x.date)===ty).sort((a,b)=>b.date.localeCompare(a.date)).map(x=>`<div class="item"><div class="grow"><p><b>${esc(x.route||'Trip')}</b></p><p class="small muted">${fmtDate(x.date)} · ${nf(x.miles)} miles</p></div><span class="num">${gbp(mileageClaim(+x.miles||0))}</span><button class="iconbtn" aria-label="Delete" data-act="trip-del" data-id="${x.id}">✕</button></div>`).join('') || '<p class="muted small">No trips yet.</p>'}</div>
+  </article>
+  <article class="card"><div class="row" style="justify-content:space-between"><h3>Money in</h3><button class="btn small ghost" data-act="copy-income" data-y="${ty}">Copy for Excel</button></div>
+    <div class="list">${inc.map(x=>`<div class="item"><div class="grow"><p><b>${esc(x.desc||'Takings')}</b></p><p class="small muted">${fmtDate(x.date)} · ${esc(x.method)}</p></div><span class="num">${gbp(+x.amount)}</span><button class="btn small ghost" data-act="inc-edit" data-id="${x.id}">Change</button><button class="iconbtn" aria-label="Delete" data-act="del-income" data-id="${x.id}">✕</button></div>`).join('') || '<p class="muted small">Nothing yet.</p>'}</div></article>
+  <article class="card"><div class="row" style="justify-content:space-between"><h3>Money out</h3><button class="btn small ghost" data-act="copy-expenses" data-y="${ty}">Copy for Excel</button></div>
+    <div class="list">${exp.map(x=>`<div class="item">${x.receiptId?`<img class="thumb" alt="Receipt" data-receipt="${x.receiptId}" data-act="view-receipt" data-id="${x.receiptId}">`:'<span class="thumb" aria-hidden="true"></span>'}<div class="grow"><p><b>${esc(x.supplier)}</b></p><p class="small muted">${fmtDate(x.date)} · ${esc(x.category)}</p></div><span class="num">${gbp(+x.amount)}</span><button class="btn small ghost" data-act="exp-edit" data-id="${x.id}">Change</button><button class="iconbtn" aria-label="Delete" data-act="del-expense" data-id="${x.id}">✕</button></div>`).join('') || '<p class="muted small">Nothing yet.</p>'}</div></article>
+  </section>`;
+}
+
+// ---------- TAX YEAR ----------
+function vTaxYear(){
+  const ty=moneyYear ?? taxYearOf(todayStr());
+  const years=[...new Set([taxYearOf(todayStr()),...state.income.map(x=>taxYearOf(x.date)),...state.expenses.map(x=>taxYearOf(x.date))])].sort((a,b)=>b-a);
+  const R=RULES, sm=taxYearSummary(state, ty);
+  const start=new Date(ty,3,6), end=new Date(ty+1,3,5,23,59), now=new Date();
+  const frac=Math.min(1,Math.max(0.0001,(now-start)/(end-start)));
+  const isCurrent=ty===taxYearOf(todayStr());
+  const projIncome=isCurrent? sm.income/frac : sm.income;
+  const projProfit=isCurrent? sm.profit/frac : sm.profit;
+  const region=state.setup.region==='sco'?'sco':'ruk';
+  const pp=taxParts(projProfit, region, R, taxOpts(state.setup)), projTax=pp.total, bill=pp.tax+pp.ni, poa=bill>1000;
+  const saved=+state.setup.potSaved||0;
+  const label=`${ty}/${String((ty+1)%100).padStart(2,'0')}`;
+  const mtd=R.mtd.find(m=>projIncome>m.over);
+  const lines=[`Tax year ${label} (self-employment)`,`Turnover (money in): ${gbp(sm.income)}`,
+    sm.useAllowance?`Trading allowance used instead of expenses: ${gbp(sm.deduction)}`:`Total allowable expenses: ${gbp(sm.expenses)}`,
+    ...(!sm.useAllowance?CATEGORIES.filter(c=>sm.byCat[c]).map(c=>`  ${c}: ${gbp(sm.byCat[c])}`):[]),
+    `Profit: ${gbp(sm.profit)}`,`Estimated income tax and Class 4 NI: ${gbp(sm.tax)}`,'Estimate only. Check against your HMRC return.'].join('\n');
+  return `<section class="stack"><div class="row" style="justify-content:space-between"><div><h2>Tax year ${label}</h2><p class="muted">6 April ${ty} to 5 April ${ty+1}</p></div>
+    <select aria-label="Tax year" data-act="pick-year" style="width:auto">${years.map(y=>`<option value="${y}" ${y===ty?'selected':''}>${y}/${String((y+1)%100).padStart(2,'0')}</option>`).join('')}</select></div>
+  <div class="grid2">
+    <div class="stat"><span class="label">Money in</span><span class="value">${gbp0(sm.income)}</span></div>
+    <div class="stat"><span class="label">${sm.useAllowance?'Trading allowance':'Expenses'}</span><span class="value">${gbp0(sm.deduction)}</span></div>
+    <div class="stat"><span class="label">Profit so far</span><span class="value">${gbp0(sm.profit)}</span></div>
+    <div class="stat hero"><span class="label">Tax and NI so far</span><span class="value">${gbp0(sm.tax)}</span></div>
+  </div>
+  ${sm.useAllowance?`<div class="notice info">Your expenses are under ${gbp0(R.tradingAllowance)}, so the £1,000 trading allowance gives you a bigger deduction. You can claim one or the other, not both.</div>`:''}
+  ${isCurrent?`<article class="card"><h3>Your tax pot</h3>
+    <p>If the rest of the year goes like this, the bill for ${label} is about <b class="num">${gbp0(projTax)}</b> on <span class="num">${gbp0(projProfit)}</span> profit${pp.loan>0?`, including ${gbp0(pp.loan)} student loan`:''}${+state.setup.otherIncome>0?'. Your job income is counted first, so more of this profit is taxed':''}.</p>
+    ${moneyField('pot-saved','Money you have put aside so far','',saved,'data-set="potSaved"')}
+    ${saved>=sm.tax?`<div class="notice ok">You have put aside enough for the tax so far. Keep going: about <b class="num">${gbp0(Math.max(0,(projTax-saved)/Math.max(1,Math.round((1-frac)*12))))}</b> a month for the rest of the year.</div>`
+      :`<div class="notice warn">Put aside another <b class="num">${gbp0(sm.tax-saved)}</b> to catch up.</div>`}
+  </article>`:''}
+  <article class="card"><h3>For your Self Assessment</h3>
+    <div class="tablebox"><table><tbody>
+      <tr><td>Turnover</td><td class="r num">${gbp(sm.income)}</td></tr>
+      ${sm.useAllowance?`<tr><td>Trading allowance</td><td class="r num">${gbp(sm.deduction)}</td></tr>`:CATEGORIES.filter(c=>sm.byCat[c]).map(c=>`<tr><td>${c}</td><td class="r num">${gbp(sm.byCat[c])}</td></tr>`).join('')+`<tr><th>Total expenses</th><th class="r num">${gbp(sm.expenses)}</th></tr>`}
+      <tr><th>Profit</th><th class="r num">${gbp(sm.profit)}</th></tr>
+    </tbody></table></div>
+    <button class="btn ghost" data-act="copy-summary" data-text="${esc(lines)}">Copy summary</button>
+    <p class="small muted">Type these into your online Self Assessment. Equipment can usually be claimed in full in the year you buy it (capital allowances); your accountant can confirm.</p>
+  </article>
+  <article class="card"><h3>Dates for ${label}</h3>
+    <div class="list">
+      <div class="item"><div class="grow"><p><b>5 October ${ty+1}</b></p><p class="small muted">Register for Self Assessment if this is your first year</p></div></div>
+      <div class="item"><div class="grow"><p><b>31 January ${ty+2}</b></p><p class="small muted">${poa?`File your return and pay about <b class="num">${gbp0(projTax+bill/2)}</b>: the ${label} bill of ${gbp0(projTax)} plus ${gbp0(bill/2)} towards next year (a payment on account)`:'File your return online and pay the tax'}</p></div></div>
+      <div class="item"><div class="grow"><p><b>31 July ${ty+2}</b></p><p class="small muted">${poa?`Pay another <b class="num">${gbp0(bill/2)}</b> towards next year`:'Nothing due if your bill is under £1,000'}</p></div></div>
+    </div>
+    ${poa?`<div class="notice warn">Bills over £1,000 come with payments on account: HMRC asks for half of next year's tax in advance, twice a year. The first time, that makes January's payment about one and a half times the bill. After that, what you paid in advance comes off the next bill. These figures assume you have not paid any in advance yet.</div>`:''}
+    ${mtd?`<div class="notice warn">At this rate your takings are over ${gbp0(mtd.over)} a year. From ${mtd.from}, people over that level must keep digital records and send HMRC an update every quarter using approved software. Check gov.uk for when it applies to you.</div>`:''}
+    ${projIncome>R.vatThreshold*0.85?`<div class="notice bad">Your takings are close to the VAT threshold (${gbp0(R.vatThreshold)} a year). Speak to an accountant.</div>`:''}
+  </article>
+  <p class="small muted">Estimates using ${state.setup.region==='sco'?'Scottish':'England, Wales and NI'} income tax bands and Class 4 NI. 2026/27 rates. Includes a job and student loan if you added them under More. Does not include the allowance taper above £100,000, or NI limits when you also pay NI through a job. Not tax advice.</p>
+  </section>`;
+}
+
+// ---------- MORE ----------
+let resetArmed=false;
+function vMore(){
+  const s=state.setup;
+  const f=(key,label,hint,stepv='1',scale=1)=>`<label class="field">${label}${hint?`<span class="hint">${hint}</span>`:''}<input id="m-${key}" type="number" step="${stepv}" value="${esc(Math.round((+s[key]||0)*scale*1000)/1000)}" data-set="${key}" data-scale="${scale}"></label>`;
+  return `<section class="stack"><h2>More</h2>
+  <article class="card"><h3>Answer the questions again</h3><p class="muted">Goes through what you do, each ${W().one} and what it uses, your business, your team and your tax pot. Your money records stay.</p><button class="btn ghost" data-act="rerun">Start the questions</button></article>
+  ${brandEditor()}
+  <article class="card"><h3>Job and student loan</h3>${taxExtraEditor()}</article>
+  <h3>Running costs</h3>${overheadEditor()}
+  <h3>Your team</h3>${staffEditor()}
+  <article class="card"><h3>Fine-tune</h3><div class="grid2">
+    ${f('cardPct','Card fee %','From your payment provider','0.01',100)}
+    ${f('cardFixed','Card fee per payment £','','0.01')}
+    ${f('nonClient','Non-client time %','Breaks, admin, cleaning','1',100)}
+    ${f('busy','Diary full %','','1',100)}
+    ${f('margin','Extra profit %','','1',100)}
+    ${f('roundTo','Round prices up to nearest £','e.g. 1 or 5','1')}
+    ${IND().patch?f('patchValidDays','Patch test lasts (days)','Follow your insurer and product maker','1'):''}
+  </div></article>
+  <article class="card"><h3>Back up your data</h3>
+    <p class="muted">Everything is kept in this browser on this device only. Nobody else can see it, including us. Copy a backup and keep it somewhere safe, like your notes app or an email to yourself.</p>
+    <label class="row small"><input type="checkbox" id="bk-photos"> Include receipt photos (makes the backup much bigger)</label>
+    <div class="row"><button class="btn ghost" data-act="backup">Copy backup</button><button class="btn ghost" data-act="restore-open">Restore a backup</button></div>
+    <p class="small muted">${s.lastBackup?`Last backup: ${fmtDay(s.lastBackup)}.`:'No backup yet.'} Signatures and your logo are included. Receipt photos only if you tick the box.</p>
+  </article>
+  ${lockCard()}
+  ${privacyCard()}
+  <article class="card"><h3>Start again</h3><p class="muted">Deletes everything on this device, including receipt photos.</p>
+    <button class="btn ${resetArmed?'danger':'ghost'}" data-act="reset">${resetArmed?'Tap again to delete everything':'Delete all my data'}</button></article>
+  <p class="small muted">Know Your Worth is a test version. Prices and tax are estimates using 2026/27 rates, not tax or financial advice.</p>
+  </section>`;
+}
+
+// ---------- events ----------
+function removeProduct(id){ state.products=state.products.filter(p=>p.id!==id); state.treatments.forEach(t=>t.recipe=t.recipe.filter(r=>r.productId!==id)); }
+document.addEventListener('click', async e=>{
+  const tab=e.target.closest('[data-tab]'); if(tab){ view=tab.dataset.tab; resetArmed=false; render(); window.scrollTo(0,0); return; }
+  const el=e.target.closest('[data-act]'); if(!el) return;
+  const act=el.dataset.act, s=state.setup;
+  if(act==='wiz-ind'){ s.industry=el.dataset.k; if(!s.done && !s._ohEdited) s.overheads=overheadsFor(s.industry); save(); render(); }
+  else if(act==='st-add'){ s.staff=[...(s.staff||[]),{id:uid(),name:'',pay:'hourly',rate:13,hours:30,weeksOff:6}]; save(); render(); }
+  else if(act==='st-del'){ s.staff=(s.staff||[]).filter(x=>x.id!==el.dataset.id); save(); render(); }
+  else if(act==='st-ea'){ s.employmentAllowance=el.checked; save(); render(); }
+  else if(act==='wiz-choice'){ const st=wizSteps()[step]; const o=st.opts[+el.dataset.i]; s[st.key]=o[0]; s['_pick_'+st.key]=o[1]; save(); render(); }
+  else if(act==='wiz-chip'){ s[el.dataset.key]=+el.dataset.v; save(); render(); }
+  else if(act==='wiz-app'){ const a=APPS[el.dataset.k]; s.app=el.dataset.k; s.cardPct=a.pct; s.cardFixed=a.fixed; save(); render(); }
+  else if(act==='pick-treat'){ const id=el.dataset.id;
+    if(el.checked){ if(!state.treatments.some(t=>t.id===id)){ const c=ALLCAT.find(x=>x.id===id); if(c){ state.treatments.push(clone(c));
+        c.recipe.forEach(r=>{ if(!state.products.some(p=>p.id===r.productId)){ const l=LIBRARY.find(x=>x.id===r.productId); if(l) state.products.push(clone(l)); } }); } } }
+    else { state.treatments=state.treatments.filter(t=>t.id!==id); state.products=state.products.filter(p=>state.treatments.some(t=>t.recipe.some(r=>r.productId===p.id))); }
+    save(); render(); }
+  else if(act==='wiz-rm-prod'){ const t=state.treatments.find(x=>x.id===el.dataset.t); t.recipe=t.recipe.filter(r=>r.productId!==el.dataset.p);
+    if(!state.treatments.some(x=>x.recipe.some(r=>r.productId===el.dataset.p))) state.products=state.products.filter(p=>p.id!==el.dataset.p);
+    save(); render(); }
+  else if(act==='wiz-add-prod'){ const t=state.treatments.find(x=>x.id===el.dataset.t); const pid=document.getElementById('add-existing-'+t.id).value;
+    if(pid && !t.recipe.some(r=>r.productId===pid)) t.recipe.push({productId:pid,perPack:0}); save(); render(); }
+  else if(act==='wiz-new-prod'){ const t=state.treatments.find(x=>x.id===el.dataset.t); const v=document.getElementById('add-new-'+t.id).value.trim();
+    if(!v){ toast('Type the product name first'); return; }
+    const l=LIBRARY.find(x=>x.name.toLowerCase()===v.toLowerCase()); const id=l?l.id:uid();
+    if(!state.products.some(p=>p.id===id)) state.products.push(l?clone(l):{id,name:v,size:1,unit:'packs',packCost:0,shelfWeeks:0,inStock:1,reorderAt:1});
+    if(!t.recipe.some(r=>r.productId===id)) t.recipe.push({productId:id,perPack:0}); save(); render(); }
+  else if(act==='add-custom-treat'){ const v=document.getElementById('new-treat').value.trim(); if(!v){ toast(`Type the ${W().one} first`); return; } state.treatments.push({id:uid(),name:v,clientMin:30,prepMin:5,perWeek:1,price:0,patch:false,recipe:[]}); save(); render(); }
+  else if(act==='pick-prod'){ const id=el.dataset.id;
+    if(el.checked){ if(!state.products.some(p=>p.id===id)){ const l=LIBRARY.find(x=>x.id===id); if(l){ state.products.push(clone(l)); state.treatments.forEach(t=>{ const c=ALLCAT.find(x=>x.id===t.id); const r=c&&c.recipe.find(x=>x.productId===id); if(r && !t.recipe.some(x=>x.productId===id)) t.recipe.push({...r}); }); } } }
+    else removeProduct(id);
+    save(); render(); }
+  else if(act==='add-custom-prod'){ const v=document.getElementById('new-prod').value.trim(); if(!v){ toast('Type the product name first'); return; } state.products.push({id:uid(),name:v,size:1,unit:'packs',packCost:0,clientsPerPack:0,shelfWeeks:0,inStock:1,reorderAt:1}); save(); render(); }
+  else if(act==='wiz-rp'){ const t=state.treatments.find(x=>x.id===el.dataset.t), pid=el.dataset.p;
+    if(el.checked){ if(!t.recipe.some(r=>r.productId===pid)) t.recipe.push({productId:pid,uses:1}); } else t.recipe=t.recipe.filter(r=>r.productId!==pid);
+    save(); render(); }
+  else if(act==='oh-add'){ s._ohEdited=true; const g=OVERHEAD_GROUPS.find(x=>x.key===el.dataset.g); const used=(s.overheads||[]).filter(o=>o.group===g.key).map(o=>o.name);
+    s.overheads=[...(s.overheads||[]),{id:uid(),group:g.key,name:g.options.find(x=>!used.includes(x))||'',custom:!g.options.some(x=>!used.includes(x)),amount:0,years:3}]; save(); render(); }
+  else if(act==='oh-del'){ s._ohEdited=true; s.overheads=(s.overheads||[]).filter(o=>o.id!==el.dataset.id); save(); render(); }
+  else if(act==='wiz-back'){ step=Math.max(0,step-1); render(); window.scrollTo(0,0); }
+  else if(act==='wiz-next'){ wizNext(); }
+  else if(act==='load-example'){ state=exampleState(); save(); view='prices'; render(); toast('Loaded example figures'); }
+  else if(act==='del-treat'){ state.treatments=state.treatments.filter(t=>t.id!==el.dataset.id); save(); render(); }
+  else if(act==='add-treat'){ state.treatments.push({id:uid(),name:`New ${W().one}`,clientMin:30,prepMin:5,perWeek:1,price:0,patch:false,recipe:[]}); save(); render(); }
+  else if(act==='add-recipe'){ const t=state.treatments.find(x=>x.id===el.dataset.id); const free=state.products.find(p=>!t.recipe.some(r=>r.productId===p.id))||state.products[0]; if(free) t.recipe.push({productId:free.id,perPack:0}); save(); render(); }
+  else if(act==='del-recipe'){ const t=state.treatments.find(x=>x.id===el.dataset.id); t.recipe.splice(+el.dataset.i,1); save(); render(); }
+  else if(act==='add-product'){ state.products.push({id:uid(),name:'New product',size:1,unit:'packs',packCost:0,shelfWeeks:0,inStock:1,reorderAt:1}); save(); render(); }
+  else if(act==='del-product'){ removeProduct(el.dataset.id); save(); render(); }
+  else if(act==='quick-income'){ const t=state.treatments.find(x=>x.id===el.dataset.id); state.income.push({id:uid(),date:todayStr(),desc:t.name,amount:+t.price,method:'Card'}); useStock({serviceId:t.id,addons:[]},1); save(); render(); toast(`Added ${t.name}. Stock updated`); }
+  else if(act==='del-income'){ state.income=state.income.filter(x=>x.id!==el.dataset.id); save(); render(); }
+  else if(act==='del-expense'){ state.expenses=state.expenses.filter(y=>y.id!==el.dataset.id); save(); render(); }
+  else if(act==='view-receipt'){ const src=thumbCache[el.dataset.id]; if(src){ const o=document.getElementById('overlay'); o.innerHTML=`<div class="stack" style="align-items:center"><img src="${src}" alt="Receipt"><button class="btn" data-act="close-overlay">Close</button></div>`; o.hidden=false; } }
+  else if(act==='close-overlay'){ document.getElementById('overlay').hidden=true; }
+  else if(act==='copy-income'){ const y=+el.dataset.y; copyText(['Date\tWhat for\tPaid by\tAmount',...state.income.filter(x=>taxYearOf(x.date)===y).map(x=>`${x.date}\t${x.desc}\t${x.method}\t${(+x.amount).toFixed(2)}`)].join('\n')); }
+  else if(act==='copy-expenses'){ const y=+el.dataset.y; copyText(['Date\tWho\tCategory\tAmount\tReceipt',...state.expenses.filter(x=>taxYearOf(x.date)===y).map(x=>`${x.date}\t${x.supplier}\t${x.category}\t${(+x.amount).toFixed(2)}\t${x.receiptId?'Photo saved':'None'}`)].join('\n')); }
+  else if(act==='copy-summary'){ copyText(el.dataset.text); }
+  else if(act==='backup'){ doBackup(); }
+  else if(act==='restore-open'){ const o=document.getElementById('overlay'); o.innerHTML=`<div class="card" style="max-width:640px;width:100%"><h3>Paste your backup</h3><textarea id="restorebox" rows="8" placeholder="Paste the backup text here"></textarea><div class="row"><button class="btn" data-act="restore-do">Restore</button><button class="btn ghost" data-act="close-overlay">Cancel</button></div><p id="restore-msg" class="small muted"></p></div>`; o.hidden=false; }
+  else if(act==='restore-do'){ try{ const s2=JSON.parse(document.getElementById('restorebox').value); if(!s2||s2.v!==2) throw 0; if(s2.setup && !Array.isArray(s2.setup.overheads)) s2.setup.overheads=overheadsFromOld({...blankSetup(),...s2.setup}); const rc=s2._receipts; delete s2._receipts; state={...blankState(),...s2,setup:{...blankSetup(),...s2.setup}}; migrateProducts(); save(); restoreReceipts(rc); document.getElementById('overlay').hidden=true; view='prices'; render(); toast('Backup restored'); }catch(err){ document.getElementById('restore-msg').textContent='That does not look like a Know Your Worth backup. Copy the whole text and try again.'; } }
+  else if(act==='rerun'){ step=0; view='wizard'; render(); window.scrollTo(0,0); }
+  else if(act==='reset'){ if(!resetArmed){ resetArmed=true; render(); return; } try{ localStorage.removeItem(KEY); localStorage.removeItem(KEY+'-enc'); indexedDB.deleteDatabase('taxpot'); }catch(err){} lockKey=null; lockSalt=null; state=blankState(); step=0; resetArmed=false; view='wizard'; render(); toast('Everything deleted'); }
+});
+document.addEventListener('change', e=>{
+  const el=e.target, s=state.setup;
+  if(el.dataset.act==='pick-year'){ moneyYear=+el.value; render(); return; }
+  if(el.dataset.st){ const m=(s.staff||[]).find(x=>x.id===el.dataset.st); if(!m) return; const f=el.dataset.f;
+    m[f]=(f==='name'||f==='pay')?el.value:(+el.value||0); save(); render(); return; }
+  if(el.dataset.oh){ s._ohEdited=true; const o=(s.overheads||[]).find(x=>x.id===el.dataset.oh); if(!o) return; const f=el.dataset.f;
+    if(f==='sel'){ if(el.value==='__other'){ o.custom=true; o.name=''; } else { o.custom=false; o.name=el.value; } }
+    else if(f==='name') o.name=el.value; else o[f]=+el.value||0;
+    save(); render(); return; }
+  if(el.dataset.set){ const scale=+(el.dataset.scale||1); s[el.dataset.set]=(+el.value||0)/scale; save(); if(view!=='wizard') render(); return; }
+  if(el.dataset.tf){ const t=state.treatments.find(x=>x.id===el.dataset.tf); if(!t) return; const f=el.dataset.f; t[f]= (f==='name'||f==='unitLabel')?el.value : (f==='patch'||f==='addon')?el.checked : (+el.value||0)*(+(el.dataset.mul||1)); save(); render(); return; }
+  if(el.dataset.ru){ const t=state.treatments.find(x=>x.id===el.dataset.ru); const r=t&&t.recipe.find(x=>x.productId===el.dataset.p); if(r){ r.perPack=+el.value||0; save(); render(); } return; }
+  if(el.dataset.rf){ const t=state.treatments.find(x=>x.id===el.dataset.rf); const r=t.recipe[+el.dataset.i]; r[el.dataset.f]= el.dataset.f==='perPack'?(+el.value||0):el.value; save(); render(); return; }
+  if(el.dataset.pf){ const p=state.products.find(x=>x.id===el.dataset.pf); const f=el.dataset.f;
+    p[f]=(f==='name'||f==='unit'||f==='supplier')?el.value:(+el.value||0); save(); render(); return; }
+});
+document.addEventListener('submit', async e=>{
+  e.preventDefault();
+  const fd=new FormData(e.target);
+  if(e.target.id==='form-income'){ state.income.push({id:uid(),date:fd.get('date'),desc:fd.get('desc')||'Takings',amount:+fd.get('amount'),method:fd.get('method')}); save(); render(); toast('Money in added'); }
+  if(e.target.id==='form-expense'){
+    let receiptId=null; const file=fd.get('photo');
+    if(file && file.size){ try{ receiptId=uid(); await putReceipt(receiptId, await shrink(file)); }catch(err){ receiptId=null; toast('Could not save the photo on this device'); } }
+    state.expenses.push({id:uid(),date:fd.get('date'),supplier:fd.get('supplier'),amount:+fd.get('amount'),category:fd.get('category'),receiptId}); save(); render(); toast('Money out added');
+  }
+});
+
+// ===================== MODULE: diary, clients, report, branding and extras =====================
+const PALETTES={
+  berry:{name:'Berry',accent:'#a3285f',soft:'#f6e3ec',accentD:'#f07aae',softD:'#3b1f2d'},
+  tag:{name:'Teal and coral (Price Tag)',accent:'#0F5C5A',soft:'#E3F0EE',accentD:'#4FC2BB',softD:'#163a38'},
+  bars:{name:'Emerald and gold (Rising Bars)',accent:'#0E7C5A',soft:'#E2F1EA',accentD:'#3CC596',softD:'#173a2d'},
+  balance:{name:'Navy and mint (Balance)',accent:'#1B2A4A',soft:'#E3EAF8',accentD:'#3DDC97',softD:'#173a2f'},
+  hallmark:{name:'Plum and peach (Hallmark)',accent:'#5B2A6E',soft:'#F1E6F5',accentD:'#FFB38A',softD:'#3a2440'}
+};
+const SUPPLIERS={
+  beauty:['Salons Direct','Salon Services','Capital Hair & Beauty','Sweet Squared','Ellisons','Louella Belle','The Gel Bottle','Mylee','Sally Beauty','Amazon'],
+  trades:['Screwfix','Toolstation','B&Q','Wickes','Travis Perkins','Jewson','Dulux Decorator Centre','Brewers','Amazon']
+};
+function supplierList(){ return SUPPLIERS[IND().sup||'beauty']||SUPPLIERS.beauty; }
+function isDark(){ const t=document.documentElement.dataset.theme; return t==='dark' || (t!=='light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }
+function applyBrand(){
+  const b=state.setup.brand||{}, pal=PALETTES[b.palette]||PALETTES.berry, r=document.documentElement.style, dk=isDark();
+  r.setProperty('--accent', dk?pal.accentD:pal.accent); r.setProperty('--accent-soft', dk?pal.softD:pal.soft);
+  const h=document.getElementById('brandhead');
+  if(h) h.innerHTML = b.businessName
+    ? `<div class="row" style="gap:10px;flex-wrap:nowrap">${b.logo?`<img src="${b.logo}" alt="" style="width:40px;height:40px;border-radius:10px;object-fit:cover">`:''}<div><h1>${esc(b.businessName)}</h1><small>Know Your Worth</small></div></div>`
+    : `<h1>Know Your <span>Worth</span></h1><small>Prices, costs and tax for people who work for themselves</small>`;
+}
+function afterRender(){ applyBrand(); initSig(); }
+function supData(){ return `<datalist id="sup-list">${supplierList().map(x=>`<option value="${esc(x)}"></option>`).join('')}</datalist>`; }
+
+// ---------- dates ----------
+const pad2=n=>String(n).padStart(2,'0');
+const ymd=d=>`${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+const dt=s=>new Date(s+'T12:00:00');
+const addDays=(s,n)=>{ const d=dt(s); d.setDate(d.getDate()+n); return ymd(d); };
+const weekStart=s=>{ const d=dt(s); const k=(d.getDay()+6)%7; d.setDate(d.getDate()-k); return ymd(d); };
+const fmtDay=s=>dt(s).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
+const toMin=t=>{ const [h,m]=(t||'0:0').split(':').map(Number); return h*60+m; };
+const fromMin=m=>`${pad2(Math.floor(m/60)%24)}:${pad2(m%60)}`;
+
+// ---------- people, services, clients ----------
+function people(){ return [{id:'me',name:'You',weeksOff:+state.setup.weeksOff||0}, ...(state.setup.staff||[]).map(m=>({id:m.id,name:m.name||'Team member',weeksOff:+m.weeksOff||0}))]; }
+const personName=id=>(people().find(p=>p.id===id)||{name:'Someone'}).name;
+const svc=id=>state.treatments.find(t=>t.id===id);
+const clientById=id=>state.clients.find(c=>c.id===id);
+function onHoliday(pid,date){ return state.holidays.some(h=>h.staffId===pid && h.from<=date && date<=h.to); }
+function unitPrice(t){ if(!t) return 0; if(+t.price>0) return +t.price; const c=compute(state).treatments.find(x=>x.id===t.id); return c?c.suggested:0; }
+function patchState(clientId,date){
+  const cl=clientById(clientId); if(!cl) return 'missing';
+  const tests=(cl.patchTests||[]).slice().sort((a,b)=>b.date.localeCompare(a.date));
+  if(!tests.length) return 'missing';
+  if(tests[0].result==='reaction') return 'reaction';
+  const days=(dt(date)-dt(tests[0].date))/864e5;
+  if(days<2) return 'soon';
+  if(days>(+state.setup.patchValidDays||180)) return 'expired';
+  return 'ok';
+}
+const PATCH_MSG={missing:'No patch test on record',expired:'Patch test is out of date',soon:'Patch test was less than 48 hours before this booking',reaction:'Last patch test showed a reaction'};
+
+// ---------- stock used by a finished booking ----------
+function useStock(b, sign){
+  const lines=[]; const t=svc(b.serviceId); if(t) t.recipe.forEach(r=>lines.push([r,1]));
+  (b.addons||[]).forEach(a=>{ const at=svc(a.id); if(at) at.recipe.forEach(r=>lines.push([r,+a.qty||0])); });
+  lines.forEach(([r,q])=>{ const p=state.products.find(x=>x.id===r.productId); if(p && +r.perPack>0) p.inStock=Math.round(((+p.inStock||0)-sign*q/(+r.perPack))*1000)/1000; });
+}
+
+// ---------- DIARY ----------
+let diaryWeek=weekStart(todayStr());
+let bkDraft=null, holDraft=null;
+const STATUS={booked:['info','Booked'],done:['ok','Paid'],noshow:['bad','No-show'],cancelled:['info','Cancelled']};
+function bookingLabel(b){ const t=svc(b.serviceId); const adds=(b.addons||[]).filter(a=>+a.qty>0).map(a=>{ const at=svc(a.id); return at?`${at.name}${+a.qty>1?' ×'+a.qty:''}`:''; }).filter(Boolean); return (t?t.name:'Booking')+(adds.length?' + '+adds.join(', '):''); }
+function vDiary(){
+  const days=[...Array(7)].map((_,i)=>addDays(diaryWeek,i));
+  const yr=todayStr().slice(0,4);
+  const offRows=people().map(p=>{ let d=0; state.holidays.filter(h=>h.staffId===p.id).forEach(h=>{ for(let x=h.from; x<=h.to; x=addDays(x,1)) if(x.slice(0,4)===yr) d++; }); return `<div class="item"><div class="grow"><p><b>${esc(p.name)}</b></p><p class="small muted">${d} day${d===1?'':'s'} off booked in ${yr} · planned about ${nf(p.weeksOff)} weeks</p></div></div>`; }).join('');
+  return `<section class="stack">
+  <div class="row" style="justify-content:space-between"><div><h2>Diary</h2><p class="muted">Week of ${fmtDay(diaryWeek)}</p></div>
+    <div class="row"><button class="btn small ghost" data-act="dy-prev" aria-label="Previous week">‹</button><button class="btn small ghost" data-act="dy-today">This week</button><button class="btn small ghost" data-act="dy-next" aria-label="Next week">›</button></div></div>
+  ${!state.treatments.filter(t=>!t.addon).length?`<div class="notice warn">Add your ${W().many} first, so bookings know the time and price.</div>`:''}
+  ${days.map(d=>{ const offs=people().filter(p=>onHoliday(p.id,d));
+    const bks=state.bookings.filter(b=>b.date===d).sort((a,b)=>a.time.localeCompare(b.time));
+    return `<article class="card"><div class="treat-head"><h3>${fmtDay(d)}${d===todayStr()?' · today':''}</h3><button class="btn small" data-act="bk-new" data-date="${d}">+ Booking</button></div>
+      ${offs.length?`<div class="chips">${offs.map(p=>`<span class="pill warn">${p.id==='me'?'You are off':esc(p.name)+' is off'}</span>`).join('')}</div>`:''}
+      ${bks.length?`<div class="list">${bks.map(b=>{ const [cls,lab]=STATUS[b.status]||STATUS.booked; const cl=clientById(b.clientId);
+        return `<div class="item" style="align-items:flex-start;flex-wrap:wrap"><div class="num" style="min-width:52px">${esc(b.time)}</div>
+          <div class="grow"><p style="white-space:normal"><b>${esc(bookingLabel(b))}</b></p><p class="small muted" style="white-space:normal">${esc(cl?cl.name:'No name')} · ${esc(personName(b.staffId))} · ${gbp(+b.price)}${+b.deposit?` · deposit ${gbp(+b.deposit)}`:''}</p>
+            </div>
+          <span class="pill ${cls}">${lab}</span><button class="iconbtn" aria-label="Delete booking" data-act="bk-del" data-id="${b.id}">✕</button>
+          ${b.status==='booked'?`<div class="row" style="flex-basis:100%;gap:6px"><button class="btn small" data-act="bk-done" data-id="${b.id}" data-m="Card">Paid by card</button><button class="btn small ghost" data-act="bk-done" data-id="${b.id}" data-m="Cash">Paid cash</button><button class="btn small ghost" data-act="bk-noshow" data-id="${b.id}">No-show</button><button class="btn small ghost" data-act="bk-cancel" data-id="${b.id}">Cancelled</button><button class="btn small ghost" data-act="bk-edit" data-id="${b.id}">Change</button><button class="btn small ghost" data-act="bk-remind" data-id="${b.id}">Reminder</button></div>`:''}</div>`; }).join('')}</div>`
+        : `<p class="small muted">${offs.some(p=>p.id==='me')?'You are off.':'No bookings.'}</p>`}
+    </article>`; }).join('')}
+  <article class="card"><div class="treat-head"><h3>Holidays and days off</h3><button class="btn small" data-act="hol-new">+ Add time off</button></div>
+    <div class="list">${offRows}</div>
+    <div class="list">${state.holidays.slice().sort((a,b)=>a.from.localeCompare(b.from)).map(h=>`<div class="item"><div class="grow"><p><b>${esc(personName(h.staffId))}</b>: ${fmtDay(h.from)}${h.to!==h.from?' to '+fmtDay(h.to):''}</p><p class="small muted">${esc(h.note||'')}</p></div><button class="iconbtn" aria-label="Delete" data-act="hol-del" data-id="${h.id}">✕</button></div>`).join('')}</div>
+  </article>
+  <p class="small muted">Marking a booking as paid adds it to Money in and takes the ${W().items} it uses off your stock. A no-show keeps the deposit as income. This diary is for you; clients booking themselves online needs the paid server add-on later.</p>
+  </section>`;
+}
+function bkWarnings(d){
+  const w=[]; const t=svc(d.serviceId); if(!t) return w;
+  const mins=bkMins(d), start=toMin(d.time), end=start+mins;
+  if(onHoliday(d.staffId,d.date)) w.push(d.staffId==='me'?'You are booked off that day.':`${personName(d.staffId)} is booked off that day.`);
+  const clash=state.bookings.find(b=>b.id!==d.id && b.date===d.date && b.staffId===d.staffId && b.status!=='cancelled' && toMin(b.time)<end && toMin(b.time)+(+b.mins||0)>start);
+  if(clash) w.push(`Clashes with ${bookingLabel(clash)} at ${clash.time}.`);
+  const needsPatch=t.patch || (d.addons||[]).some(a=>+a.qty>0 && (svc(a.id)||{}).patch);
+  if(needsPatch && IND().patch){ const ps=d.clientId?patchState(d.clientId,d.date):'missing'; if(ps!=='ok') w.push(`${PATCH_MSG[ps]}. A patch test is needed at least 48 hours before.`); }
+  return w;
+}
+function bkMins(d){ const t=svc(d.serviceId); let m=t?(+t.clientMin||0):0; (d.addons||[]).forEach(a=>{ const at=svc(a.id); if(at) m+=(+at.clientMin||0)*(+a.qty||0); }); return m; }
+function bkAutoPrice(d){ let p=unitPrice(svc(d.serviceId)); (d.addons||[]).forEach(a=>{ p+=unitPrice(svc(a.id))*(+a.qty||0); }); return p; }
+function renderBkForm(){
+  const d=bkDraft, o=document.getElementById('overlay'); if(!d){ o.hidden=true; return; }
+  const mains=state.treatments.filter(t=>!t.addon), adds=state.treatments.filter(t=>t.addon);
+  const price=d.priceTouched?d.price:bkAutoPrice(d); const warns=bkWarnings(d);
+  o.innerHTML=`<form class="card" id="form-booking" style="max-width:560px;width:100%;max-height:90vh;overflow:auto">
+    <div class="treat-head"><h3>${d.id?'Change booking':'New booking'}</h3><button type="button" class="iconbtn" aria-label="Close" data-act="bk-close">✕</button></div>
+    <div class="fields"><label class="field">Date<input id="bk-date" type="date" value="${esc(d.date)}" data-bkf="date" required></label>
+      <label class="field">Start time<input id="bk-time" type="time" value="${esc(d.time)}" data-bkf="time" required></label></div>
+    <label class="field">${W().One}<select id="bk-svc" data-bkf="serviceId">${mains.map(t=>`<option value="${t.id}" ${t.id===d.serviceId?'selected':''}>${esc(t.name)}</option>`).join('')}</select></label>
+    ${adds.length?`<div class="stack" style="gap:6px"><span class="small" style="font-weight:600">Add-ons</span>${adds.map(a=>{ const q=((d.addons||[]).find(x=>x.id===a.id)||{}).qty||0; return `<label class="row small" style="flex-wrap:nowrap"><span class="grow" style="flex:1">${esc(a.name)} · ${gbp(unitPrice(a))}${a.unitLabel?' per '+esc(a.unitLabel):''}</span><input type="number" min="0" step="1" aria-label="How many ${esc(a.name)}" value="${q}" data-bkaddon="${a.id}" style="width:80px"></label>`; }).join('')}</div>`:''}
+    <label class="field">Who is doing it<select id="bk-who" data-bkf="staffId">${people().map(p=>`<option value="${p.id}" ${p.id===d.staffId?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>
+    <label class="field">${W().cust==='client'?'Client':'Customer'}<select id="bk-client" data-bkf="clientId"><option value="">New ${W().cust} (type below)</option>${state.clients.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(c=>`<option value="${c.id}" ${c.id===d.clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label>
+    ${d.clientId?'':`<input id="bk-newclient" placeholder="Name of new ${W().cust}" value="${esc(d.newClient||'')}" data-bkf="newClient">`}
+    <div class="fields"><label class="field">Price<span class="money-in"><input id="bk-price" type="number" min="0" step="0.01" value="${esc(nf(price))}" data-bkf="price"></span></label>
+      <label class="field">Deposit taken<span class="money-in"><input id="bk-dep" type="number" min="0" step="0.01" value="${esc(d.deposit||0)}" data-bkf="deposit"></span></label></div>
+    <label class="field">Notes<input id="bk-notes" value="${esc(d.notes||'')}" data-bkf="notes"></label>
+    <p class="small muted">Takes about ${fmtTime(bkMins(d))}${d.time?`, finishing around ${fromMin(toMin(d.time)+bkMins(d))}`:''}.</p>
+    ${warns.map(x=>`<div class="notice warn">${esc(x)}</div>`).join('')}
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="bk-close">Cancel</button><button class="btn" type="submit">Save booking</button></div>
+  </form>`;
+  o.hidden=false;
+}
+function renderHolForm(){
+  const d=holDraft, o=document.getElementById('overlay'); if(!d){ o.hidden=true; return; }
+  o.innerHTML=`<form class="card" id="form-holiday" style="max-width:480px;width:100%">
+    <div class="treat-head"><h3>Time off</h3><button type="button" class="iconbtn" aria-label="Close" data-act="bk-close">✕</button></div>
+    <label class="field">Who<select id="hol-who" data-hol="staffId">${people().map(p=>`<option value="${p.id}" ${p.id===d.staffId?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>
+    <div class="fields"><label class="field">From<input id="hol-from" type="date" value="${esc(d.from)}" data-hol="from" required></label><label class="field">To<input id="hol-to" type="date" value="${esc(d.to)}" data-hol="to" required></label></div>
+    <label class="field">Note<input id="hol-note" placeholder="e.g. Holiday, training, bank holiday" value="${esc(d.note||'')}" data-hol="note"></label>
+    ${state.bookings.some(b=>b.staffId===d.staffId && b.status==='booked' && b.date>=d.from && b.date<=d.to)?`<div class="notice warn">${esc(personName(d.staffId))} already has bookings in these dates. Move them in the diary.</div>`:''}
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="bk-close">Cancel</button><button class="btn" type="submit">Save</button></div></form>`;
+  o.hidden=false;
+}
+
+// ---------- CLIENTS ----------
+let clSearch='', clOpen=null;
+const CONSULT_Q=[['allergies','Any allergies (including to nail, lash, brow or hair products)?'],['conditions','Any medical or skin conditions?'],['medication','Any medication?'],['pregnant','Pregnant or breastfeeding?'],['reactions','Any reactions to treatments before?']];
+function vClients(){
+  const custs=W().cust==='client'?'Clients':'Customers';
+  const list=state.clients.filter(c=>!clSearch || c.name.toLowerCase().includes(clSearch.toLowerCase())).sort((a,b)=>a.name.localeCompare(b.name));
+  const open=clOpen && clientById(clOpen);
+  if(open) return clientCard(open);
+  return `<section class="stack"><div><h2>${custs}</h2><p class="muted">${state.clients.length} on record. Kept on this device only.</p></div>
+    <form class="row" id="form-client" style="flex-wrap:nowrap"><input id="cl-new" name="name" placeholder="Add a ${W().cust}: name" required style="flex:1"><button class="btn" type="submit">Add</button></form>
+    <input id="cl-search" placeholder="Search" value="${esc(clSearch)}" data-clsearch="1">
+    <div class="row"><button class="btn small ghost" data-act="cl-news">Copy email list for a newsletter</button><span class="small muted">${newsletterList().length} with an email who ticked 'happy to get offers'</span></div>
+    <article class="card"><div class="list">${list.map(c=>{ const visits=state.bookings.filter(b=>b.clientId===c.id && b.status==='done'); const last=visits.map(b=>b.date).sort().pop();
+      const ps=IND().patch && (c.patchTests||[]).length ? patchState(c.id,todayStr()) : null;
+      return `<div class="item"><div class="grow"><p><b>${esc(c.name)}</b></p><p class="small muted">${visits.length} visit${visits.length===1?'':'s'}${last?' · last '+fmtDay(last):''}${c.phone?' · '+esc(c.phone):''}</p></div>
+        ${ps?`<span class="pill ${ps==='ok'?'ok':'warn'}">${ps==='ok'?'Patch test OK':'Patch test due'}</span>`:''}<button class="btn small ghost" data-act="cl-open" data-id="${c.id}">Open</button></div>`; }).join('') || `<p class="muted small">No ${custs.toLowerCase()} yet.</p>`}</div></article></section>`;
+}
+function clientCard(c){
+  const visits=state.bookings.filter(b=>b.clientId===c.id).sort((a,b)=>b.date.localeCompare(a.date));
+  const spent=visits.filter(b=>b.status==='done').reduce((a,b)=>a+(+b.price||0),0), noShows=visits.filter(b=>b.status==='noshow').length;
+  const con=c.consult||{answers:{}};
+  return `<section class="stack"><div class="row" style="justify-content:space-between"><h2>${esc(c.name)}</h2><button class="btn small ghost" data-act="cl-close">Back to list</button></div>
+  <div class="grid2"><div class="stat"><span class="label">Spent</span><span class="value">${gbp0(spent)}</span></div><div class="stat"><span class="label">Visits</span><span class="value">${visits.filter(b=>b.status==='done').length}</span></div><div class="stat"><span class="label">No-shows</span><span class="value">${noShows}</span></div></div>
+  <article class="card"><h3>Details</h3><div class="fields">
+    <label class="field">Name<input id="clf-name" value="${esc(c.name)}" data-clf="name"></label>
+    <label class="field">Phone<input id="clf-phone" type="tel" value="${esc(c.phone||'')}" data-clf="phone"></label>
+    <label class="field">Email<input id="clf-email" type="email" value="${esc(c.email||'')}" data-clf="email"></label>
+    <label class="field">${IND().hours?'Address':'Notes'}<input id="clf-notes" value="${esc(c.notes||'')}" data-clf="notes"></label></div></article>
+  ${IND().patch?`<article class="card"><h3>Patch tests</h3>
+    <div class="list">${(c.patchTests||[]).slice().sort((a,b)=>b.date.localeCompare(a.date)).map(p=>`<div class="item"><div class="grow"><p><b>${fmtDay(p.date)}</b> · ${esc(p.product||'')}</p></div><span class="pill ${p.result==='reaction'?'bad':'ok'}">${p.result==='reaction'?'Reaction':'Clear'}</span><button class="iconbtn" aria-label="Delete" data-act="pt-del" data-id="${p.id}">✕</button></div>`).join('') || '<p class="small muted">None recorded.</p>'}</div>
+    <form class="fields" id="form-patch"><label class="field">Date<input id="pt-date" type="date" name="date" value="${todayStr()}" required></label><label class="field">Product<input id="pt-prod" name="product" placeholder="e.g. Brow tint, lash glue"></label>
+      <label class="field">Result<select id="pt-res" name="result"><option value="clear">Clear</option><option value="reaction">Reaction</option></select></label><label class="field">&nbsp;<button class="btn" type="submit">Add patch test</button></label></form>
+    <p class="small muted">Bookings warn you if the last test is older than ${nf(+state.setup.patchValidDays||180)} days (change this on More), less than 48 hours before, or showed a reaction. Follow your insurer's and product maker's rules.</p></article>
+  <article class="card"><h3>Consultation form</h3>
+    ${CONSULT_Q.map(([k,q])=>`<label class="field">${q}<input id="cq-${k}" value="${esc(con.answers[k]||'')}" data-cq="${k}"></label>`).join('')}
+    <label class="row small"><input type="checkbox" data-cq="photos" ${con.answers.photos?'checked':''}> Happy for photos of their ${W().one} to be used on social media</label>
+    <label class="row small"><input type="checkbox" data-cq="marketing" ${con.answers.marketing?'checked':''}> Happy to get offers and reminders</label>
+    <p class="small" style="font-weight:600">Signature${con.date?` · signed ${fmtDay(con.date)}`:''}</p>
+    ${con.signature?`<img src="${con.signature}" alt="Signature" style="background:#fff;border-radius:10px;border:1px solid var(--line);max-height:120px">`:''}
+    <canvas id="sigpad" width="600" height="180" style="width:100%;height:150px;background:#fff;border:1.5px solid var(--line);border-radius:10px;touch-action:none" aria-label="Sign here"></canvas>
+    <div class="row"><button class="btn ghost small" data-act="cl-sig-clear">Clear</button><button class="btn small" data-act="cl-sig-save">Save signature and answers</button></div>
+    <p class="small muted">Health answers are sensitive. They stay on this device; tell ${W().cust}s how you keep them (see the privacy notice on More).</p></article>`:''}
+  <article class="card"><h3>Visits</h3><div class="list">${visits.map(b=>{ const [cls,lab]=STATUS[b.status]||STATUS.booked; return `<div class="item"><div class="grow"><p><b>${fmtDay(b.date)}</b> · ${esc(bookingLabel(b))}</p><p class="small muted">${gbp(+b.price)}</p></div><span class="pill ${cls}">${lab}</span></div>`; }).join('') || '<p class="small muted">No visits yet.</p>'}</div></article>
+  <button class="btn ghost" data-act="cl-del" data-id="${c.id}">${clDelArmed?'Tap again to delete this '+W().cust:'Delete this '+W().cust}</button></section>`;
+}
+let clDelArmed=false;
+function initSig(){
+  const c=document.getElementById('sigpad'); if(!c || c._init) return; c._init=1;
+  const x=c.getContext('2d'); x.lineWidth=3; x.lineCap='round'; x.lineJoin='round'; x.strokeStyle='#1d1a26'; let down=false; c._dirty=false;
+  const pos=e=>{ const r=c.getBoundingClientRect(); return [(e.clientX-r.left)*c.width/r.width,(e.clientY-r.top)*c.height/r.height]; };
+  c.addEventListener('pointerdown',e=>{ down=true; c._dirty=true; try{c.setPointerCapture(e.pointerId);}catch(_){} x.beginPath(); x.moveTo(...pos(e)); });
+  c.addEventListener('pointermove',e=>{ if(!down) return; x.lineTo(...pos(e)); x.stroke(); });
+  ['pointerup','pointercancel'].forEach(t=>c.addEventListener(t,()=>{ down=false; }));
+}
+
+// ---------- REPORT ----------
+let repMonth=todayStr().slice(0,7);
+function mileageClaim(miles){ const R=RULES; return Math.min(miles,R.mileage[2])*R.mileage[0]+Math.max(0,miles-R.mileage[2])*R.mileage[1]; }
+function vReport(){
+  const c=compute(state), inM=x=>(x.date||'').slice(0,7)===repMonth;
+  const inc=state.income.filter(inM).reduce((a,x)=>a+(+x.amount||0),0), exp=state.expenses.filter(inM).reduce((a,x)=>a+(+x.amount||0),0);
+  const miles=state.trips.filter(inM).reduce((a,x)=>a+(+x.miles||0),0), mclaim=miles*RULES.mileage[0];
+  const profit=inc-exp-mclaim, aside=Math.max(0,profit)*c.taxShare;
+  const bks=state.bookings.filter(inM), done=bks.filter(b=>b.status==='done'), ns=bks.filter(b=>b.status==='noshow'), cx=bks.filter(b=>b.status==='cancelled');
+  const kept=state.income.filter(x=>inM(x) && /^Deposit kept/.test(x.desc||'')).reduce((a,x)=>a+(+x.amount||0),0);
+  const by={}; done.forEach(b=>{ const k=b.serviceId; by[k]=by[k]||{n:0,v:0}; by[k].n++; by[k].v+=(+b.price||0); });
+  const ranked=Object.entries(by).map(([k,v])=>({name:(svc(k)||{name:'Removed'}).name,...v})).sort((a,b)=>b.v-a.v);
+  const nsRate=(done.length+ns.length)?ns.length/(done.length+ns.length):0;
+  const label=dt(repMonth+'-01').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+  return `<section class="stack"><div class="row" style="justify-content:space-between"><div><h2>${label}</h2><p class="muted">Your month at a glance</p></div><input type="month" aria-label="Month" value="${repMonth}" data-rep="1" style="width:auto"></div>
+  <div class="grid2"><div class="stat"><span class="label">Money in</span><span class="value">${gbp0(inc)}</span></div><div class="stat"><span class="label">Money out</span><span class="value">${gbp0(exp+mclaim)}</span><span class="small muted">${miles?`includes ${nf(miles)} miles`:''}</span></div>
+    <div class="stat hero"><span class="label">Profit</span><span class="value">${gbp0(profit)}</span></div><div class="stat"><span class="label">Put aside for tax</span><span class="value">${gbp0(aside)}</span><span class="small muted">about ${pct(c.taxShare)} of profit</span></div></div>
+  <article class="card"><h3>Bookings</h3><div class="grid2"><div class="stat"><span class="label">Paid</span><span class="value">${done.length}</span></div><div class="stat"><span class="label">No-shows</span><span class="value">${ns.length}</span><span class="small muted">${pct(nsRate)} · you planned for ${pct(+state.setup.noShow||0)}</span></div><div class="stat"><span class="label">Cancelled</span><span class="value">${cx.length}</span></div><div class="stat"><span class="label">Deposits kept</span><span class="value">${gbp0(kept)}</span></div></div>
+    ${nsRate>(+state.setup.noShow||0)+0.02 && done.length>=10?`<div class="notice warn">More no-shows than you planned for. Think about taking bigger deposits, or change the no-show answer on More so prices cover it.</div>`:''}</article>
+  <article class="card"><h3>Best and worst earners</h3><div class="list">${ranked.map((r,i)=>`<div class="item"><div class="grow"><p><b>${esc(r.name)}</b></p><p class="small muted">${r.n} done</p></div><span class="num">${gbp0(r.v)}</span>${i===0?'<span class="pill ok">Top</span>':i===ranked.length-1&&ranked.length>2?'<span class="pill warn">Lowest</span>':''}</div>`).join('') || '<p class="small muted">No paid bookings this month. Mark bookings as paid in the diary.</p>'}</div></article>
+  <article class="card"><h3>Stock to reorder</h3><p>${c.products.filter(p=>p.reorder).map(p=>esc(p.name)).join(', ')||'Nothing.'}</p></article>
+  </section>`;
+}
+
+// ---------- PRICES extras ----------
+let priceAdj=0;
+function priceExtras(c){
+  const now=c.atCurrent.profit, then=c.scenario(1+priceAdj/100).profit, perB=c.bookingsMonth>0?(c.atCurrent.takings*(1+priceAdj/100)/c.bookingsMonth):0;
+  const fewer= priceAdj>0 && perB>0 ? (then-now)/(perB*(1-(+state.setup.cardPct||0))-c.productsMonth/Math.max(1,c.bookingsMonth)) : 0;
+  const lb=state.setup.lastBackup, hasData=state.income.length||state.bookings.length||state.expenses.length||state.clients.length;
+  const stale=hasData && (!lb || (dt(todayStr())-dt(lb))/864e5>14);
+  return `${stale?`<div class="notice warn">${lb?`Last backup ${fmtDay(lb)}.`:'You have not backed up yet.'} Everything is only on this device. <button class="btn small" data-act="backup">Back up now</button></div>`:''}
+  <section class="card"><h3>What if I change my prices?</h3>
+    <input type="range" id="price-adj" min="-20" max="50" step="5" value="${priceAdj}" data-adj="1" aria-label="Change all prices by a percentage">
+    <p><b>${priceAdj>=0?'+':''}${priceAdj}%</b> on all your current prices: about <b class="num">${gbp0(then)}</b> a month before tax (now <span class="num">${gbp0(now)}</span>).</p>
+    ${fewer>0?`<p class="small muted">Or earn what you earn now with about <b>${Math.round(fewer)}</b> fewer bookings a month.</p>`:''}
+    <p class="small muted">Assumes the same number of bookings. Some clients may go elsewhere if prices rise a lot.</p></section>
+  <section class="card"><h3>Price list for Instagram or your wall</h3><div class="row"><button class="btn ghost" data-act="pl-make" data-k="current">From my prices</button><button class="btn ghost" data-act="pl-make" data-k="suggested">From suggested prices</button></div></section>`;
+}
+function makePriceList(kind){
+  const c=compute(state), b=state.setup.brand||{}, pal=PALETTES[b.palette]||PALETTES.berry;
+  const rows=c.treatments.map(t=>({name:t.name, price: kind==='suggested'?t.suggested:(+t.price||t.suggested), add:t.addon, unit:t.unitLabel}));
+  const cv=document.createElement('canvas'); cv.width=1080; cv.height=Math.max(1350, 360+rows.length*92); const x=cv.getContext('2d');
+  x.fillStyle=pal.soft; x.fillRect(0,0,cv.width,cv.height);
+  x.fillStyle=pal.accent; x.fillRect(0,0,cv.width,230);
+  x.fillStyle='#ffffff'; x.font='800 72px "Bricolage Grotesque", "Segoe UI", sans-serif'; x.fillText(b.businessName||'Price list',72,140);
+  x.font='500 34px Figtree, "Segoe UI", sans-serif'; x.fillText(b.businessName?'Price list':'Know Your Worth',72,195);
+  let y=320; x.textBaseline='alphabetic';
+  rows.forEach(r=>{ x.fillStyle='#1d1a26'; x.font='600 40px Figtree, "Segoe UI", sans-serif'; x.fillText(r.name+(r.add&&r.unit?` (per ${r.unit})`:r.add?' (add-on)':''),72,y);
+    const ps=new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2,minimumFractionDigits:0}).format(r.price); x.fillStyle=pal.accent; x.font='700 44px Figtree, "Segoe UI", sans-serif';
+    const w=x.measureText(ps).width; x.fillText(ps,cv.width-72-w,y); x.fillStyle='rgba(0,0,0,.12)'; x.fillRect(72,y+28,cv.width-144,2); y+=92; });
+  const o=document.getElementById('overlay');
+  o.innerHTML=`<div class="card" style="max-width:520px;width:100%;max-height:92vh;overflow:auto"><img src="${cv.toDataURL('image/png')}" alt="Your price list" style="width:100%;border-radius:10px"><p class="small muted">On a phone, press and hold the picture to save it. On a computer, right-click and save.</p><button class="btn" data-act="bk-close">Close</button></div>`;
+  o.hidden=false;
+}
+
+// ---------- tax extras, branding, privacy, backup ----------
+const SL_PLANS=[['none','No student loan'],['plan1','Plan 1'],['plan2','Plan 2'],['plan4','Plan 4 (Scotland)'],['plan5','Plan 5']];
+function taxExtraEditor(){ const s=state.setup; return `<div class="stack">
+  ${moneyField('tx-job','Income from a job each year, before tax','Put 0 if you only work for yourself. It uses up your tax-free allowance first',s.otherIncome||0,'data-set="otherIncome"')}
+  <label class="field">Student loan<select id="tx-sl" data-sl="1">${SL_PLANS.map(([k,v])=>`<option value="${k}" ${s.studentLoan===k?'selected':''}>${v}</option>`).join('')}</select></label>
+  <label class="row small"><input type="checkbox" data-act="pg-toggle" ${s.postgrad?'checked':''}> I also have a postgraduate loan</label>
+  <p class="small muted">Uses the 2026/27 student loan thresholds.</p></div>`; }
+function brandEditor(){ const b=state.setup.brand||{}; return `<article class="card"><h3>Your branding</h3>
+  <label class="field">Business name<input id="br-name" value="${esc(b.businessName||'')}" placeholder="e.g. Nails by Sophie" data-brand="businessName"></label>
+  <label class="field">Colours<select id="br-pal" data-brand="palette">${Object.entries(PALETTES).map(([k,v])=>`<option value="${k}" ${(b.palette||'berry')===k?'selected':''}>${v.name}</option>`).join('')}</select></label>
+  <label class="field">Logo<span class="hint">A square picture works best</span><input id="br-logo" type="file" accept="image/*" data-logo="1"></label>
+  ${b.logo?`<div class="row"><img src="${b.logo}" alt="Your logo" style="width:56px;height:56px;border-radius:12px;object-fit:cover"><button class="btn small ghost" data-act="logo-del">Remove logo</button></div>`:''}
+  <p class="small muted">Used in the header and on your price list.</p></article>`; }
+function privacyCard(){ return `<article class="card"><h3>Privacy</h3>
+  <p class="small">Know Your Worth keeps everything you enter (prices, money, ${W().cust}s, consultation answers, signatures and receipt photos) in this browser on this device. Nothing is sent to us or anyone else. If you clear your browser or lose your phone, it is gone unless you have a backup.</p>
+  <p class="small">If you keep ${W().cust}s' health answers, you are responsible for them under UK data protection law: only collect what you need, keep it safe, and delete it when you no longer need it. The ICO's guidance for small businesses explains what to tell ${W().cust}s.</p>
+  <p class="small muted">Prices and tax figures are estimates, not tax or financial advice. Check with an accountant.</p></article>
+  <article class="card"><h3>Tell us what you think</h3><textarea id="fb-text" rows="4" placeholder="What worked, what was confusing, what is missing?"></textarea>
+  <button class="btn ghost" data-act="fb-copy">Copy my feedback</button><p class="small muted">Then paste it into a message to whoever shared this app with you. Please leave out ${W().cust} names and health details.</p></article>`; }
+function blobToDataURL(b){ return new Promise(r=>{ const f=new FileReader(); f.onload=()=>r(f.result); f.onerror=()=>r(null); f.readAsDataURL(b); }); }
+function dataURLToBlob(u){ const [h,d]=u.split(','); const mime=(h.match(/data:([^;]+)/)||[])[1]||'image/jpeg'; const bin=atob(d); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i); return new Blob([a],{type:mime}); }
+async function doBackup(){
+  const withPhotos=!!(document.getElementById('bk-photos')||{}).checked;
+  const copy=JSON.parse(JSON.stringify(state));
+  if(withPhotos){ copy._receipts={}; for(const e of state.expenses) if(e.receiptId){ try{ const b=await getReceipt(e.receiptId); if(b) copy._receipts[e.receiptId]=await blobToDataURL(b); }catch(_){} } }
+  state.setup.lastBackup=todayStr(); save();
+  copyText(JSON.stringify(copy));
+}
+async function restoreReceipts(map){ if(!map) return; for(const [id,u] of Object.entries(map)){ try{ if(u) await putReceipt(id, dataURLToBlob(u)); }catch(_){} } }
+
+// ---------- events for this module ----------
+document.addEventListener('click', e=>{
+  const el=e.target.closest('[data-act]'); if(!el) return; const act=el.dataset.act, s=state.setup;
+  if(act==='dy-prev'){ diaryWeek=addDays(diaryWeek,-7); render(); }
+  else if(act==='dy-next'){ diaryWeek=addDays(diaryWeek,7); render(); }
+  else if(act==='dy-today'){ diaryWeek=weekStart(todayStr()); render(); }
+  else if(act==='bk-new'){ const first=state.treatments.find(t=>!t.addon); if(!first){ toast(`Add your ${W().many} first`); return; } bkDraft={date:el.dataset.date||todayStr(),time:'10:00',staffId:'me',clientId:'',newClient:'',serviceId:first.id,addons:[],deposit:0,notes:''}; renderBkForm(); }
+  else if(act==='bk-edit'){ const b=state.bookings.find(x=>x.id===el.dataset.id); bkDraft={...clone(b),priceTouched:true}; renderBkForm(); }
+  else if(act==='bk-close'){ bkDraft=null; holDraft=null; document.getElementById('overlay').hidden=true; }
+  else if(act==='bk-done'){ const b=state.bookings.find(x=>x.id===el.dataset.id); if(!b) return; b.status='done'; b.method=el.dataset.m;
+    const cl=clientById(b.clientId); const inc={id:uid(),date:b.date,desc:`${bookingLabel(b)}${cl?' · '+cl.name:''}`,amount:+b.price||0,method:el.dataset.m,bookingId:b.id}; state.income.push(inc); useStock(b,1); save(); render(); toast('Paid. Added to money in, stock updated'); }
+  else if(act==='bk-noshow'){ const b=state.bookings.find(x=>x.id===el.dataset.id); b.status='noshow'; if(+b.deposit>0) state.income.push({id:uid(),date:b.date,desc:'Deposit kept (no-show)',amount:+b.deposit,method:'Card',bookingId:b.id}); save(); render(); }
+  else if(act==='bk-cancel'){ const b=state.bookings.find(x=>x.id===el.dataset.id); b.status='cancelled'; save(); render(); }
+  else if(act==='bk-del'){ const b=state.bookings.find(x=>x.id===el.dataset.id); if(!b) return; if(b.status==='done') useStock(b,-1); state.income=state.income.filter(x=>x.bookingId!==b.id); state.bookings=state.bookings.filter(x=>x.id!==b.id); save(); render(); toast('Booking deleted'); }
+  else if(act==='hol-new'){ holDraft={staffId:'me',from:todayStr(),to:todayStr(),note:''}; renderHolForm(); }
+  else if(act==='hol-del'){ state.holidays=state.holidays.filter(h=>h.id!==el.dataset.id); save(); render(); }
+  else if(act==='cl-open'){ clOpen=el.dataset.id; clDelArmed=false; render(); window.scrollTo(0,0); }
+  else if(act==='cl-close'){ clOpen=null; render(); }
+  else if(act==='cl-del'){ if(!clDelArmed){ clDelArmed=true; render(); return; } state.clients=state.clients.filter(c=>c.id!==el.dataset.id); state.bookings.forEach(b=>{ if(b.clientId===el.dataset.id) b.clientId=''; }); clOpen=null; clDelArmed=false; save(); render(); toast('Deleted'); }
+  else if(act==='pt-del'){ const c=clientById(clOpen); c.patchTests=(c.patchTests||[]).filter(p=>p.id!==el.dataset.id); save(); render(); }
+  else if(act==='cl-sig-clear'){ const cv=document.getElementById('sigpad'); if(cv){ cv.getContext('2d').clearRect(0,0,cv.width,cv.height); cv._dirty=false; } }
+  else if(act==='cl-sig-save'){ const c=clientById(clOpen); const cv=document.getElementById('sigpad'); c.consult=c.consult||{answers:{}};
+    if(cv && cv._dirty){ c.consult.signature=cv.toDataURL('image/png'); c.consult.date=todayStr(); } save(); render(); toast('Saved'); }
+  else if(act==='trip-del'){ state.trips=state.trips.filter(t=>t.id!==el.dataset.id); save(); render(); }
+  else if(act==='pl-make'){ makePriceList(el.dataset.k); }
+  else if(act==='pg-toggle'){ s.postgrad=el.checked; save(); if(view!=='wizard') render(); }
+  else if(act==='logo-del'){ s.brand={...(s.brand||{}),logo:''}; save(); render(); }
+  else if(act==='fb-copy'){ const t=(document.getElementById('fb-text')||{}).value||''; if(!t.trim()){ toast('Write something first'); return; } copyText('Know Your Worth feedback:\n'+t); }
+});
+document.addEventListener('change', async e=>{
+  const el=e.target, s=state.setup;
+  if(el.dataset.bkf && bkDraft){ const f=el.dataset.bkf; bkDraft[f]=(f==='price'||f==='deposit')?(+el.value||0):el.value; if(f==='price') bkDraft.priceTouched=true; if(f==='serviceId') bkDraft.priceTouched=false; renderBkForm(); }
+  else if(el.dataset.bkaddon && bkDraft){ const id=el.dataset.bkaddon; bkDraft.addons=(bkDraft.addons||[]).filter(a=>a.id!==id); if(+el.value>0) bkDraft.addons.push({id,qty:+el.value}); bkDraft.priceTouched=false; renderBkForm(); }
+  else if(el.dataset.hol && holDraft){ holDraft[el.dataset.hol]=el.value; if(el.dataset.hol==='from' && holDraft.to<holDraft.from) holDraft.to=holDraft.from; renderHolForm(); }
+  else if(el.dataset.clf){ const c=clientById(clOpen); if(c){ c[el.dataset.clf]=el.value; save(); } }
+  else if(el.dataset.cq){ const c=clientById(clOpen); if(c){ c.consult=c.consult||{answers:{}}; c.consult.answers[el.dataset.cq]= el.type==='checkbox'?el.checked:el.value; save(); } }
+  else if(el.dataset.adj){ priceAdj=+el.value; render(); }
+  else if(el.dataset.rep){ repMonth=el.value||repMonth; render(); }
+  else if(el.dataset.sl){ s.studentLoan=el.value; save(); if(view!=='wizard') render(); }
+  else if(el.dataset.brand){ s.brand={...(s.brand||{}),[el.dataset.brand]:el.value}; save(); render(); }
+  else if(el.dataset.logo && el.files && el.files[0]){ const sm=await shrinkTo(el.files[0],256); s.brand={...(s.brand||{}),logo:await blobToDataURL(sm)}; save(); render(); }
+});
+document.addEventListener('input', e=>{ if(e.target.dataset.clsearch){ clSearch=e.target.value; const pos=e.target.selectionStart; render(); const i=document.getElementById('cl-search'); if(i){ i.focus(); try{i.setSelectionRange(pos,pos);}catch(_){} } } });
+document.addEventListener('submit', e=>{
+  const f=e.target; const fd=new FormData(f);
+  if(f.id==='form-booking'){ e.preventDefault(); const d=bkDraft; if(!d) return;
+    let cid=d.clientId; if(!cid && (d.newClient||'').trim()){ cid=uid(); state.clients.push({id:cid,name:d.newClient.trim(),patchTests:[]}); }
+    const b={id:d.id||uid(),date:d.date,time:d.time,staffId:d.staffId,clientId:cid,serviceId:d.serviceId,addons:(d.addons||[]).filter(a=>+a.qty>0),mins:bkMins(d),price:d.priceTouched?+d.price:bkAutoPrice(d),deposit:+d.deposit||0,notes:d.notes||'',status:d.status||'booked'};
+    const i=state.bookings.findIndex(x=>x.id===b.id); if(i>=0) state.bookings[i]={...state.bookings[i],...b}; else state.bookings.push(b);
+    bkDraft=null; document.getElementById('overlay').hidden=true; diaryWeek=weekStart(b.date); save(); render(); toast('Booking saved'); }
+  else if(f.id==='form-holiday'){ e.preventDefault(); const d=holDraft; if(!d) return; state.holidays.push({id:uid(),staffId:d.staffId,from:d.from,to:d.to<d.from?d.from:d.to,note:d.note||''}); holDraft=null; document.getElementById('overlay').hidden=true; save(); render(); toast('Time off saved'); }
+  else if(f.id==='form-client'){ e.preventDefault(); const n=(fd.get('name')||'').trim(); if(!n) return; const id=uid(); state.clients.push({id,name:n,patchTests:[]}); clOpen=id; save(); render(); }
+  else if(f.id==='form-patch'){ e.preventDefault(); const c=clientById(clOpen); c.patchTests=[...(c.patchTests||[]),{id:uid(),date:fd.get('date'),product:fd.get('product')||'',result:fd.get('result')}]; save(); render(); toast('Patch test saved'); }
+  else if(f.id==='form-trip'){ e.preventDefault(); state.trips.push({id:uid(),date:fd.get('date'),route:fd.get('route')||'',miles:+fd.get('miles')||0}); save(); render(); toast('Trip added'); }
+});
+async function shrinkTo(file,max){
+  try{ const bmp=await createImageBitmap(file); const k=Math.min(1,max/Math.max(bmp.width,bmp.height)); const c=document.createElement('canvas'); c.width=Math.round(bmp.width*k); c.height=Math.round(bmp.height*k); c.getContext('2d').drawImage(bmp,0,0,c.width,c.height); return await new Promise(r=>c.toBlob(b=>r(b||file),'image/png')); }catch(_){ return file; }
+}
+
+
+// ===================== MODULE: passcode lock, undo, editing entries, messages =====================
+// ---------- passcode lock: the saved data is scrambled with AES-GCM, key made from the passcode (PBKDF2) ----------
+const ENCKEY=KEY+'-enc';
+let saveSeq=0, lockMsg='', lockResetArmed=false;
+const hasCrypto=!!(globalThis.crypto && globalThis.crypto.subtle);
+function b64(buf){ const u=new Uint8Array(buf); let s=''; for(let i=0;i<u.length;i+=0x8000) s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000)); return btoa(s); }
+function unb64(str){ const bin=atob(str); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return u; }
+async function deriveKey(pass,salt){ const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:310000,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']); }
+async function encryptState(){ const salt=lockSalt, iv=crypto.getRandomValues(new Uint8Array(12));
+  const data=await crypto.subtle.encrypt({name:'AES-GCM',iv},lockKey,new TextEncoder().encode(JSON.stringify(state)));
+  return JSON.stringify({v:1,salt:b64(salt),iv:b64(iv),data:b64(data)}); }
+function saveLocked(){ const seq=++saveSeq; encryptState().then(pkg=>{ if(seq!==saveSeq) return; try{ localStorage.setItem(ENCKEY,pkg); localStorage.removeItem(KEY); storageOk=true; }catch(e){ storageOk=false; } }).catch(()=>{ storageOk=false; }); }
+function adopt(s){ if(s && s.setup && !Array.isArray(s.setup.overheads)) s.setup.overheads=overheadsFromOld({...blankSetup(),...s.setup});
+  state={...blankState(),...s,setup:{...blankSetup(),...s.setup}}; migrateProducts(); }
+async function unlock(pass){
+  try{ const pkg=JSON.parse(localStorage.getItem(ENCKEY)); const salt=unb64(pkg.salt); const key=await deriveKey(pass,salt);
+    const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(pkg.iv)},key,unb64(pkg.data));
+    adopt(JSON.parse(new TextDecoder().decode(plain))); lockKey=key; lockSalt=salt; locked=false; lockMsg=''; view=state.setup.done?'prices':'wizard'; render(); cleanReceipts(); }
+  catch(e){ lockMsg='That passcode is not right. Try again.'; render(); }
+}
+async function setPasscode(pass){ lockSalt=crypto.getRandomValues(new Uint8Array(16)); lockKey=await deriveKey(pass,lockSalt); save(); render(); toast('The lock is on'); }
+function removePasscode(){ lockKey=null; lockSalt=null; saveSeq++; try{ localStorage.removeItem(ENCKEY); }catch(e){} save(); render(); toast('The lock is off'); }
+function lockNow(){ if(!lockKey) return; locked=true; lockKey=null; lockSalt=null; state=blankState(); view='lock'; lockMsg=''; undoSnap=null; document.getElementById('overlay').hidden=true; render(); }
+function vLock(){ return `<section class="stack" style="max-width:420px;margin:40px auto;width:100%"><h2>Locked</h2><p class="muted">Type your passcode to open Know Your Worth.</p>
+  <form id="form-unlock" class="stack"><input id="lock-pass" type="password" name="pass" autocomplete="current-password" placeholder="Passcode" required><button class="btn" type="submit">Unlock</button></form>
+  ${lockMsg?`<div class="notice bad">${esc(lockMsg)}</div>`:''}
+  <details ${lockResetArmed?'open':''}><summary class="small">Forgotten it?</summary><p class="small muted" style="margin:8px 0">A forgotten passcode cannot be recovered. If you have a backup, delete everything here, then restore the backup from the More tab.</p>
+  <button class="btn ${lockResetArmed?'danger':'ghost'}" data-act="lock-wipe">${lockResetArmed?'Tap again to delete everything':'Delete everything on this device'}</button></details></section>`; }
+function lockCard(){
+  if(!hasCrypto) return `<article class="card"><h3>Lock the app</h3><p class="muted">This browser cannot lock the app.</p></article>`;
+  return lockKey ? `<article class="card"><h3>Lock the app</h3><div class="notice ok">The lock is on. What you enter is scrambled on this device and needs your passcode to open.</div>
+      <div class="row"><button class="btn ghost" data-act="lock-now">Lock now</button><button class="btn ghost" data-act="lock-off">Turn the lock off</button></div>
+      <p class="small muted">It locks itself after 5 minutes in the background. Receipt photos and backups are not scrambled, so keep backups private.</p></article>`
+    : `<article class="card"><h3>Lock the app</h3><p class="muted">Set a passcode so nobody else can open your prices, money and ${W().cust} records on this device.</p>
+      <form id="form-setlock" class="fields"><label class="field">New passcode (4 or more characters)<input id="lk-1" type="password" name="p1" minlength="4" autocomplete="new-password" required></label>
+        <label class="field">Type it again<input id="lk-2" type="password" name="p2" minlength="4" autocomplete="new-password" required></label>
+        <label class="field"><button class="btn" type="submit">Turn the lock on</button></label></form>
+      <div class="notice warn">If you forget the passcode, nobody can get your data back, including us. Keep a backup somewhere safe.</div></article>`;
+}
+let hiddenAt=0;
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) hiddenAt=Date.now(); else if(lockKey && hiddenAt && Date.now()-hiddenAt>5*60*1000) lockNow(); });
+
+// ---------- receipt photos nothing points to any more (kept until now so Undo can bring an expense back) ----------
+async function cleanReceipts(){ if(!state.setup.done) return;
+  try{ const d=await db(); const keys=await new Promise((res,rej)=>{ const r=d.transaction('receipts').objectStore('receipts').getAllKeys(); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+    const used=new Set(state.expenses.map(e=>e.receiptId).filter(Boolean)); keys.forEach(k=>{ if(!used.has(k)) delReceipt(k); }); }catch(e){} }
+
+// ---------- undo ----------
+const UNDOABLE=new Set(['del-income','del-expense','bk-del','bk-done','bk-noshow','bk-cancel','del-treat','del-product','del-recipe','wiz-rm-prod','hol-del','cl-del','pt-del','trip-del','oh-del','st-del']);
+let undoSnap=null, undoTimer=null;
+document.addEventListener('click', e=>{ const el=e.target.closest && e.target.closest('[data-act]'); if(!el || !UNDOABLE.has(el.dataset.act) || locked) return;
+  const before=JSON.stringify(state);
+  setTimeout(()=>{ if(!locked && JSON.stringify(state)!==before){ undoSnap=before; const u=document.getElementById('undobar'); u.hidden=false; clearTimeout(undoTimer); undoTimer=setTimeout(()=>{ u.hidden=true; undoSnap=null; },9000); } },0);
+}, true);
+
+// ---------- editing a money entry ----------
+let editDraft=null;
+function renderEdit(){
+  const d=editDraft, o=document.getElementById('overlay'); if(!d){ o.hidden=true; return; } const x=d.x;
+  o.innerHTML=`<form class="card" id="form-edit" style="max-width:520px;width:100%;max-height:90vh;overflow:auto">
+    <div class="treat-head"><h3>Change ${d.kind==='income'?'money in':'money out'}</h3><button type="button" class="iconbtn" aria-label="Close" data-act="bk-close">✕</button></div>
+    <div class="fields"><label class="field">Date<input id="ed-date" type="date" name="date" value="${esc(x.date)}" required></label>
+      <label class="field">Amount<span class="money-in"><input id="ed-amount" type="number" name="amount" step="0.01" min="0" inputmode="decimal" value="${esc(x.amount)}" required></span></label></div>
+    ${d.kind==='income' ? `<label class="field">What for<input id="ed-desc" name="desc" value="${esc(x.desc||'')}"></label>
+      <label class="field">Paid by<select id="ed-method" name="method">${['Card','Cash','Bank transfer','App payout'].map(m=>`<option ${m===x.method?'selected':''}>${m}</option>`).join('')}</select></label>`
+    : `<label class="field">Who you paid<input id="ed-supplier" name="supplier" value="${esc(x.supplier||'')}" required></label>
+      <label class="field">What kind of cost<select id="ed-cat" name="category">${CATEGORIES.map(c=>`<option ${c===x.category?'selected':''}>${c}</option>`).join('')}</select></label>`}
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="bk-close">Cancel</button><button class="btn" type="submit">Save</button></div></form>`;
+  o.hidden=false;
+}
+
+// ---------- reminder messages and newsletter list ----------
+function reminderText(b){ const cl=clientById(b.clientId), biz=(state.setup.brand||{}).businessName;
+  return `Hi${cl?' '+cl.name.split(' ')[0]:''}, a reminder of your ${bookingLabel(b)} on ${fmtDay(b.date)} at ${b.time}${biz?' with '+biz:''}. Please let me know as soon as you can if you need to change it. Thank you!`; }
+function waNumber(p){ const d=String(p||'').replace(/\D/g,''); if(!d) return ''; return d.startsWith('0')?'44'+d.slice(1):d; }
+function showReminder(b){ const cl=clientById(b.clientId), msg=reminderText(b), wa=cl?waNumber(cl.phone):'', o=document.getElementById('overlay');
+  o.innerHTML=`<div class="card" style="max-width:520px;width:100%"><div class="treat-head"><h3>Reminder message</h3><button class="iconbtn" aria-label="Close" data-act="bk-close">✕</button></div>
+    <textarea id="rem-text" rows="5">${esc(msg)}</textarea>
+    <div class="row"><button class="btn" data-act="rem-copy">Copy message</button>${wa?`<a class="btn ghost" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(msg)}">Open in WhatsApp</a>`:''}</div>
+    <p class="small muted">${cl&&cl.email?`Email: ${esc(cl.email)}. `:''}${cl&&cl.phone?`Phone: ${esc(cl.phone)}. `:'Add a phone number on their card to get a WhatsApp button. '}Paste the message into a text, WhatsApp or email. Sending reminders automatically needs the server add-on.</p></div>`;
+  o.hidden=false; }
+function newsletterList(){ return state.clients.filter(c=>c.email && c.consult && c.consult.answers && c.consult.answers.marketing); }
+
+document.addEventListener('click', e=>{
+  const el=e.target.closest && e.target.closest('[data-act]'); if(!el) return; const act=el.dataset.act;
+  if(act==='undo'){ if(undoSnap){ state=JSON.parse(undoSnap); undoSnap=null; save(); render(); toast('Put back'); } document.getElementById('undobar').hidden=true; }
+  else if(act==='inc-edit'){ const x=state.income.find(i=>i.id===el.dataset.id); if(x){ editDraft={kind:'income',x}; renderEdit(); } }
+  else if(act==='exp-edit'){ const x=state.expenses.find(i=>i.id===el.dataset.id); if(x){ editDraft={kind:'expense',x}; renderEdit(); } }
+  else if(act==='bk-close'){ editDraft=null; }
+  else if(act==='bk-remind'){ const b=state.bookings.find(x=>x.id===el.dataset.id); if(b) showReminder(b); }
+  else if(act==='rem-copy'){ copyText((document.getElementById('rem-text')||{}).value||''); }
+  else if(act==='cl-news'){ const l=newsletterList(); if(!l.length){ toast('Nobody with an email has agreed to offers yet'); return; } copyText(l.map(c=>`${c.name} <${c.email}>`).join('\n')); }
+  else if(act==='lock-now'){ lockNow(); }
+  else if(act==='lock-off'){ removePasscode(); }
+  else if(act==='lock-wipe'){ if(!lockResetArmed){ lockResetArmed=true; render(); return; }
+    try{ localStorage.removeItem(KEY); localStorage.removeItem(ENCKEY); indexedDB.deleteDatabase('taxpot'); }catch(err){}
+    lockKey=null; lockSalt=null; locked=false; lockResetArmed=false; state=blankState(); step=0; view='wizard'; render(); toast('Everything deleted'); }
+});
+document.addEventListener('submit', e=>{
+  const f=e.target, fd=new FormData(f);
+  if(f.id==='form-unlock'){ e.preventDefault(); unlock(fd.get('pass')||''); }
+  else if(f.id==='form-setlock'){ e.preventDefault(); const a=fd.get('p1')||'', b=fd.get('p2')||''; if(a.length<4){ toast('Use 4 or more characters'); return; } if(a!==b){ toast('The two passcodes do not match'); return; } setPasscode(a); }
+  else if(f.id==='form-edit'){ e.preventDefault(); const d=editDraft; if(!d) return; const x=d.x; x.date=fd.get('date'); x.amount=+fd.get('amount')||0;
+    if(d.kind==='income'){ x.desc=fd.get('desc')||'Takings'; x.method=fd.get('method'); } else { x.supplier=fd.get('supplier'); x.category=fd.get('category'); }
+    editDraft=null; document.getElementById('overlay').hidden=true; save(); render(); toast('Saved'); }
+});
+let hasLockedData=false; try{ hasLockedData=!!localStorage.getItem(ENCKEY); }catch(e){}
+if(hasLockedData && hasCrypto){ locked=true; view='lock'; } else cleanReceipts();
+
+
+// ===================== MODULE: more trades, bigger starter lists =====================
+// Every price, time and pack size here is a typical UK example to start from. Each person changes them to their own.
+function P(id,name,pack,cost,shelf){ return {id,name,...parsePack(pack),packCost:cost,clientsPerPack:1,shelfWeeks:shelf||0,inStock:2,reorderAt:1}; }
+function S(id,name,min,prep,perWeek,price,recipe,extra){ return {id,name,clientMin:min,prepMin:prep,perWeek,price,patch:false,...(extra||{}),recipe:(recipe||[]).map(([productId,perPack])=>({productId,perPack}))}; }
+function addProducts(list){ list.forEach(p=>{ if(!LIBRARY.some(x=>x.id===p.id)) LIBRARY.push(p); }); }
+function addServices(key,list){ CATALOGUES[key]=CATALOGUES[key]||[]; list.forEach(s=>{ if(!CATALOGUES[key].some(x=>x.id===s.id)) CATALOGUES[key].push(s); if(!ALLCAT.some(x=>x.id===s.id)) ALLCAT.push(s); }); }
+const an=w=>/^[aeiou]/i.test(w)?'an':'a';
+const AD={addon:true}, PT={patch:true};
+
+// ---------- nails, lashes and brows: more ----------
+addProducts([P('acrylp','Acrylic powder','660 g',28),P('monomer','Acrylic liquid (monomer)','500 ml',22),P('primer','Nail primer','15 ml',9),P('dehyd','Nail dehydrator','15 ml',7),
+  P('forms','Nail forms','500 pieces',9),P('cutrem','Cuticle remover','120 ml',8),P('footfile','Disposable foot files','50 pieces',18),P('scrub','Foot scrub','500 ml',12),
+  P('lotion','Hand and foot lotion','500 ml',11),P('polish','Nail polish','15 ml',7),P('chrome','Chrome powder','1 g',6),P('voltrays','Volume lash trays','1 tray',16),
+  P('lashrem','Lash glue remover','15 ml',9),P('lashprim','Lash primer','15 ml',8),P('liftkit','Lash lift sachets','10 pieces',25),P('lamkit','Brow lamination sachets','10 pieces',28),
+  P('strips','Wax strips','100 pieces',5),P('facewax','Facial wax','400 g',10),P('thread','Threading thread','300 m',4),P('henna','Brow henna','10 g',18,26)]);
+addServices('beauty',[
+  S('classicmani','Classic manicure',30,10,2,20,[['polish',20],['cutrem',40],['lotion',100],['files',50],['buffers',50],['oil',100]]),
+  S('acrylfull','Acrylic full set',90,10,2,40,[['acrylp',60],['monomer',40],['primer',40],['dehyd',50],['tips',50],['files',50],['buffers',50],['top',40],['oil',100]]),
+  S('acrylinfill','Acrylic infill',60,10,3,30,[['acrylp',100],['monomer',70],['primer',40],['files',50],['buffers',50],['top',40],['oil',100]]),
+  S('gelext','Gel extensions (sculpted)',105,10,1,50,[['builder',12],['forms',50],['base',15],['top',40],['files',50],['buffers',50],['wipes',100],['oil',100]]),
+  S('luxpedi','Luxury pedicure',60,10,1,38,[['footfile',50],['scrub',25],['lotion',40],['polish',20],['cutrem',40],['files',50]]),
+  S('chromeadd','Chrome or ombré',15,0,2,8,[['chrome',10]],AD),
+  S('repair','Nail repair',10,0,2,3,[['builder',60]],{addon:true,unitLabel:'nail'}),
+  S('hybridfull','Hybrid lash full set',135,10,1,70,[['trays',3],['voltrays',3],['glue',15],['pads',50],['brushes',40],['lashprim',40]],PT),
+  S('volfull','Russian volume full set',150,10,1,80,[['voltrays',2],['glue',15],['pads',50],['brushes',40],['lashprim',40]],PT),
+  S('volinfill','Volume lash infill',75,10,2,48,[['voltrays',4],['glue',30],['pads',50],['brushes',80]],PT),
+  S('lashlift','Lash lift and tint',50,10,2,40,[['liftkit',10],['tint',15],['dev',50],['pads',50],['brushes',40]],PT),
+  S('lashremove','Lash removal',20,5,1,12,[['lashrem',15],['pads',50],['brushes',50]]),
+  S('browlam','Brow lamination and tint',50,10,2,40,[['lamkit',10],['tint',15],['dev',50],['brushes',40]],PT),
+  S('browwax','Brow wax and shape',15,5,3,12,[['facewax',80],['strips',50]]),
+  S('browthread','Brow threading',15,5,2,10,[['thread',150]]),
+  S('hennabrow','Henna brows',45,10,1,32,[['henna',10],['brushes',40]],PT)]);
+
+// ---------- waxing, facials, massage and tanning ----------
+addProducts([P('hotwax','Hot wax beads','1 kg',14),P('stripwax','Strip wax','800 g',9),P('spatulas','Wooden spatulas','100 pieces',3),P('prewax','Pre-wax cleanser','500 ml',8),
+  P('afterwax','After-wax lotion','500 ml',9),P('couch','Couch roll (pack of 9)','9 pieces',22),P('massoil','Massage oil','1 litre',14),P('cleanser','Facial cleanser','500 ml',16),
+  P('exfol','Exfoliator','250 ml',14),P('facemask','Face mask','500 ml',22),P('moist','Moisturiser','500 ml',20),P('tansol','Spray tan solution','1 litre',28,26),
+  P('dispunder','Disposable underwear','50 pieces',9),P('stickyfeet','Sticky feet','50 pairs',8),P('gloves','Disposable gloves','100 pieces',6)]);
+addServices('therapy',[
+  S('halfleg','Half leg wax',20,5,3,18,[['stripwax',15],['strips',10],['spatulas',50],['prewax',60],['afterwax',60],['couch',360],['gloves',50]]),
+  S('fullleg','Full leg wax',35,5,3,30,[['stripwax',8],['strips',6],['spatulas',50],['prewax',40],['afterwax',40],['couch',360],['gloves',50]]),
+  S('bikini','Bikini wax',15,5,3,14,[['hotwax',20],['spatulas',50],['prewax',80],['afterwax',80],['couch',360],['gloves',50]]),
+  S('hollywood','Hollywood or Brazilian wax',30,5,3,35,[['hotwax',8],['spatulas',30],['prewax',60],['afterwax',60],['couch',360],['gloves',50]]),
+  S('underarm','Underarm wax',10,5,3,10,[['hotwax',25],['spatulas',50],['prewax',100],['afterwax',100],['gloves',50]]),
+  S('lipchin','Lip or chin wax',10,5,3,9,[['facewax',60],['spatulas',100],['gloves',50]]),
+  S('expfacial','Express facial',30,10,2,30,[['cleanser',60],['exfol',50],['facemask',40],['moist',80],['couch',360]]),
+  S('luxfacial','Luxury facial',60,10,2,55,[['cleanser',40],['exfol',30],['facemask',25],['moist',50],['massoil',100],['couch',360]]),
+  S('bns','Back, neck and shoulder massage',30,10,3,30,[['massoil',60],['couch',360]]),
+  S('fullbody','Full body massage',60,10,2,48,[['massoil',30],['couch',360]]),
+  S('hotstone','Hot stone massage',75,15,1,60,[['massoil',30],['couch',360]]),
+  S('ihm','Indian head massage',30,5,1,28,[['massoil',100]]),
+  S('spraytan','Spray tan',20,10,3,25,[['tansol',15],['dispunder',50],['stickyfeet',50]],PT)]);
+
+// ---------- make-up artist ----------
+addProducts([P('found','Foundation','30 ml',30,52),P('mprimer','Face primer','30 ml',25,52),P('powder','Setting powder','30 g',25),P('setspray','Setting spray','100 ml',22),
+  P('striplash','Strip lashes','10 pairs',25),P('mascwand','Disposable mascara wands','100 pieces',4),P('lipwand','Disposable lip wands','100 pieces',4),
+  P('sponges','Make-up sponges','20 pieces',10),P('brushcl','Brush cleaner','500 ml',12)]);
+addServices('makeup',[
+  S('bridal','Bridal make-up (bride)',90,30,1,120,[['found',15],['mprimer',20],['powder',30],['setspray',15],['striplash',10],['mascwand',50],['lipwand',50],['sponges',20],['brushcl',40]]),
+  S('bridesmaid','Bridesmaid or guest make-up',45,10,2,55,[['found',20],['mprimer',25],['powder',40],['setspray',20],['mascwand',50],['lipwand',50],['sponges',20],['brushcl',60]]),
+  S('trial','Bridal trial',90,15,1,60,[['found',15],['mprimer',20],['powder',30],['setspray',15],['mascwand',50],['lipwand',50],['sponges',20],['brushcl',40]]),
+  S('occasion','Occasion or prom make-up',60,15,2,50,[['found',20],['mprimer',25],['powder',40],['setspray',20],['mascwand',50],['lipwand',50],['sponges',20],['brushcl',60]]),
+  S('mulesson','Make-up lesson',120,15,0.5,90,[['mascwand',25],['lipwand',25],['sponges',10],['brushcl',40]]),
+  S('lashesadd','Strip lashes',5,0,3,8,[['striplash',10]],AD)]);
+
+// ---------- hair: more ----------
+addProducts([P('toner','Toner or gloss','60 ml',7),P('bond','Bond-building treatment','500 ml',90),P('perml','Perm lotion and neutraliser','1 pack',9),P('keratin','Keratin smoothing treatment','500 ml',120),
+  P('neck','Neck strips','500 pieces',6),P('pins','Hair pins and grips','500 pieces',6),P('hspray','Hairspray','500 ml',6)]);
+addServices('hair',[
+  S('restyle','Restyle cut and blow-dry',60,10,2,50,[['shamp',40],['cond',40],['styl',40],['capes',100]]),
+  S('childcut','Child cut',20,5,3,12,[['capes',100]]),
+  S('roots','Root tint (regrowth)',75,10,4,48,[['hcol',1],['hdev',20],['shamp',40],['cond',40],['gloves',50]],PT),
+  S('fullhl','Full head highlights',150,10,1,105,[['bleach',5],['hdev',8],['hfoil',1],['toner',1],['shamp',40],['cond',40],['gloves',50]],PT),
+  S('balayage','Balayage',180,15,1,130,[['bleach',5],['hdev',8],['toner',1],['bond',25],['shamp',40],['cond',40],['gloves',50]],PT),
+  S('bleachtone','Bleach and tone',180,15,0.5,120,[['bleach',3],['hdev',6],['toner',1],['bond',25],['shamp',40],['cond',40],['gloves',50]],PT),
+  S('perm','Perm',120,10,0.5,65,[['perml',1],['shamp',40],['cond',40]],PT),
+  S('hairup','Hair up or occasion style',60,10,1,45,[['pins',20],['hspray',15],['styl',30]]),
+  S('keratint','Keratin smoothing',150,10,0.5,150,[['keratin',8],['shamp',40]]),
+  S('toneradd','Toner or gloss',20,0,3,15,[['toner',1],['hdev',40]],AD),
+  S('bondadd','Bond treatment',10,0,3,15,[['bond',25]],AD)]);
+
+// ---------- barber ----------
+addProducts([P('blades','Razor blades','100 pieces',9),P('shavecr','Shaving cream','500 ml',8),P('aftersh','Aftershave balm','500 ml',10),P('clipspray','Clipper disinfectant spray','400 ml',9),
+  P('clipoil','Clipper oil','100 ml',5),P('talc','Neck powder','200 g',5)]);
+addServices('barber',[
+  S('skinfade','Skin fade',40,5,15,22,[['neck',500],['blades',100],['clipspray',150],['clipoil',300],['talc',150],['styl',60]]),
+  S('scissor','Scissor cut',30,5,10,20,[['neck',500],['clipspray',150],['talc',150],['styl',60]]),
+  S('clipper','Clipper cut (one grade)',15,5,8,13,[['neck',500],['clipspray',150],['clipoil',300],['talc',150]]),
+  S('kidscut','Kids cut',20,5,8,13,[['neck',500],['clipspray',150],['talc',150]]),
+  S('beard','Beard trim and shape',15,5,8,10,[['blades',100],['aftersh',100],['neck',500]]),
+  S('cutbeard','Cut and beard',45,5,10,30,[['neck',500],['blades',100],['clipspray',150],['clipoil',300],['aftersh',100],['styl',60]]),
+  S('hotshave','Hot towel shave',30,10,2,22,[['blades',100],['shavecr',40],['aftersh',50]]),
+  S('headshave','Head shave',20,5,2,15,[['blades',100],['shavecr',30],['aftersh',60]]),
+  S('washadd','Wash',5,0,5,3,[['shamp',60]],AD),
+  S('browtidy','Eyebrow tidy',5,0,3,4,[['blades',100]],AD)]);
+
+// ---------- dog grooming ----------
+addProducts([P('dshamp','Dog shampoo (concentrate)','5 litres',30),P('dcond','Dog conditioner','5 litres',32),P('cologne','Dog cologne','500 ml',10),P('earcl','Ear cleaner','250 ml',8),
+  P('bows','Bows and bandanas','100 pieces',12),P('styptic','Styptic powder','14 g',6),P('dtooth','Finger toothbrushes and paste','50 pieces',15),P('bladewash','Blade wash and coolant','500 ml',9)]);
+addServices('dog',[
+  S('smalldog','Small dog full groom',90,15,6,40,[['dshamp',150],['dcond',150],['cologne',100],['earcl',60],['bows',100],['bladewash',80]]),
+  S('meddog','Medium dog full groom',120,15,5,50,[['dshamp',100],['dcond',100],['cologne',80],['earcl',60],['bows',100],['bladewash',60]]),
+  S('largedog','Large dog full groom',150,20,2,70,[['dshamp',60],['dcond',60],['cologne',60],['earcl',50],['bows',100],['bladewash',40]]),
+  S('puppy','Puppy introduction',45,10,1,25,[['dshamp',200],['cologne',100],['bows',100]]),
+  S('bathtidy','Bath and tidy',60,10,3,30,[['dshamp',120],['dcond',120],['cologne',100],['earcl',60]]),
+  S('handstrip','Hand strip',150,15,1,65,[['dshamp',100],['earcl',60]]),
+  S('deshed','De-shed treatment',90,15,1,45,[['dshamp',60],['dcond',50]]),
+  S('nailclip','Nail clip',10,5,3,10,[['styptic',100]]),
+  S('teeth','Teeth clean',10,0,3,8,[['dtooth',50]],AD),
+  S('demat','De-matting',15,0,2,10,[],{addon:true,unitLabel:'15 minutes'})]);
+
+// ---------- builder or handyman: more ----------
+addProducts([P('plugs','Wall plugs','100 pieces',3),P('grab','Grab adhesive','290 ml',5),P('woodglue','Wood glue','1 litre',9),P('pbscrews','Drywall screws','1000 pieces',9),
+  P('underlay','Laminate underlay','15 m',20),P('hinges','Door hinges (set of 3)','1 pack',8),P('postcrete','Postcrete','20 kg',7),P('bits','Drill bits and blades','10 pieces',15),P('rubble','Rubble sacks','10 pieces',5)]);
+addServices('build',[
+  S('hourly','Small job (first hour)',60,30,4,45,[['screws',40],['plugs',25]]),
+  S('flatpack','Assemble flat-pack furniture',120,20,2,70,[['woodglue',50]]),
+  S('shelves','Hang shelves, pictures or a TV',60,20,2,50,[['screws',20],['plugs',10],['bits',20]]),
+  S('laminate','Lay a laminate floor (one room)',360,45,0.5,280,[['underlay',1],['sealant',3],['bits',10]]),
+  S('studwall','Build a stud wall (labour)',480,60,0.5,300,[['pbscrews',4],['screws',4],['bits',10]]),
+  S('fencepanel','Replace a fence panel and post',120,30,1,110,[['postcrete',1],['screws',20]])]);
+
+// ---------- painting and decorating: more ----------
+addProducts([P('pprimer','Primer or sealer','2.5 litres',22),P('satin','Satinwood paint','2.5 litres',32),P('wpaste','Wallpaper paste (sachets)','5 pieces',10),P('lining','Lining paper (rolls)','4 pieces',20),
+  P('masonry','Masonry paint','10 litres',40),P('wspirit','White spirit','2 litres',6),P('pbrush','Paint brushes','5 pieces',15)]);
+addServices('paint',[
+  S('ceiling','Paint a ceiling',120,30,1,80,[['emul',4],['dust',20],['roller',4],['tape',6]]),
+  S('hsl','Hall, stairs and landing',960,60,0.5,550,[['emul',1],['gloss',2],['under',2],['tape',2],['caulk',2],['fill',3],['sandp',3],['roller',2],['dust',10]]),
+  S('featwall','Wallpaper a feature wall',180,30,1,120,[['wpaste',5],['dust',20]]),
+  S('paperroom','Wallpaper a room',480,60,0.5,320,[['wpaste',2],['lining',1],['dust',10]]),
+  S('strippaper','Strip wallpaper (day)',480,30,0.5,200,[['dust',10],['rubble',5]]),
+  S('frontdoor','Paint a front door',180,30,1,110,[['gloss',6],['under',6],['sandp',5],['tape',10]]),
+  S('cabinets','Paint kitchen cabinets',960,60,0.25,650,[['pprimer',1],['satin',1],['sandp',2],['tape',2],['roller',2],['pbrush',5]]),
+  S('mistcoat','Mist coat new plaster (one room)',180,30,0.5,110,[['emul',2],['dust',20],['roller',4]]),
+  S('masonryday','Exterior masonry (day)',480,60,0.5,230,[['masonry',1],['dust',10],['roller',2]])]);
+
+// ---------- plastering and tiling ----------
+addProducts([P('bonding','Bonding coat','25 kg',11),P('pva','PVA','5 litres',12),P('scrim','Scrim tape','90 m',4),P('beads','Angle beads','10 pieces',14),
+  P('spacers','Tile spacers','1000 pieces',5),P('tprimer','Tile primer','5 litres',20),P('trim','Tile trim (2.5 m lengths)','5 pieces',25)]);
+addServices('plaster',[
+  S('skimwalls','Skim a room (walls)',480,60,1,350,[['mplast',0.25],['pva',5],['scrim',3],['beads',2],['dust',10]]),
+  S('skimceil','Skim a ceiling',240,45,1,180,[['mplast',1],['pva',10],['scrim',4],['dust',10]]),
+  S('patchpl','Patch plaster repair',120,30,1,90,[['bonding',4],['mplast',4],['pva',20]]),
+  S('boardskim','Board and skim a ceiling (labour)',480,60,0.5,420,[['mplast',0.5],['scrim',2],['pbscrews',4],['dust',10]]),
+  S('renderday','Rendering (day, labour)',480,60,0.5,260,[['beads',2],['dust',10]]),
+  S('tilewall2','Tile a bathroom wall (labour)',960,60,0.5,600,[['adhes',0.33],['grout',1],['spacers',5],['sealant',2],['dust',10]]),
+  S('tilefloor','Tile a bathroom floor (labour)',360,45,0.5,280,[['adhes',1],['grout',2],['spacers',10],['tprimer',5]]),
+  S('splash','Tile a kitchen splashback',240,30,0.5,190,[['adhes',2],['grout',3],['spacers',20],['sealant',3],['trim',5]]),
+  S('regrout','Re-grout a bathroom',240,30,0.5,180,[['grout',1],['sealant',2]]),
+  S('reseal','Re-seal a bath or shower',60,20,1,60,[['sealant',1]])]);
+
+// ---------- electrician ----------
+addProducts([P('tecable','Twin and earth cable 2.5 mm','100 m',75),P('lcable','Lighting cable 1.5 mm','100 m',50),P('backbox','Back boxes','10 pieces',8),P('sockets','Double sockets','10 pieces',35),
+  P('switches','Light switches','10 pieces',18),P('wago','Lever connectors','100 pieces',25),P('clips','Cable clips','100 pieces',3),P('downl','LED downlights (fire-rated)','10 pieces',55),
+  P('smoke','Mains smoke alarms','5 pieces',100),P('gromm','Grommets and glands','100 pieces',6),P('etape','Insulation tape','10 pieces',6),P('labels','Circuit labels and notices','100 pieces',8)]);
+addServices('electric',[
+  S('ehour','Call-out (first hour)',60,30,5,70,[['wago',50],['etape',20]]),
+  S('eday','Day rate',480,45,1,360,[['wago',10],['clips',5],['etape',10]]),
+  S('swapsocket','Replace a socket or switch',30,20,3,55,[['sockets',10],['wago',50]]),
+  S('newsocket','Add a new socket',120,30,2,130,[['sockets',10],['backbox',10],['tecable',10],['clips',10],['wago',30]]),
+  S('lightfit','Replace a light fitting',45,20,3,65,[['wago',30],['etape',20]]),
+  S('downlights','Fit 6 downlights',240,30,1,300,[['downl',1.6],['lcable',5],['wago',8]]),
+  S('cunit','Replace a consumer unit (labour)',360,45,0.5,480,[['labels',10],['wago',5],['gromm',10]]),
+  S('eicr','Electrical safety check (EICR)',180,30,2,180,[['labels',20]]),
+  S('evcharger','Install an EV charger (labour)',240,45,0.5,380,[['clips',3],['gromm',10]]),
+  S('outsocket','Fit an outdoor socket',120,30,1,140,[['tecable',10],['clips',10],['gromm',20]]),
+  S('smokeal','Fit a mains smoke alarm',60,20,1,85,[['smoke',5],['lcable',15],['wago',30]])]);
+
+// ---------- plumbing and heating ----------
+addProducts([P('ptfe','PTFE tape','10 pieces',5),P('flux','Flux','100 g',5),P('solder','Solder','500 g',25),P('cu15','15 mm copper pipe (3 m lengths)','10 pieces',70),
+  P('compf','Compression fittings (mixed)','20 pieces',25),P('pushf','Push-fit fittings (mixed)','20 pieces',35),P('flexi','Flexible tap connectors','10 pieces',20),
+  P('isov','Isolating valves','10 pieces',18),P('jointc','Jointing compound','250 g',7),P('radvalve','Radiator valves (pairs)','5 pairs',60),P('inhib','Heating inhibitor','1 litre',15),P('washers','Washers and O-rings (mixed)','200 pieces',8)]);
+addServices('plumb',[
+  S('phour','Call-out (first hour)',60,30,5,75,[['ptfe',50],['washers',40]]),
+  S('pday','Day rate',480,45,1,340,[['ptfe',10],['compf',4],['solder',10],['flux',10]]),
+  S('tap','Replace a tap',60,20,2,90,[['flexi',5],['isov',5],['ptfe',20]]),
+  S('leak','Fix a leak',60,30,3,85,[['compf',10],['ptfe',20],['jointc',20]]),
+  S('toilet','Replace a toilet (labour)',180,30,1,200,[['flexi',10],['isov',10],['sealant',3],['ptfe',20]]),
+  S('unblock','Unblock a sink or toilet',45,20,3,80,[]),
+  S('radiator','Fit or replace a radiator (labour)',120,30,1,150,[['radvalve',5],['ptfe',10],['inhib',2]]),
+  S('boilersvc','Boiler service',60,20,4,90,[['washers',40]]),
+  S('washmach','Install a washing machine or dishwasher',45,20,2,70,[['ptfe',20],['isov',10]]),
+  S('fitshower','Fit a shower (labour)',240,30,0.5,260,[['sealant',2],['ptfe',10],['compf',5]]),
+  S('outtap','Fit an outside tap',90,20,1,110,[['cu15',5],['compf',5],['ptfe',20]]),
+  S('bathday','Bathroom installation (day, labour)',480,45,1,340,[['sealant',2],['ptfe',10],['pushf',4]])]);
+
+// ---------- carpentry and joinery ----------
+addProducts([P('brads','Brad nails','5000 pieces',15),P('deckscrews','Decking screws','500 pieces',18),P('wbolts','Worktop bolts and colour fill','1 pack',12),P('mdf','MDF sheet 18 mm','2 pieces',70),
+  P('latch','Door latch and handles','1 pack',18),P('woodfill','Wood filler','250 ml',6),P('sawblades','Saw and multi-tool blades','5 pieces',20)]);
+addServices('joiner',[
+  S('jday','Day rate',480,45,2,260,[['screws',5],['brads',50],['woodglue',10],['sawblades',10]]),
+  S('hangdoor','Hang an internal door',120,30,2,110,[['hinges',1],['latch',1],['screws',20],['sandp',10]]),
+  S('skirtroom','Fit skirting (one room)',180,30,1,170,[['grab',1],['brads',100],['caulk',2],['woodfill',4]]),
+  S('worktop','Fit a kitchen worktop (labour)',240,30,0.5,260,[['wbolts',1],['sealant',2],['sawblades',5]]),
+  S('wardrobe','Build a fitted wardrobe (day, labour)',480,45,0.5,280,[['screws',4],['woodglue',8],['brads',50]]),
+  S('jlaminate','Lay a laminate or wood floor (one room)',360,45,0.5,300,[['underlay',1],['sawblades',5]]),
+  S('deckday','Decking (day, labour)',480,45,0.5,270,[['deckscrews',1],['sawblades',5]]),
+  S('fitlock','Fit or change a lock',60,20,1,80,[['screws',40]]),
+  S('boxing','Box in pipes',120,30,1,120,[['mdf',2],['screws',10],['grab',2],['caulk',3]]),
+  S('spindles','Replace stair spindles (labour)',240,30,0.25,260,[['woodglue',10],['brads',100],['woodfill',4]])]);
+
+// ---------- gardening and landscaping ----------
+addProducts([P('petrol','Petrol','5 litres',8),P('twostroke','Two-stroke oil','1 litre',10),P('strim','Strimmer line','60 m',12),P('gbags','Garden waste bags','10 pieces',12),
+  P('weedk','Weed killer (concentrate)','1 litre',20),P('lawnfeed','Lawn feed','20 kg',35),P('compost','Compost','50 litres',7),P('chainoil','Chain oil','1 litre',7),P('jetdet','Patio cleaner','5 litres',15)]);
+addServices('garden',[
+  S('mow','Mow a lawn (regular visit)',45,20,12,30,[['petrol',15],['strim',40],['gbags',30]]),
+  S('hedge','Trim a hedge',120,30,3,90,[['petrol',8],['twostroke',40],['gbags',5]]),
+  S('tidyhalf','Garden tidy (half day)',240,30,2,140,[['petrol',5],['strim',10],['gbags',3]]),
+  S('gday','Full day of maintenance',480,45,1,260,[['petrol',3],['strim',6],['gbags',2]]),
+  S('turf','Lay turf (day, labour)',480,45,0.25,280,[['lawnfeed',10]]),
+  S('gfence','Fit a fence panel and post',120,30,1,110,[['postcrete',1],['screws',20]]),
+  S('jetwash','Jet wash a patio or drive',180,30,1,130,[['petrol',4],['jetdet',3]]),
+  S('prune','Prune trees and shrubs',120,30,1,90,[['chainoil',10],['gbags',5]]),
+  S('weedspray','Weed control spray',45,15,2,40,[['weedk',10]]),
+  S('planting','Plant a border (labour)',180,30,0.5,120,[['compost',2]]),
+  S('wasteaway','Take green waste away',15,15,5,15,[['gbags',10]],AD)]);
+
+// ---------- cleaning ----------
+addProducts([P('multi','Multi-surface cleaner','5 litres',12),P('bathcl','Bathroom cleaner','5 litres',14),P('glasscl','Glass cleaner','5 litres',10),P('ovencl','Oven cleaner','5 litres',25),
+  P('carpsh','Carpet shampoo','5 litres',28),P('mfibre','Microfibre cloths','50 pieces',25),P('scour','Sponges and scourers','40 pieces',8),P('binb','Bin bags','200 pieces',12),
+  P('floorcl','Floor cleaner','5 litres',12),P('limesc','Limescale remover','5 litres',18),P('vacbags','Vacuum bags','10 pieces',12),P('squeegee','Squeegee rubbers and pads','1 pack',15)]);
+const CLEANKIT=k=>[['multi',60*k],['bathcl',60*k],['glasscl',100*k],['floorcl',80*k],['mfibre',200*k],['scour',40*k],['gloves',50*k],['vacbags',40*k],['binb',100*k]];
+addServices('clean',[
+  S('regclean','Regular house clean (2 hours)',120,20,10,36,CLEANKIT(1)),
+  S('deepclean','Deep clean (4 hours)',240,30,1,95,CLEANKIT(0.5)),
+  S('eot','End of tenancy clean',360,30,0.5,200,[...CLEANKIT(0.3),['ovencl',10],['limesc',15]]),
+  S('ovenc','Oven clean',120,20,2,65,[['ovencl',10],['scour',20],['gloves',25]]),
+  S('carpetroom','Carpet clean (one room)',45,20,2,35,[['carpsh',25]]),
+  S('windows','Window clean (house, outside)',30,10,15,15,[['squeegee',300],['glasscl',150]]),
+  S('office','Office clean (2 hours)',120,20,3,40,CLEANKIT(1)),
+  S('builders','After-builders clean',360,30,0.25,180,CLEANKIT(0.3)),
+  S('fridge','Inside the fridge',20,0,2,10,[['multi',100]],AD),
+  S('inwindows','Inside windows',30,0,2,12,[['glasscl',60]],AD),
+  S('ironing','Ironing',60,0,2,16,[],{addon:true,unitLabel:'hour'})]);
+
+// ---------- car valeting and detailing ----------
+addProducts([P('snowfoam','Snow foam','5 litres',18),P('carsh','Car shampoo','5 litres',15),P('wheelcl','Wheel cleaner','5 litres',20),P('tyre','Tyre dressing','5 litres',22),
+  P('apc','All-purpose cleaner','5 litres',15),P('intdress','Interior dressing','5 litres',20),P('upcl','Upholstery cleaner','5 litres',18),P('compound','Polish compound','1 litre',25),
+  P('ppads','Polishing pads','6 pieces',20),P('wax','Wax or sealant','500 ml',18),P('ceramic','Ceramic coating','30 ml',45),P('clay','Clay bar','200 g',12),P('airfresh','Air fresheners','50 pieces',15)]);
+addServices('valet',[
+  S('extwash','Exterior wash',40,15,6,15,[['snowfoam',40],['carsh',100],['wheelcl',40],['tyre',80],['mfibre',300]]),
+  S('minivalet','Mini valet',75,15,6,35,[['snowfoam',40],['carsh',100],['wheelcl',40],['tyre',80],['apc',60],['glasscl',80],['intdress',80],['airfresh',50],['mfibre',200]]),
+  S('fullvalet','Full valet',180,20,4,70,[['snowfoam',40],['carsh',100],['wheelcl',30],['tyre',80],['apc',40],['glasscl',60],['intdress',60],['upcl',25],['wax',15],['airfresh',50],['mfibre',150]]),
+  S('intdeep','Interior deep clean',150,20,1,65,[['apc',30],['upcl',15],['glasscl',60],['intdress',50],['mfibre',150],['airfresh',50]]),
+  S('mpolish','Machine polish (single stage)',300,30,0.5,180,[['compound',6],['ppads',2],['clay',4],['wax',12],['snowfoam',40],['carsh',100]]),
+  S('ceramicc','Ceramic coating',480,30,0.25,350,[['ceramic',1],['compound',5],['ppads',2],['clay',4]]),
+  S('enginebay','Engine bay clean',45,15,0.5,35,[['apc',30],['intdress',60]]),
+  S('headlight','Headlight restoration',45,10,0.5,40,[['compound',20],['ppads',6]]),
+  S('pethair','Pet hair removal',30,0,2,15,[],AD),
+  S('seatsh','Seat shampoo',15,0,2,8,[['upcl',40]],{addon:true,unitLabel:'seat'}),
+  S('odour','Odour treatment',15,0,1,15,[['airfresh',50]],AD)]);
+
+// ---------- cakes and baking ----------
+addProducts([P('butter','Butter','2 kg',17),P('flour','Self-raising flour','1.5 kg',1.5),P('caster','Caster sugar','1 kg',1.8),P('eggs','Eggs','12 pieces',3.2,3),P('icings','Icing sugar','1 kg',2.2),
+  P('fondant','Fondant icing','1 kg',6.5),P('choc','Baking chocolate','1 kg',9),P('cocoa','Cocoa powder','250 g',3.5),P('vanilla','Vanilla extract','100 ml',6),P('jam','Jam','454 g',2),
+  P('boards','Cake boards','5 pieces',6),P('cboxes','Cake boxes','10 pieces',12),P('cases','Cupcake cases','200 pieces',4),P('cupboxes','Cupcake boxes','10 pieces',10),
+  P('fcolour','Food colouring gel','28 g',3),P('sprinkles','Sprinkles','100 g',3),P('dowels','Cake dowels','12 pieces',4),P('popst','Cake pop sticks','100 pieces',3),P('cellob','Cello bags','100 pieces',4)]);
+addServices('cake',[
+  S('cake6','6 inch celebration cake',150,30,2,55,[['butter',4],['flour',6],['caster',4],['eggs',3],['icings',2],['fondant',2],['vanilla',10],['jam',4],['boards',5],['cboxes',10],['fcolour',5]]),
+  S('cake8','8 inch celebration cake',210,30,2,80,[['butter',2.5],['flour',4],['caster',3],['eggs',2],['icings',1.3],['fondant',1],['vanilla',8],['jam',3],['boards',5],['cboxes',10],['fcolour',4]]),
+  S('twotier','Two-tier cake',360,45,0.5,160,[['butter',1.5],['flour',2.5],['caster',2],['eggs',1.2],['icings',0.8],['fondant',0.6],['dowels',2],['boards',2.5],['cboxes',5]]),
+  S('wedding3','Three-tier wedding cake',720,90,0.25,420,[['butter',0.8],['flour',1.5],['caster',1],['eggs',0.6],['icings',0.5],['fondant',0.3],['dowels',1],['boards',1.6],['cboxes',3]]),
+  S('cup12','Cupcakes (box of 12)',90,20,3,26,[['butter',5],['flour',10],['caster',8],['eggs',4],['icings',3],['cases',16],['cupboxes',10],['sprinkles',5],['vanilla',15]]),
+  S('cup6','Cupcakes (box of 6)',60,20,2,15,[['butter',10],['flour',20],['caster',16],['eggs',8],['icings',6],['cases',33],['cupboxes',10],['sprinkles',10],['vanilla',30]]),
+  S('brownies','Brownies (tray of 12)',60,15,2,22,[['butter',8],['choc',4],['caster',4],['eggs',4],['cocoa',5],['flour',15],['cboxes',10]]),
+  S('cakepops','Cake pops (dozen)',120,20,1,24,[['choc',3],['popst',8],['cellob',8],['sprinkles',5],['butter',10],['flour',12]]),
+  S('cookies','Decorated cookies (dozen)',150,20,1,30,[['butter',8],['flour',6],['icings',4],['fcolour',6],['cellob',8]]),
+  S('topper','Custom topper',30,0,2,10,[],AD),
+  S('delivery','Local delivery',30,0,2,8,[],AD)]);
+
+// ---------- the trades themselves ----------
+const SERVICE_W={one:'service',many:'services',One:'Service',Many:'Services',item:'product',items:'products',Item:'Product',Items:'Products',cust:'customer'};
+Object.assign(INDUSTRIES.beauty,{sup:'beauty'}); Object.assign(INDUSTRIES.hair,{sup:'beauty'});
+Object.assign(INDUSTRIES.build,{label:'Builder or handyman',sup:'trades',big:true}); Object.assign(INDUSTRIES.paint,{sup:'trades',big:true}); Object.assign(INDUSTRIES.other,{sup:'general'});
+Object.assign(INDUSTRIES,{
+  therapy:{label:'Waxing, facials, massage and tanning',w:BEAUTY_W,hours:false,patch:true,example:'e.g. Dermaplaning facial',newItem:'e.g. Toner',sup:'beauty'},
+  makeup:{label:'Make-up artist',w:{...SERVICE_W,cust:'client'},hours:false,patch:false,example:'e.g. Photo shoot make-up',newItem:'e.g. Highlighter',sup:'beauty'},
+  barber:{label:'Barber',w:{...SERVICE_W,cust:'client'},hours:false,patch:false,example:'e.g. Hair design or pattern',newItem:'e.g. Styling wax',sup:'beauty'},
+  dog:{label:'Dog grooming',w:{...SERVICE_W,one:'groom',many:'grooms',One:'Groom',Many:'Grooms'},hours:false,patch:false,example:'e.g. Cockapoo full groom',newItem:'e.g. Detangling spray',sup:'dog',onLabel:'Minutes with the dog'},
+  plaster:{label:'Plastering and tiling',w:TRADE_W,hours:true,patch:false,example:'e.g. Float and set a wall',newItem:'e.g. Bonding agent',sup:'trades',big:true},
+  electric:{label:'Electrician',w:TRADE_W,hours:true,patch:false,example:'e.g. Fit an electric shower',newItem:'e.g. Junction boxes',sup:'trades',big:true},
+  plumb:{label:'Plumbing and heating',w:TRADE_W,hours:true,patch:false,example:'e.g. Power flush',newItem:'e.g. Pipe clips',sup:'trades',big:true},
+  joiner:{label:'Carpentry and joinery',w:TRADE_W,hours:true,patch:false,example:'e.g. Fit a loft hatch',newItem:'e.g. Panel pins',sup:'trades',big:true},
+  garden:{label:'Gardening and landscaping',w:TRADE_W,hours:true,patch:false,example:'e.g. Clear an overgrown garden',newItem:'e.g. Bark mulch',sup:'trades',big:true},
+  clean:{label:'Cleaning',w:{...TRADE_W,item:'product',items:'products',Item:'Product',Items:'Products'},hours:true,patch:false,example:'e.g. Holiday let changeover',newItem:'e.g. Descaler',sup:'clean'},
+  valet:{label:'Car valeting and detailing',w:SERVICE_W,hours:true,patch:false,example:'e.g. Convertible roof clean',newItem:'e.g. Leather conditioner',sup:'valet',onLabel:'Hours on the car'},
+  cake:{label:'Cakes and baking',w:{one:'bake',many:'bakes',One:'Bake',Many:'Bakes',item:'ingredient',items:'ingredients',Item:'Ingredient',Items:'Ingredients',cust:'customer'},hours:true,patch:false,example:'e.g. Number cake',newItem:'e.g. Cream cheese',sup:'cake',onLabel:'Hours baking and decorating',prepLabel:'Hours shopping, washing up and packing'}
+});
+const IND_GROUPS=[['Beauty, hair and grooming',['beauty','therapy','makeup','hair','barber','dog']],
+  ['Building and home trades',['build','paint','plaster','electric','plumb','joiner','garden','clean']],
+  ['Other',['valet','cake','other']]];
+Object.assign(SUPPLIERS,{
+  trades:['Screwfix','Toolstation','B&Q','Wickes','Travis Perkins','Jewson','City Plumbing','CEF','Topps Tiles','Dulux Decorator Centre','Brewers','Amazon'],
+  dog:['Christies Direct','Groomers','Amazon','Pets at Home'],
+  clean:['Booker','Costco','Screwfix','Toolstation','Amazon'],
+  valet:['Autosmart','Autoglym','ValetPRO','Halfords','Amazon'],
+  cake:['Booker','Costco','Supermarket','The Cake Decorating Company','Hobbycraft','Amazon'],
+  general:['Amazon','Supermarket','Costco','Booker']});
+
+// ---------- running costs to start from, by kind of work ----------
+function overheadsFor(ind){
+  const g={beauty:'salon',therapy:'salon',makeup:'mobile',hair:'salon',barber:'salon',dog:'dog',build:'van',paint:'van',plaster:'van',electric:'van',plumb:'van',joiner:'van',garden:'van',clean:'clean',valet:'valet',cake:'cake',other:'mobile'}[ind]||'salon';
+  const sets={
+    salon:null,
+    mobile:[['monthly','Phone and internet',20],['monthly','Marketing and ads',30],['monthly','Fuel',60],['yearly','Insurance',120],['yearly','Accountant',300],['yearly','Training and courses',200],['equipment','Kit and cases',400,3]],
+    dog:[['monthly','Room, chair or desk rent',300],['monthly','Booking app subscription',15],['monthly','Phone and internet',20],['monthly','Marketing and ads',20],['monthly','Electricity and heating',60],['yearly','Insurance',180],['yearly','Accountant',300],['yearly','Blade sharpening',120],['equipment','Clippers and scissors',450,3],['equipment','Dryer',350,5],['equipment','Grooming table and bath',600,7]],
+    van:[['monthly','Van finance or lease',250],['monthly','Fuel',200],['monthly','Phone and internet',25],['monthly','Marketing and ads',40],['monthly','Waste disposal',30],['yearly','Insurance',900],['yearly','Accountant',400],['yearly','Trade memberships and certificates',250],['yearly','Van tax, MOT and servicing',600],['equipment','Power tools',1500,4],['equipment','Hand tools',500,5],['equipment','Ladders and access',300,6]],
+    clean:[['monthly','Fuel',120],['monthly','Phone and internet',20],['monthly','Marketing and ads',20],['yearly','Insurance',150],['yearly','Accountant',250],['equipment','Vacuum',250,3],['equipment','Mops, buckets and kit',120,2]],
+    valet:[['monthly','Van finance or lease',220],['monthly','Fuel',150],['monthly','Phone and internet',20],['monthly','Marketing and ads',30],['yearly','Insurance',600],['yearly','Accountant',300],['equipment','Pressure washer',400,3],['equipment','Vacuum',200,3],['equipment','Machine polisher',250,4],['equipment','Water tank and generator',700,5]],
+    cake:[['monthly','Electricity and heating',40],['monthly','Phone and internet',15],['monthly','Marketing and ads',15],['yearly','Insurance',80],['yearly','Food hygiene training and registration',30],['yearly','Accountant',250],['equipment','Stand mixer',400,5],['equipment','Tins, tools and turntable',200,3]]
+  };
+  return sets[g] ? sets[g].map(([group,name,amount,years])=>({id:uid(),group,name,amount,years:years||3})) : defaultOverheads();
+}
+OVERHEAD_GROUPS[0].options.push('Van finance or lease','Fuel','Waste disposal','Tool hire','Storage or lock-up');
+OVERHEAD_GROUPS[1].options.push('Van tax, MOT and servicing','Trade memberships and certificates','Blade sharpening','Food hygiene training and registration');
+OVERHEAD_GROUPS[2].options.push('Power tools','Hand tools','Ladders and access','Van','Vacuum','Pressure washer','Clippers and scissors','Dryer','Grooming table and bath','Stand mixer','Kit and cases');
+
+render();
+</script>
+</body></html>
