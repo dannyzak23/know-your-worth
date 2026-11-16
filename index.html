@@ -38,7 +38,30 @@ nav.tabs{display:flex;gap:4px;overflow-x:auto;padding-bottom:8px;scrollbar-width
 nav.tabs::-webkit-scrollbar{display:none}
 nav.tabs button{flex:0 0 auto;border:0;background:transparent;color:var(--muted);font:600 .92rem var(--body);padding:8px 12px;border-radius:999px;cursor:pointer}
 nav.tabs button[aria-current="page"]{background:var(--accent);color:var(--accent-ink)}
-main{padding-block:20px 64px;display:flex;flex-direction:column;gap:18px}
+main{padding-block:20px 120px;display:flex;flex-direction:column;gap:18px}
+.bottomnav{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,minmax(0,1fr));padding:6px max(8px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px))}
+.bottomnav button{border:0;background:transparent;color:var(--muted);font:600 .74rem var(--body);display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px;border-radius:10px;cursor:pointer;min-width:0}
+.bottomnav svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.bottomnav button[aria-current="page"]{color:var(--accent)}
+.fold{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;min-width:0}
+.fold>summary{display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:700;list-style:none}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary::after{content:"›";color:var(--muted);font-size:1.3rem;line-height:1}
+.fold[open]>summary::after{transform:rotate(90deg)}
+.fold[open]>summary{margin-bottom:12px}
+.fold summary .grow{flex:1;min-width:0}
+.fold summary small{display:block;font-weight:400;color:var(--muted);font-size:.82rem}
+.fold .card{border:0;padding:0;background:transparent}
+.rowbtn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;color:var(--ink);font:500 1rem var(--body);cursor:pointer;min-width:0}
+.rowbtn .grow{flex:1;min-width:0}
+.rowbtn small{display:block;color:var(--muted);font-size:.84rem;font-weight:400;margin-top:2px}
+.linkish{border:0;background:transparent;color:inherit;font:inherit;text-align:left;padding:0;cursor:pointer}
+.stepper{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.stepper button{width:38px;height:38px;border-radius:10px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);font:700 1.15rem var(--body);cursor:pointer}
+.stepper .num{min-width:30px;text-align:center}
+.q3{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:8px}
+.q3 label.field{font-size:.8rem}
+#undobar{bottom:calc(140px + env(safe-area-inset-bottom,0px))!important}
 h2{font-family:var(--display);font-weight:800;font-size:1.6rem;line-height:1.15;margin:0;text-wrap:balance}
 h3{font-family:var(--display);font-weight:600;font-size:1.15rem;margin:0}
 p{margin:0}
@@ -128,7 +151,7 @@ td input,td select{padding:6px 8px;font-size:.92rem;min-width:70px}
 .overlay{position:fixed;inset:0;background:rgba(10,8,14,.75);display:flex;align-items:center;justify-content:center;z-index:20;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
 .overlay img{max-height:85vh;border-radius:10px}
 .toast[hidden]{display:none!important}
-.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;z-index:30}
+.toast{position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;z-index:30}
 details summary{cursor:pointer;font-weight:700}
 .example-flag{background:var(--warn-soft);color:var(--warn);font-weight:700;font-size:.8rem;padding:4px 10px;border-radius:999px}
 </style>
@@ -143,6 +166,7 @@ details summary{cursor:pointer;font-weight:700}
   </div>
 </header>
 <main class="shell gutter" id="main"></main>
+<nav id="bottomnav" class="bottomnav" hidden aria-label="Main"></nav>
 <div id="overlay" class="overlay" hidden></div>
 <div id="toast" class="toast" hidden></div>
 <div id="undobar" class="toast" hidden style="bottom:calc(72px + env(safe-area-inset-bottom,0px));display:flex;gap:12px;align-items:center">Done. <button class="btn small" data-act="undo">Undo</button></div>
@@ -570,10 +594,12 @@ function vWizard(){
   const steps=wizSteps(); if(step>=steps.length) step=steps.length-1;
   const st=steps[step], s=state.setup, total=steps.length;
   let q='', why='', body='';
-  if(st.type==='industry'){
+  const qs=quickStep(st);
+  if(qs){ q=qs.q; why=qs.why; body=qs.body; }
+  else if(st.type==='industry'){
     q='What do you do?'; why='Tick everything you offer. The questions and starter lists follow what you pick, and you can add your own as you go.';
-    body=IND_GROUPS.map(([title,keys])=>`<p class="part" style="margin-top:6px">${title}</p><div class="choices" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">${keys.map(k=>`<button class="choice" data-act="wiz-ind" data-k="${k}" aria-pressed="${selInds().includes(k)}">${selInds().includes(k)?'✓ ':''}${esc(INDUSTRIES[k].label)}</button>`).join('')}</div>`).join('')
-      + `<p class="live">You have picked: ${selInds().map(k=>esc(INDUSTRIES[k].label)).join(' + ')}</p>`;
+    body=IND_GROUPS.map(([title,keys])=>`<p class="part" style="margin-top:6px">${title}</p><div class="choices" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">${keys.map(k=>`<button class="choice" data-act="wiz-ind" data-k="${k}" aria-pressed="${indOn(k)}">${indOn(k)?'✓ ':''}${esc(INDUSTRIES[k].label)}</button>`).join('')}</div>`).join('')
+      + ((state.setup._indTouched||state.setup.done)?`<p class="live">You have picked: ${selInds().map(k=>esc(INDUSTRIES[k].label)).join(' + ')}</p>`:'');
   } else if(st.type==='pickTreat'){
     q=`Which ${W().many} do you do?`; why=`Tick all that apply, or add your own. Next you go through each ${W().one} and the ${W().items} it uses, then your business costs. Prices are worked out at the end.`;
     const custom=state.treatments.filter(t=>!CAT().some(c=>c.id===t.id));
@@ -644,20 +670,21 @@ function vWizard(){
   const last=step===total-1;
   return `<section class="stack">
     <div class="progress" aria-hidden="true"><i style="width:${(step+1)/total*100}%"></i></div>
-    <p class="part">Part ${st.part} of 4 · ${partName(st.part)}</p>
+    <p class="part">${wizFull?`Part ${st.part} of 4 · ${partName(st.part)}`:`Step ${step+1} of ${total}`}</p>
     <h2 class="q">${esc(q)}</h2>
     <p class="muted">${esc(why)}</p>
     ${body}
     <div class="row" style="justify-content:space-between;margin-top:8px">
       <button class="btn ghost" data-act="wiz-back" ${step===0?'disabled':''}>Back</button>
-      <span class="small muted">${step+1} of ${total}</span>
-      <button class="btn" data-act="wiz-next">${last?'Work out my prices':'Next'}</button>
+      <span class="small muted">${wizFull?`${step+1} of ${total}`:''}</span>
+      <button class="btn" data-act="wiz-next">${last?'Work out my prices':st.type==='welcome'?'Start':'Next'}</button>
     </div>
     ${step===0 && !state.setup.done ? `<div class="notice info">Just looking? <button class="btn small ghost" data-act="load-example">Try it with example figures</button></div>`:''}
   </section>`;
 }
 function wizNext(){
   const steps=wizSteps(), st=steps[step];
+  if(st.type==='industry' && !(state.setup._indTouched||state.setup.done)){ toast('Tick what you do first'); return; }
   if(st.type==='pickTreat' && !state.treatments.length){ toast(`Tick at least one ${W().one}`); return; }
   if(st.type==='treatment'){ const t=state.treatments.find(x=>x.id===st.id);
     const missing=t.recipe.filter(r=>!(+r.perPack>0)).map(r=>state.products.find(p=>p.id===r.productId)).filter(Boolean);
@@ -774,26 +801,26 @@ function vMoney(){
   <article class="card"><h3>Quick add ${an(W().one)} ${W().one} you did today</h3>
     <div class="chips">${state.treatments.filter(t=>+t.price>0).map(t=>`<button class="chip" data-act="quick-income" data-id="${t.id}">${esc(t.name)} · ${gbp(+t.price)}</button>`).join('') || '<span class="muted small">Add prices on the ${W().Many} tab to get one-tap buttons.</span>'}</div>
   </article>
-  <form class="card" id="form-income"><h3>Add money in</h3>
+  <details class="fold"><summary><span class="grow">Add money in</span></summary><form class="stack" id="form-income">
     <div class="grid2"><label class="field">Date<input id="i-date" type="date" name="date" value="${todayStr()}" required></label>
     <label class="field">Amount<span class="money-in"><input id="i-amount" type="number" name="amount" step="0.01" min="0" inputmode="decimal" required></span></label></div>
     <label class="field">What for<input id="i-desc" name="desc" placeholder="e.g. Saturday takings, or a payout from Fresha"></label>
     <label class="field">Paid by<select id="i-method" name="method"><option>Card</option><option>Cash</option><option>Bank transfer</option><option>App payout</option></select></label>
-    <button class="btn" type="submit">Add money in</button></form>
-  <form class="card" id="form-expense"><h3>Add money out</h3>
+    <button class="btn" type="submit">Add money in</button></form></details>
+  <details class="fold"><summary><span class="grow">Add money out<small>With a receipt photo</small></span></summary><form class="stack" id="form-expense">
     <div class="grid2"><label class="field">Date<input id="e-date" type="date" name="date" value="${todayStr()}" required></label>
     <label class="field">Amount<span class="money-in"><input id="e-amount" type="number" name="amount" step="0.01" min="0" inputmode="decimal" required></span></label></div>
     <label class="field">Who you paid<input id="e-supplier" name="supplier" placeholder="e.g. nail supplier, landlord" required></label>
     <label class="field">What kind of cost<select id="e-cat" name="category">${CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></label>
     <label class="field">Receipt photo<span class="hint">Take a photo or pick one. It stays on this device.</span><input id="e-photo" type="file" name="photo" accept="image/*" capture="environment"></label>
-    <button class="btn" type="submit">Add money out</button></form>
-  <article class="card"><h3>Mileage</h3>
+    <button class="btn" type="submit">Add money out</button></form></details>
+  <details class="fold"><summary><span class="grow">Mileage<small>Trips in your own car or van</small></span></summary><div class="stack">
     <p class="small muted">Business trips in your own car or van, not your normal journey to work. Claimed at ${Math.round(RULES.mileage[0]*100)}p a mile for the first ${RULES.mileage[2].toLocaleString('en-GB')} miles a year, then ${Math.round(RULES.mileage[1]*100)}p. Do not also claim fuel or running costs for the same vehicle.</p>
     <form class="fields" id="form-trip"><label class="field">Date<input id="tr-date" type="date" name="date" value="${todayStr()}" required></label>
       <label class="field">Miles (there and back)<input id="tr-miles" type="number" name="miles" min="0" step="0.1" inputmode="decimal" required></label>
       <label class="field">Where to<input id="tr-route" name="route" placeholder="e.g. Client in Solihull"></label><label class="field">&nbsp;<button class="btn" type="submit">Add trip</button></label></form>
     <div class="list">${state.trips.filter(x=>taxYearOf(x.date)===ty).sort((a,b)=>b.date.localeCompare(a.date)).map(x=>`<div class="item"><div class="grow"><p><b>${esc(x.route||'Trip')}</b></p><p class="small muted">${fmtDate(x.date)} · ${nf(x.miles)} miles</p></div><span class="num">${gbp(mileageClaim(+x.miles||0))}</span><button class="iconbtn" aria-label="Delete" data-act="trip-del" data-id="${x.id}">✕</button></div>`).join('') || '<p class="muted small">No trips yet.</p>'}</div>
-  </article>
+  </div></details>
   <article class="card"><div class="row" style="justify-content:space-between"><h3>Money in</h3><button class="btn small ghost" data-act="copy-income" data-y="${ty}">Copy for Excel</button></div>
     <div class="list">${inc.map(x=>`<div class="item"><div class="grow"><p><b>${esc(x.desc||'Takings')}</b></p><p class="small muted">${fmtDate(x.date)} · ${esc(x.method)}</p></div><span class="num">${gbp(+x.amount)}</span><button class="btn small ghost" data-act="inc-edit" data-id="${x.id}">Change</button><button class="iconbtn" aria-label="Delete" data-act="del-income" data-id="${x.id}">✕</button></div>`).join('') || '<p class="muted small">Nothing yet.</p>'}</div></article>
   <article class="card"><div class="row" style="justify-content:space-between"><h3>Money out</h3><button class="btn small ghost" data-act="copy-expenses" data-y="${ty}">Copy for Excel</button></div>
@@ -1756,6 +1783,233 @@ function overheadsFor(ind){
 OVERHEAD_GROUPS[0].options.push('Van finance or lease','Fuel','Waste disposal','Tool hire','Storage or lock-up');
 OVERHEAD_GROUPS[1].options.push('Van tax, MOT and servicing','Trade memberships and certificates','Blade sharpening','Food hygiene training and registration');
 OVERHEAD_GROUPS[2].options.push('Power tools','Hand tools','Ladders and access','Van','Vacuum','Pressure washer','Clippers and scissors','Dryer','Grooming table and bath','Stand mixer','Kit and cases');
+
+
+// ===================== MODULE: simpler layout =====================
+// Quick start, five buttons along the bottom, prices that lead with what to do, card lists, and More in sections.
+let wizFull=false, openTreat=null, openProd=null, moreOpen=null;
+const pct0=v=>Math.round((v||0)*100)+'%';
+const money=v=>Number.isInteger(+v)?gbp0(+v):gbp(+v);
+const indOn=k=>!!(state.setup._indTouched||state.setup.done) && selInds().includes(k);
+UNDOABLE.add('use-price'); UNDOABLE.add('use-all-prices');
+
+// ---------- keep the keyboard and cursor in place when a box changes ----------
+let deferRender=false; const pendingFns=new Set();
+const mkDefer=fn=>function(){ if(deferRender){ pendingFns.add(fn); return; } fn(); };
+render=mkDefer(render); renderBkForm=mkDefer(renderBkForm); renderHolForm=mkDefer(renderHolForm);
+document.addEventListener('change',()=>{ deferRender=true; setTimeout(()=>{ deferRender=false; },0); },true);
+document.addEventListener('change',()=>{ deferRender=false; if(!pendingFns.size) return; const fns=[...pendingFns]; pendingFns.clear();
+  setTimeout(()=>{ const a=document.activeElement, id=a&&a.id; fns.forEach(f=>f()); if(id){ const el=document.getElementById(id); if(el && el!==document.activeElement){ try{ el.focus(); }catch(e){} } } },0); });
+
+// ---------- quick start ----------
+const wizStepsFull=wizSteps;
+wizSteps=function(){ if(wizFull) return wizStepsFull();
+  const busy=BASIC.find(b=>b.key==='busy'), app=BASIC.find(b=>b.type==='app');
+  return [{type:'welcome'},{type:'industry'},{type:'pickTreat'},{type:'quicklist'},{type:'pay'},{type:'hoursq'},{...busy},{...app},{type:'costq'}]; };
+function quickStep(st){
+  const s=state.setup;
+  if(st.type==='welcome') return {q:'Find out what you should be charging', why:'Answer a few questions about your work and get a suggested price for everything you do.',
+    body:`<div class="stack">
+      <div class="notice info"><b>About 2 minutes.</b> Nine short questions.</div>
+      <div class="notice info"><b>You get:</b> a price for each thing you do, what to put aside for tax, and whether your prices cover what you want to earn.</div>
+      <div class="notice info"><b>Private.</b> Everything you type stays on this phone. We cannot see it.</div></div>`};
+  if(st.type==='quicklist'){
+    const rows=state.treatments.map(t=>{ const h=indOf(t).hours;
+      return `<article class="card" style="gap:8px"><h3 style="font-size:1.02rem">${esc(t.name)}${t.addon?' <span class="pill info">Add-on</span>':''}</h3>
+        <div class="q3">
+          <label class="field">Your price<span class="money-in"><input id="ql-p-${t.id}" type="number" inputmode="decimal" min="0" step="0.5" value="${t.price?esc(t.price):''}" placeholder="${t.exPrice?'e.g. '+nf(t.exPrice):''}" data-tf="${t.id}" data-f="price"></span></label>
+          <label class="field">${h?'Hours':'Minutes'}<input id="ql-m-${t.id}" type="number" inputmode="decimal" min="0" step="${h?0.5:5}" value="${esc(h?nf((+t.clientMin||0)/60):t.clientMin)}" data-tf="${t.id}" data-f="clientMin" data-mul="${h?60:1}"></label>
+          <label class="field">A week<input id="ql-w-${t.id}" type="number" inputmode="decimal" min="0" step="0.5" value="${t.perWeek?esc(t.perWeek):''}" placeholder="${t.exPerWeek?'e.g. '+nf(t.exPerWeek):''}" data-tf="${t.id}" data-f="perWeek"></label>
+        </div></article>`; }).join('');
+    return {q:'Your prices now', why:`For each one: what you charge, how long it takes, and roughly how many you do in a week. The times are typical ones, so change any that are wrong. Leave a price empty if you have not set one.`, body:`<div class="stack">${rows}</div>`};
+  }
+  if(st.type==='pay') return {q:'How much do you want in your pocket each month, after tax?', why:'From this work only. Include anything you want to save.',
+    body:`<label class="field">Amount each month<span class="money-in"><input id="wiz-takeHome" type="number" inputmode="decimal" min="0" step="50" value="${esc(s.takeHome)}" data-set="takeHome"></span></label>
+      <div class="chips">${[1000,1500,2000,2500,3000].map(c=>`<button class="chip" data-act="wiz-chip" data-key="takeHome" data-v="${c}" aria-pressed="${+s.takeHome===c}">${gbp0(c)}</button>`).join('')}</div>
+      <label class="field" style="margin-top:6px">Where do you live?<span class="hint">Scotland has different income tax</span><select id="wiz-region" data-setsel="region"><option value="ruk" ${s.region!=='sco'?'selected':''}>England, Wales or Northern Ireland</option><option value="sco" ${s.region==='sco'?'selected':''}>Scotland</option></select></label>`};
+  if(st.type==='hoursq') return {q:'How much do you work?', why:'Count everything: time with clients, breaks, messages and cleaning up.',
+    body:`<div class="fields"><label class="field">Hours a week<input id="wiz-hours" type="number" inputmode="decimal" min="0" step="1" value="${esc(s.hours)}" data-set="hours"></label>
+      <label class="field">Weeks off a year<span class="hint">Holidays, bank holidays, sick days</span><input id="wiz-weeksOff" type="number" inputmode="decimal" min="0" max="51" step="1" value="${esc(s.weeksOff)}" data-set="weeksOff"></label></div>`};
+  if(st.type==='costq'){ const own=s.costMode==='own', typical=overheadsForAll(selInds()), tsum=overheadsMonth({overheads:typical});
+    return {q:'What does it cost to run your business each month?', why:`Rent, insurance, phone, apps, equipment and so on. Not ${W().items}.`,
+      body:`<div class="choices">
+        <button class="choice" data-act="costq-typical" aria-pressed="${!own}">Use typical costs for my kind of work<small>About ${gbp0(tsum)} a month. You can change each one later under More.</small></button>
+        <button class="choice" data-act="costq-own" aria-pressed="${own}">I know my own figure<small>Type one monthly total</small></button></div>
+        ${own?`<label class="field">My running costs each month<span class="money-in"><input id="wiz-cost" type="number" inputmode="decimal" min="0" step="10" value="${esc(Math.round(overheadsMonth(s)))}" data-costown="1"></span></label>`
+          :`<details class="fold"><summary>See what is included</summary><div class="list">${typical.map(o=>`<div class="item"><div class="grow"><p>${esc(o.name)}</p></div><span class="num small">${gbp0(o.amount)}${o.group==='monthly'?' a month':o.group==='yearly'?' a year':` over ${o.years} years`}</span></div>`).join('')}</div></details>`}`};
+  }
+  return null;
+}
+
+// ---------- five buttons along the bottom ----------
+const ICON={prices:'<path d="M20 4h-7L3.5 13.5a2 2 0 0 0 0 2.8l4.2 4.2a2 2 0 0 0 2.8 0L20 11V4z"/><circle cx="15.5" cy="8.5" r="1.5"/>',
+  diary:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  money:'<circle cx="12" cy="12" r="9"/><path d="M15 9a3 3 0 0 0-5.5 1.5c0 2 .8 3-.5 5.5h6M8.5 12.5h5"/>',
+  clients:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/>',
+  more:'<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'};
+function navGroups(){ return [
+  {key:'prices',label:'Prices',views:[['prices','Prices'],['treatments',W().Many],['stock','Stock']]},
+  {key:'diary',label:'Diary',views:[['diary','Diary']]},
+  {key:'money',label:'Money',views:[['money','In and out'],['taxyear','Tax'],['report','Report']]},
+  {key:'clients',label:W().cust==='client'?'Clients':'Customers',views:[['clients','Clients']]},
+  {key:'more',label:'More',views:[['more','More']]}]; }
+renderTabs=function(){
+  const top=document.getElementById('tabs'), bot=document.getElementById('bottomnav'), off=(view==='wizard'||view==='lock');
+  const groups=navGroups(), g=groups.find(x=>x.views.some(v=>v[0]===view))||groups[0];
+  top.innerHTML = off||g.views.length<2 ? '' : g.views.map(([k,l])=>`<button data-tab="${k}" ${view===k?'aria-current="page"':''}>${esc(l)}</button>`).join('');
+  bot.hidden=off;
+  bot.innerHTML = off ? '' : groups.map(x=>`<button data-tab="${x.views[0][0]}" ${x===g?'aria-current="page"':''}><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[x.key]}</svg><span>${esc(x.label)}</span></button>`).join('');
+  document.getElementById('exflag').hidden=!state.example;
+};
+
+// ---------- prices: what to do first, the working behind a tap ----------
+vPrices=function(){
+  const c=compute(state), s=state.setup;
+  if(!state.treatments.length) return `<div class="card"><h2>Nothing to price yet</h2><p>Add the ${W().many} you do and their prices will appear here.</p><button class="btn" data-tab="treatments">Add ${W().many}</button></div>`;
+  const all=c.treatments, up=all.filter(t=>t.flag==='below'||t.flag==='under'), unpriced=all.filter(t=>t.flag==='none');
+  const hasBookings=c.bookingsMonth>0, anyPrice=all.some(t=>+t.price>0), cur=c.atCurrent, sug=c.atSuggested;
+  const head = up.length ? `<section class="card"><div><h2>Put up ${up.length} price${up.length>1?'s':''}</h2><p class="muted">So you can take home ${gbp0(s.takeHome)} a month after tax.</p></div>
+      <div class="list">${up.map(t=>`<div class="item"><div class="grow"><p style="white-space:normal"><b>${esc(t.name)}</b></p><p class="small muted" style="white-space:normal"><span class="num">${money(t.price)}</span> → <b class="num" style="color:var(--accent)">${money(t.suggested)}</b>${t.flag==='below'?' · does not cover your costs and pay yet':''}</p></div><button class="btn small" data-act="use-price" data-id="${t.id}">Use ${money(t.suggested)}</button></div>`).join('')}</div>
+      ${up.length>1?`<button class="btn ghost" data-act="use-all-prices">Use all the suggested prices</button>`:''}</section>`
+    : !anyPrice ? `<section class="card"><div><h2>Your suggested prices</h2><p class="muted">What to charge to take home ${gbp0(s.takeHome)} a month after tax.</p></div></section>`
+    : `<section class="card"><div><h2>Your prices are right</h2><p class="muted">They cover your costs and the ${gbp0(s.takeHome)} a month you want to take home.</p></div></section>`;
+  const curPct=c.needMonth>0?Math.max(0,Math.min(1,cur.profit/c.needMonth)):0;
+  const earn = !hasBookings ? `<section class="card"><h3>What you earn</h3><p class="muted">Tell us roughly how many of each you do in a week and we will show what you earn in a month.</p><button class="btn ghost" data-tab="treatments">Add how many I do</button></section>`
+    : !anyPrice ? ''
+    : `<section class="card"><h3>What you earn in a month</h3>
+      <div class="bar ${cur.profit<c.needMonth?'short':''}" role="img" aria-label="${pct0(curPct)} of what you need"><i style="width:${curPct*100}%"></i></div>
+      <p>${cur.profit>=c.needMonth?`About <b class="num">${gbp0(cur.profit)}</b> before tax. That is enough to take home ${gbp0(s.takeHome)}.`
+        :`About <b class="num">${gbp0(Math.max(0,cur.profit))}</b> before tax. You need <b class="num">${gbp0(c.needMonth)}</b> to take home ${gbp0(s.takeHome)}.`}</p>
+      ${up.length?`<p class="small muted">With the suggested prices: about ${gbp0(sug.profit)}.</p>`:''}
+      <p class="small muted">Put about <b>${pct0(c.taxShare)}</b> of what you make aside for tax.</p></section>`;
+  const rows=all.map(t=>{ const [cls,lab]=FLAG[t.flag];
+    return `<details class="fold"><summary><span class="grow">${esc(t.name)}</span><span class="num">${+t.price>0?money(t.price):money(t.suggested)}</span><span class="pill ${cls}">${t.flag==='none'?'Suggested':lab}</span></summary>
+      <div class="prices"><div><div class="k">Your price</div><div class="v">${+t.price>0?money(t.price):'–'}</div></div>
+        <div><div class="k">Lowest</div><div class="v">${gbp(t.minimum)}</div></div>
+        <div class="sugg"><div class="k">Suggested</div><div class="v">${money(t.suggested)}</div></div></div>
+      <p class="small muted">Takes ${fmtTime(t.mins,t)} with set-up. ${W().Items} cost ${gbp(t.productCost)} and your time costs ${gbp(t.timeCost)}. 'Lowest' covers your costs and pay with nothing spare. At the suggested price you earn about ${gbp(t.perHour)} an hour before tax.${t.patch?' Needs a patch test.':''}</p>
+      <button class="btn small ghost" data-act="edit-treat" data-id="${t.id}">Change this ${W().one}</button></details>`; }).join('');
+  const fill=c.billable>0?c.hoursBooked/c.billable:0;
+  return `${head}${earn}
+  ${!s._prodEdited?`<div class="notice info">The cost of your ${W().items} is a typical figure for now. <button class="btn small ghost" data-tab="stock">Check my ${W().items}</button></div>`:''}
+  <section class="stack"><h3>All your prices</h3>${rows}</section>
+  <details class="fold"><summary><span class="grow">How we worked this out</span></summary><div class="stack">
+    <p>Every hour you work with ${W().cust}s needs to bring in <b class="num">${gbp(c.hourly)}</b>. That covers your running costs${c.team.people.length?', your team':''} and your pay, before ${W().items}.</p>
+    <p>You have about <b>${Math.round(c.billable)}</b> hours a month for paid work, after breaks, admin, time off and gaps in the diary.</p>
+    ${hasBookings?`<p>${fill>1.05?`The bookings you gave us need about ${Math.round(c.hoursBooked)} hours a month, which is more than you have. Check how many you do a week.`:`The bookings you gave us fill about ${pct0(fill)} of those hours.`}</p>`:''}
+    <p class="small muted">A suggested price is your time and ${W().items}, plus a ${pct0(s.margin)} cushion, card fees and an allowance for no-shows${s.vat?', plus VAT':''}, rounded up. These are estimates, not tax advice.</p></div></details>
+  ${priceExtras(c)}`;
+};
+
+// ---------- treatments and stock as cards ----------
+vTreatments=function(){
+  const c=compute(state), pmap=Object.fromEntries(c.products.map(p=>[p.id,p]));
+  const card=t=>{ if(openTreat!==t.id) return `<button class="rowbtn" data-act="treat-open" data-id="${t.id}"><span class="grow"><b>${esc(t.name)}</b>${t.addon?' <span class="pill info">Add-on</span>':''}<small>${fmtTime(t.mins,t)} · ${+t.price>0?money(t.price):'no price yet'} · ${W().items} ${gbp(t.productCost)}</small></span><span aria-hidden="true">›</span></button>`;
+    const unused=state.products.filter(p=>!t.recipe.some(r=>r.productId===p.id));
+    return `<article class="card" id="treat-${t.id}">
+      <label class="field">Name<input id="tn-${t.id}" value="${esc(t.name)}" data-tf="${t.id}" data-f="name"></label>
+      <div class="fields">${timeField('tc-'+t.id,'on',t,'clientMin')}${timeField('tp-'+t.id,'prep',t,'prepMin')}
+        ${numField('tw-'+t.id,'How many a week','',t.perWeek||'',`data-tf="${t.id}" data-f="perWeek"`,'step="0.5"')}
+        ${moneyField('tr-'+t.id,'Your price','',t.price||'',`data-tf="${t.id}" data-f="price"`)}</div>
+      ${IND().patch?`<label class="row small"><input type="checkbox" id="tpt-${t.id}" data-tf="${t.id}" data-f="patch" ${t.patch?'checked':''}> Needs a patch test first</label>`:''}
+      <label class="row small"><input type="checkbox" id="tad-${t.id}" data-tf="${t.id}" data-f="addon" ${t.addon?'checked':''}> This is an add-on to another ${W().one}</label>
+      ${t.addon?`<label class="field">Priced per<input id="ul-${t.id}" value="${esc(t.unitLabel||'')}" placeholder="e.g. nail. Leave empty for a flat price" data-tf="${t.id}" data-f="unitLabel"></label>`:''}
+      <h3 style="font-size:1rem">${W().Items} it uses · ${gbp(t.productCost)} a time</h3>
+      <div class="list">${t.recipe.map((r,i)=>{ const p=pmap[r.productId]; if(!p) return ''; return `<div class="item" style="flex-wrap:wrap"><div class="grow"><p><b>${esc(p.name)}</b></p><p class="small muted">${gbp(lineCost(r,pmap))} a time</p></div>
+        <label class="field" style="width:120px;font-weight:400;font-size:.78rem">Uses from ${esc(packLabel(p))}<input id="rp-${t.id}-${i}" type="number" inputmode="decimal" min="0" step="1" value="${esc(r.perPack||'')}" data-rf="${t.id}" data-i="${i}" data-f="perPack"></label>
+        <button class="iconbtn" aria-label="Remove ${esc(p.name)}" data-act="del-recipe" data-id="${t.id}" data-i="${i}">✕</button></div>`; }).join('') || `<p class="small muted">None yet.</p>`}</div>
+      ${unused.length?`<div class="row" style="flex-wrap:nowrap"><select id="add-existing-${t.id}" aria-label="${W().Item} to add" style="flex:1">${unused.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select><button class="btn small ghost" data-act="wiz-add-prod" data-t="${t.id}">Add</button></div>`:''}
+      <div class="row" style="flex-wrap:nowrap"><input id="add-new-${t.id}" placeholder="Something new, ${esc(IND().newItem)}" style="flex:1"><button class="btn small ghost" data-act="wiz-new-prod" data-t="${t.id}">Add new</button></div>
+      <div class="row" style="justify-content:space-between"><button class="btn" data-act="treat-close">Done</button><button class="btn ghost" data-act="del-treat" data-id="${t.id}">Remove</button></div></article>`; };
+  return `<section class="stack"><div><h2>${W().Many}</h2><p class="muted">Tap one to change its time, price or ${W().items}.</p></div>
+    ${c.treatments.map(card).join('') || `<p class="muted">Nothing here yet.</p>`}
+    <button class="btn" data-act="add-treat">+ Add your own ${W().one}</button></section>`;
+};
+vStock=function(){
+  const c=compute(state), reorder=c.products.filter(p=>p.reorder), expiring=c.products.filter(p=>p.lost>0.05);
+  const card=p=>{ const n=Math.round((+p.inStock||0)*10)/10;
+    if(openProd!==p.id) return `<div class="rowbtn" style="cursor:default"><button class="grow linkish" data-act="prod-open" data-id="${p.id}"><b>${esc(p.name)}</b><small>${esc(packLabel(p))} · ${gbp(+p.packCost)}${p.supplier?' · '+esc(p.supplier):''}${p.weeksLeft!=null?` · about ${Math.round(p.weeksLeft)} weeks left`:''}</small></button>
+        ${p.reorder?'<span class="pill warn">Reorder</span>':''}
+        <span class="stepper"><button aria-label="One fewer ${esc(p.name)}" data-act="stock-dec" data-id="${p.id}">−</button><span class="num">${nf(n)}</span><button aria-label="One more ${esc(p.name)}" data-act="stock-inc" data-id="${p.id}">+</button></span></div>`;
+    return `<article class="card">
+      <label class="field">Name<input id="pn-${p.id}" value="${esc(p.name)}" data-pf="${p.id}" data-f="name"></label>
+      <div class="fields">
+        <label class="field">Size you buy<span class="row" style="flex-wrap:nowrap;gap:8px"><input id="pz-${p.id}" type="number" inputmode="decimal" min="0" step="any" aria-label="Size" value="${esc(p.size)}" data-pf="${p.id}" data-f="size" style="flex:1"><select id="pu-${p.id}" aria-label="Unit" data-pf="${p.id}" data-f="unit" style="flex:1">${UNITS.map(u=>`<option ${u===p.unit?'selected':''}>${u}</option>`).join('')}</select></span></label>
+        ${moneyField('pc-'+p.id,'What one costs you','',p.packCost,`data-pf="${p.id}" data-f="packCost"`)}
+        <label class="field">Where you buy it<input id="ps-${p.id}" list="sup-list" placeholder="Pick one or type your own" value="${esc(p.supplier||'')}" data-pf="${p.id}" data-f="supplier"></label>
+        ${numField('pg-'+p.id,'Goes off after (weeks)','Empty if it keeps',p.shelfWeeks||'',`data-pf="${p.id}" data-f="shelfWeeks" placeholder="Keeps"`,'step="1"')}
+        ${numField('pi-'+p.id,'How many you have','',n,`data-pf="${p.id}" data-f="inStock"`,'step="1"')}
+        ${numField('pr-'+p.id,'Reorder when down to','',p.reorderAt,`data-pf="${p.id}" data-f="reorderAt"`,'step="1"')}</div>
+      <p class="small muted">${p.packsPerWeek?`You get through about ${nf(Math.round(p.packsPerWeek*100)/100)} a week${p.weeksLeft!=null?`, so what you have lasts about ${Math.round(p.weeksLeft)} weeks`:''}.`:`No ${W().one} uses this yet.`}</p>
+      <div class="row" style="justify-content:space-between"><button class="btn" data-act="prod-close">Done</button><button class="btn ghost" data-act="del-product" data-id="${p.id}">Remove</button></div></article>`; };
+  return `<section class="stack">${supData()}<div><h2>Stock</h2><p class="muted">Tap one to change what it costs. Use − and + when you use one up or buy more.</p></div>
+    ${reorder.length?`<div class="notice warn"><b>Time to reorder:</b> ${reorder.map(p=>esc(p.name)).join(', ')}</div>`:''}
+    ${expiring.map(p=>`<div class="notice info"><b>${esc(p.name)}</b> goes off before you finish it. About ${pct0(p.lost)} gets thrown away, and your prices already allow for that.</div>`).join('')}
+    ${c.products.map(card).join('') || `<p class="muted">Nothing here yet.</p>`}
+    <button class="btn" data-act="add-product">+ Add ${an(W().item)} ${W().item}</button></section>`;
+};
+
+// ---------- more: sections that open one at a time ----------
+vMore=function(){
+  const s=state.setup;
+  const num=(key,label,hint,stepv,scale)=>`<label class="field">${label}${hint?`<span class="hint">${hint}</span>`:''}<input id="m-${key}" type="number" inputmode="decimal" step="${stepv||1}" value="${esc(Math.round((+s[key]||0)*(scale||1)*1000)/1000)}" data-set="${key}" data-scale="${scale||1}"></label>`;
+  const sec=(key,title,sub,body)=>`<details class="fold" data-sec="${key}" ${moreOpen===key?'open':''}><summary><span class="grow">${title}<small>${sub}</small></span></summary><div class="stack">${body}</div></details>`;
+  return `<section class="stack"><h2>More</h2>
+  ${sec('pay','Your pay and hours',`${gbp0(s.takeHome)} a month · ${nf(s.hours)} hours a week`,`<div class="fields">
+      <label class="field">Take-home pay you want each month<span class="money-in"><input id="m-takeHome" type="number" inputmode="decimal" step="50" value="${esc(s.takeHome)}" data-set="takeHome"></span></label>
+      ${num('hours','Hours you work a week')}${num('weeksOff','Weeks off a year')}
+      ${num('busy','How full your diary is (%)','100 means no gaps',5,100)}
+      ${num('nonClient','Time not with '+W().cust+'s (%)','Breaks, messages, cleaning up',5,100)}
+      <label class="field">Where you live<select id="m-region" data-setsel="region"><option value="ruk" ${s.region!=='sco'?'selected':''}>England, Wales or Northern Ireland</option><option value="sco" ${s.region==='sco'?'selected':''}>Scotland</option></select></label></div>`)}
+  ${sec('costs','Running costs',`${gbp0(overheadsMonth(s))} a month`,overheadEditor())}
+  ${sec('pricing','How prices are worked out','Card fees, no-shows, cushion, VAT',`<div class="fields">
+      ${num('cardPct','Card fee (%)','What your card reader or app takes',0.01,100)}${num('cardFixed','Card fee per payment (£)','',0.01)}
+      ${num('noShow',`${W().cust==='client'?'Clients':'Customers'} who do not turn up (%)`,'',1,100)}${num('deposit','How much of a no-show your deposit covers (%)','0 if you take no deposit',5,100)}
+      ${num('margin','Cushion on top of your costs (%)','For quiet weeks and new kit',1,100)}${num('roundTo','Round prices up to the nearest (£)','1 or 5')}
+      ${IND().patch?num('patchValidDays','How long a patch test lasts (days)','Follow your insurer'):''}</div>
+      <label class="row small"><input type="checkbox" id="m-vat" data-setbool="vat" ${s.vat?'checked':''}> I am VAT registered (most people working alone are not)</label>`)}
+  ${sec('team','People who work for you',(s.staff||[]).length?`${s.staff.length} on the team`:'Nobody yet',staffEditor())}
+  ${sec('tax','A job or student loan',+s.otherIncome>0||s.studentLoan!=='none'?'Added':'Not added',taxExtraEditor())}
+  ${sec('brand','Your name, logo and colours',esc((s.brand||{}).businessName||'Not set'),brandEditor())}
+  ${sec('backup','Back up and restore',s.lastBackup?`Last backup ${fmtDay(s.lastBackup)}`:'No backup yet',`<p class="muted">Everything is kept on this phone only. Copy a backup and keep it somewhere safe, like your notes or an email to yourself.</p>
+      <label class="row small"><input type="checkbox" id="bk-photos"> Include receipt photos (much bigger)</label>
+      <div class="row"><button class="btn ghost" data-act="backup">Copy backup</button><button class="btn ghost" data-act="restore-open">Restore a backup</button></div>`)}
+  ${sec('lock','Lock the app',lockKey?'On':'Off',lockCard())}
+  ${sec('questions','Answer the questions again','Quick or detailed',`<p class="muted">Your money records, diary and ${W().cust}s stay as they are.</p>
+      <div class="row"><button class="btn ghost" data-act="rerun-quick">The quick questions</button><button class="btn ghost" data-act="rerun-full">Every detailed question</button></div>`)}
+  ${sec('privacy','Privacy and feedback','How your data is kept',privacyCard())}
+  ${sec('reset','Start again','Delete everything on this phone',`<p class="muted">This deletes everything on this phone, including receipt photos.</p>
+      <button class="btn ${resetArmed?'danger':'ghost'}" data-act="reset">${resetArmed?'Tap again to delete everything':'Delete all my data'}</button>`)}
+  <p class="small muted">Know Your Worth is a test version. Prices and tax are estimates using 2026/27 rates, not tax or financial advice.</p></section>`;
+};
+
+// ---------- events ----------
+document.addEventListener('toggle', e=>{ const d=e.target; if(d && d.dataset && d.dataset.sec){ if(d.open) moreOpen=d.dataset.sec; else if(moreOpen===d.dataset.sec) moreOpen=null; } }, true);
+document.addEventListener('click', e=>{
+  const el=e.target.closest && e.target.closest('[data-act]'); if(!el) return; const act=el.dataset.act, s=state.setup;
+  if(act==='pick-treat'){ if(!wizFull && el.checked){ const t=state.treatments.find(x=>x.id===el.dataset.id); if(t && !t._q){ t._q=1; t.exPrice=t.price; t.exPerWeek=t.perWeek; t.price=0; t.perWeek=0; save(); } } }
+  else if(act==='costq-typical'){ s.costMode='typical'; s._ohEdited=false; s.overheads=overheadsForAll(selInds()); save(); render(); }
+  else if(act==='costq-own'){ s.costMode='own'; save(); render(); }
+  else if(act==='use-price'){ const c=compute(state).treatments.find(t=>t.id===el.dataset.id), t=state.treatments.find(x=>x.id===el.dataset.id); if(c&&t){ t.price=c.suggested; save(); render(); toast(`${t.name} is now ${money(t.price)}`); } }
+  else if(act==='use-all-prices'){ compute(state).treatments.forEach(c=>{ if(c.flag==='below'||c.flag==='under'){ const t=state.treatments.find(x=>x.id===c.id); if(t) t.price=c.suggested; } }); save(); render(); toast('Prices updated'); }
+  else if(act==='edit-treat'){ openTreat=el.dataset.id; view='treatments'; render(); const n=document.getElementById('treat-'+openTreat); if(n&&n.scrollIntoView) n.scrollIntoView({block:'start'}); }
+  else if(act==='treat-open'){ openTreat=el.dataset.id; render(); }
+  else if(act==='treat-close'){ openTreat=null; render(); }
+  else if(act==='add-treat'){ const t=state.treatments[state.treatments.length-1]; if(t){ openTreat=t.id; render(); } }
+  else if(act==='prod-open'){ openProd=el.dataset.id; render(); }
+  else if(act==='prod-close'){ openProd=null; render(); }
+  else if(act==='add-product'){ const p=state.products[state.products.length-1]; if(p){ openProd=p.id; render(); } }
+  else if(act==='stock-inc'||act==='stock-dec'){ const p=state.products.find(x=>x.id===el.dataset.id); if(p){ p.inStock=Math.max(0,Math.round(((+p.inStock||0)+(act==='stock-inc'?1:-1))*10)/10); s._prodEdited=true; save(); render(); } }
+  else if(act==='rerun-quick'||act==='rerun-full'){ wizFull=(act==='rerun-full'); step=wizFull?0:1; view='wizard'; render(); window.scrollTo(0,0); }
+});
+document.addEventListener('change', e=>{
+  const el=e.target, s=state.setup;
+  if(el.dataset.setsel){ s[el.dataset.setsel]=el.value; save(); if(view!=='wizard') render(); }
+  else if(el.dataset.setbool){ s[el.dataset.setbool]=el.checked; save(); render(); }
+  else if(el.dataset.costown){ s.overheads=[{id:uid(),group:'monthly',name:'All running costs',custom:true,amount:+el.value||0,years:3}]; s._ohEdited=true; save(); }
+  else if(el.dataset.pf && el.dataset.f!=='inStock' && el.dataset.f!=='reorderAt'){ s._prodEdited=true; save(); }
+  else if(el.dataset.rf){ s._prodEdited=true; save(); }
+});
 
 render();
 </script>
