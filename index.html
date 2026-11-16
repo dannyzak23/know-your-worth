@@ -1105,6 +1105,7 @@ function vDiary(){
   ${days.map(d=>{ const offs=people().filter(p=>onHoliday(p.id,d));
     const bks=state.bookings.filter(b=>b.date===d).sort((a,b)=>a.time.localeCompare(b.time));
     return `<article class="card"><div class="treat-head"><h3>${fmtDay(d)}${d===todayStr()?' · today':''}</h3><button class="btn small" data-act="bk-new" data-date="${d}">+ Booking</button></div>
+      <p class="small muted" style="margin-top:-6px">${openLine(d)}</p>
       ${offs.length?`<div class="chips">${offs.map(p=>`<span class="pill warn">${p.id==='me'?'You are off':esc(p.name)+' is off'}</span>`).join('')}</div>`:''}
       ${bks.length?`<div class="list">${bks.map(b=>{ const [cls,lab]=STATUS[b.status]||STATUS.booked; const cl=clientById(b.clientId);
         return `<div class="item" style="align-items:flex-start;flex-wrap:wrap"><div class="num" style="min-width:52px">${esc(b.time)}</div>
@@ -1264,7 +1265,7 @@ function priceExtras(c){
 function makePriceList(kind){
   const c=compute(state), b=state.setup.brand||{}, pal=PALETTES[b.palette]||PALETTES.berry;
   const rows=c.treatments.map(t=>({name:t.name, price: kind==='suggested'?t.suggested:(+t.price||t.suggested), add:t.addon, unit:t.unitLabel}));
-  const cv=document.createElement('canvas'); cv.width=1080; cv.height=Math.max(1350, 360+rows.length*92); const x=cv.getContext('2d');
+  const cv=document.createElement('canvas'); cv.width=1080; const hrs=hoursSummary(); cv.height=Math.max(1350, 360+rows.length*92+hrs.length*52+110); const x=cv.getContext('2d');
   x.fillStyle=pal.soft; x.fillRect(0,0,cv.width,cv.height);
   x.fillStyle=pal.accent; x.fillRect(0,0,cv.width,230);
   x.fillStyle='#ffffff'; x.font='800 72px "Bricolage Grotesque", "Segoe UI", sans-serif'; x.fillText(b.businessName||'Price list',72,140);
@@ -1273,6 +1274,8 @@ function makePriceList(kind){
   rows.forEach(r=>{ x.fillStyle='#1d1a26'; x.font='600 40px Figtree, "Segoe UI", sans-serif'; x.fillText(r.name+(r.add&&r.unit?` (per ${r.unit})`:r.add?' (add-on)':''),72,y);
     const ps=new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2,minimumFractionDigits:0}).format(r.price); x.fillStyle=pal.accent; x.font='700 44px Figtree, "Segoe UI", sans-serif';
     const w=x.measureText(ps).width; x.fillText(ps,cv.width-72-w,y); x.fillStyle='rgba(0,0,0,.12)'; x.fillRect(72,y+28,cv.width-144,2); y+=92; });
+  y+=30; x.fillStyle=pal.accent; x.font='700 36px Figtree, "Segoe UI", sans-serif'; x.fillText('Opening hours',72,y); y+=54;
+  x.fillStyle='#1d1a26'; x.font='500 34px Figtree, "Segoe UI", sans-serif'; hrs.forEach(l=>{ x.fillText(l,72,y); y+=52; });
   const o=document.getElementById('overlay');
   o.innerHTML=`<div class="card" style="max-width:520px;width:100%;max-height:92vh;overflow:auto"><img src="${cv.toDataURL('image/png')}" alt="Your price list" style="width:100%;border-radius:10px"><p class="small muted">On a phone, press and hold the picture to save it. On a computer, right-click and save.</p><button class="btn" data-act="bk-close">Close</button></div>`;
   o.hidden=false;
@@ -1977,6 +1980,7 @@ vMore=function(){
       ${num('busy','How full your diary is (%)','100 means no gaps',5,100)}
       ${num('nonClient','Time not with '+W().cust+'s (%)','Breaks, messages, cleaning up',5,100)}
       <label class="field">Where you live<select id="m-region" data-setsel="region"><option value="ruk" ${s.region!=='sco'?'selected':''}>England, Wales or Northern Ireland</option><option value="sco" ${s.region==='sco'?'selected':''}>Scotland</option></select></label></div>`)}
+  ${sec('hours','Opening hours',`${openDays()} day${openDays()===1?'':'s'} · ${nf(Math.round(openMinutesWeek()/6)/10)} hours a week`,hoursEditor())}
   ${sec('costs','Running costs',`${gbp0(overheadsMonth(s))} a month`,overheadEditor())}
   ${sec('pricing','How prices are worked out','Card fees, no-shows, cushion, VAT',`<div class="fields">
       ${num('cardPct','Card fee (%)','What your card reader or app takes',0.01,100)}${num('cardFixed','Card fee per payment (£)','',0.01)}
@@ -2060,7 +2064,7 @@ quickStep=function(st){
   if(st.type==='targetq') return {q:'What would you like to take home each month?', why:'This does not change your prices. We use it to work out how many treatments you need to do.',
     body:`<label class="field">Amount each month, after tax<span class="money-in"><input id="wiz-takeHome" type="number" inputmode="decimal" min="0" step="50" value="${esc(s.takeHome)}" data-set="takeHome"></span></label>
       <div class="chips">${[1000,1500,2000,2500,3000].map(c=>`<button class="chip" data-act="wiz-chip" data-key="takeHome" data-v="${c}" aria-pressed="${+s.takeHome===c}">${gbp0(c)}</button>`).join('')}</div>
-      <div class="fields" style="margin-top:6px"><label class="field">Days a week you work<input id="wiz-days" type="number" inputmode="decimal" min="1" max="7" step="1" value="${esc(s.daysPerWeek||5)}" data-set="daysPerWeek"></label>
+      <div class="fields" style="margin-top:6px">
       <label class="field">Where you live<select id="wiz-region" data-setsel="region"><option value="ruk" ${s.region!=='sco'?'selected':''}>England, Wales or N. Ireland</option><option value="sco" ${s.region==='sco'?'selected':''}>Scotland</option></select></label></div>`};
   return quickStepBase(st);
 };
@@ -2086,7 +2090,8 @@ vPrices=function(){
       ${moneyField('tg-takeHome','What you want to take home each month, after tax','',s.takeHome,'data-set="takeHome"')}
       ${!(+s.takeHome>0) ? `<p class="muted">Type an amount to see how many ${T} you need to do.</p>`
        : !p ? `<p class="muted">Add your prices to see how many ${T} you need to do.</p>`
-       : `<p>You need to do about <b class="num">${Math.ceil(p.target)}</b> ${T} a month. That is about <b class="num">${Math.ceil(p.perWeek)}</b> a week, or <b class="num">${Math.ceil(p.perDay)}</b> a day over ${days} days.</p>
+       : `<p>You need to do about <b class="num">${Math.ceil(p.target)}</b> ${T} a month. That is about <b class="num">${Math.ceil(p.perWeek)}</b> a week, or <b class="num">${Math.ceil(p.perDay)}</b> a day over ${days} day${days===1?'':'s'}.</p>
+          ${fitLine(c,p)}
           ${hasBookings?`<p class="small muted">You do about ${Math.round(c.bookingsMonth)} a month now${c.bookingsMonth>=p.target?', so you are there':`, so you need about ${Math.ceil(p.target-c.bookingsMonth)} more`}.</p>`:''}
           <p class="small muted">Just to cover your running costs you need about ${Math.ceil(p.breakEven)} a month.${up.length&&c.planSug&&anyPrice&&Math.ceil(c.planSug.target)<Math.ceil(p.target)?` If you put those prices up, the target drops to about ${Math.ceil(c.planSug.target)} a month.`:''}</p>
           <p class="small muted">This uses ${anyPrice?'your prices':'the suggested prices'} and your usual mix of ${T}. Changing the target does not change your prices.</p>`}
@@ -2123,11 +2128,11 @@ vMore=function(){
       ${num('noShow','Clients who do not turn up (%)','',1,100)}${num('deposit','How much of a no-show your deposit covers (%)','0 if you take no deposit',5,100)}
       ${IND().patch?num('patchValidDays','How long a patch test lasts (days)','Follow your insurer'):''}</div>
       <label class="row small"><input type="checkbox" id="m-vat" data-setbool="vat" ${s.vat?'checked':''}> I am VAT registered (most people working alone are not)</label>`)}
+  ${sec('hours','Opening hours',`${openDays()} day${openDays()===1?'':'s'} · ${nf(Math.round(openMinutesWeek()/6)/10)} hours a week`,hoursEditor())}
   ${sec('costs','Running costs',`${gbp0(overheadsMonth(s))} a month`,overheadEditor())}
   ${sec('team','People who work for you',(s.staff||[]).length?`${s.staff.length} on the team`:'Nobody yet',staffEditor())}
   ${sec('pay','Your target',`${gbp0(s.takeHome)} a month`,`<div class="fields">
       <label class="field">What you want to take home each month<span class="hint">Does not change your prices</span><span class="money-in"><input id="m-takeHome" type="number" inputmode="decimal" step="50" value="${esc(s.takeHome)}" data-set="takeHome"></span></label>
-      ${num('daysPerWeek','Days a week you work')}
       <label class="field">Where you live<select id="m-region" data-setsel="region"><option value="ruk" ${s.region!=='sco'?'selected':''}>England, Wales or Northern Ireland</option><option value="sco" ${s.region==='sco'?'selected':''}>Scotland</option></select></label></div>`)}
   ${sec('tax','A job or student loan',+s.otherIncome>0||s.studentLoan!=='none'?'Added':'Not added',taxExtraEditor())}
   ${sec('brand','Your name, logo and colours',esc((s.brand||{}).businessName||'Not set'),brandEditor())}
@@ -2141,6 +2146,76 @@ vMore=function(){
       <button class="btn ${resetArmed?'danger':'ghost'}" data-act="reset">${resetArmed?'Tap again to delete everything':'Delete all my data'}</button>`)}
   <p class="small muted">Know Your Worth is a test version. Prices and tax are estimates using 2026/27 rates, not tax or financial advice.</p></section>`;
 };
+
+
+// ===================== MODULE: opening hours =====================
+const DAYS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+function defaultOpenHours(){ return DAYS.map((d,i)=>({open:i<5, from:'09:00', to:'17:00'})); }
+function openHours(){ const s=state.setup; if(!Array.isArray(s.openHours)||s.openHours.length!==7) s.openHours=defaultOpenHours(); return s.openHours; }
+const dayIdx=dateStr=>(dt(dateStr).getDay()+6)%7;
+const dayMins=h=>h.open?Math.max(0,toMin(h.to)-toMin(h.from)):0;
+const openMinutesWeek=()=>openHours().reduce((a,h)=>a+dayMins(h),0);
+const openDays=()=>openHours().filter(h=>dayMins(h)>0).length;
+function fmtT(t){ const [h,m]=(t||'0:0').split(':').map(Number); return `${((h+11)%12)+1}${m?'.'+pad2(m):''}${h<12?'am':'pm'}`; }
+function syncHours(){ const s=state.setup; s.daysPerWeek=Math.max(1,openDays()); s.hours=Math.round(openMinutesWeek()/6)/10; s._hoursSet=true; }
+function hoursSummary(){ // "Monday to Friday 9am to 5pm", "Saturday and Sunday closed"
+  const hs=openHours(), key=h=>dayMins(h)>0?`${fmtT(h.from)} to ${fmtT(h.to)}`:'closed', out=[]; let i=0;
+  while(i<7){ let j=i; while(j+1<7 && key(hs[j+1])===key(hs[i])) j++;
+    out.push(`${j===i?DAYS[i]:j===i+1?`${DAYS[i]} and ${DAYS[j]}`:`${DAYS[i]} to ${DAYS[j]}`} ${key(hs[i])}`); i=j+1; }
+  return out; }
+function openLine(dateStr){ const h=openHours()[dayIdx(dateStr)]; return dayMins(h)>0?`Open ${fmtT(h.from)} to ${fmtT(h.to)}`:'Closed'; }
+function hoursEditor(){
+  const hs=openHours(), wk=openMinutesWeek()/60;
+  return `<div class="stack">
+    <div class="list">${hs.map((h,i)=>`<div class="item" style="flex-wrap:wrap;gap:8px">
+      <label class="row" style="flex:1 1 130px;font-weight:600;gap:10px"><input type="checkbox" id="hr-o-${i}" data-hr="${i}" data-f="open" ${h.open?'checked':''}> ${DAYS[i]}</label>
+      ${h.open?`<span class="row" style="flex-wrap:nowrap;gap:6px"><input type="time" id="hr-f-${i}" aria-label="${DAYS[i]} opens" value="${esc(h.from)}" data-hr="${i}" data-f="from" style="width:auto"><span class="muted">to</span><input type="time" id="hr-t-${i}" aria-label="${DAYS[i]} closes" value="${esc(h.to)}" data-hr="${i}" data-f="to" style="width:auto"></span>`
+        :`<span class="muted">Closed</span>`}</div>`).join('')}</div>
+    <button class="btn small ghost" data-act="hr-copy">Use Monday's times for every open day</button>
+    <p class="live">Open ${openDays()} day${openDays()===1?'':'s'}, <span class="num">${nf(Math.round(wk*10)/10)}</span> hours a week.</p></div>`;
+}
+// does the target fit into her opening hours?
+function fitLine(c,p){
+  const wkOpen=openMinutesWeek()/60; if(!(wkOpen>0)||!p) return '';
+  const mix=c.treatments.filter(t=>(+t.perWeek||0)>0), list=mix.length?mix:c.treatments.filter(t=>!t.addon), w=t=>mix.length?(+t.perWeek||0):1;
+  const tot=list.reduce((a,t)=>a+w(t),0)||1, avgH=list.reduce((a,t)=>a+w(t)*t.mins,0)/tot/60, need=p.perWeek*avgH, open=nf(Math.round(wkOpen*10)/10);
+  return need>wkOpen ? `<div class="notice warn">That is about <b>${Math.round(need)} hours</b> of ${W().many} a week, which is more than the ${open} hours you are open. To get there you would need higher prices, longer hours or lower costs.</div>`
+    : `<p class="small muted">That is about ${Math.round(need)} hours of ${W().many} a week. You are open ${open} hours.</p>`;
+}
+
+// set-up: one extra question
+const wizStepsBeauty=wizSteps;
+wizSteps=function(){ const st=wizStepsBeauty().slice(), i=st.findIndex(x=>x.type==='targetq'); st.splice(i<0?st.length:i,0,{type:'openq'}); return st; };
+const quickStepBeauty=quickStep;
+quickStep=function(st){
+  if(st.type==='openq') return {q:'When are you open?', why:'Tick the days you work and set the times. Your diary uses them, and we check your target fits into your week. You can change them any time under More.', body:hoursEditor()};
+  return quickStepBeauty(st);
+};
+
+// diary: warn about bookings outside opening hours
+const bkWarningsBase=bkWarnings;
+bkWarnings=function(d){
+  const w=bkWarningsBase(d); if(!d.date||!d.time) return w;
+  const h=openHours()[dayIdx(d.date)];
+  if(!(dayMins(h)>0)) w.unshift(`You are closed on ${DAYS[dayIdx(d.date)]}s.`);
+  else { const start=toMin(d.time), end=start+bkMins(d); if(start<toMin(h.from)||end>toMin(h.to)) w.unshift(`This is outside your opening hours (${fmtT(h.from)} to ${fmtT(h.to)}).`); }
+  return w;
+};
+
+document.addEventListener('click', e=>{
+  const el=e.target.closest && e.target.closest('[data-act]'); if(!el) return; const act=el.dataset.act;
+  if(act==='hr-copy'){ const hs=openHours(), m=hs[0]; hs.forEach(h=>{ if(h.open){ h.from=m.from; h.to=m.to; } }); syncHours(); save(); render(); toast('Times copied'); }
+  else if(act==='bk-new' && bkDraft && !bkDraft.id){ const h=openHours()[dayIdx(bkDraft.date)]; if(dayMins(h)>0){ // start a new booking at the first free time after opening
+      const taken=state.bookings.filter(b=>b.date===bkDraft.date && b.staffId===bkDraft.staffId && b.status!=='cancelled').map(b=>toMin(b.time)+(+b.mins||0));
+      const start=Math.max(toMin(h.from), ...taken); bkDraft.time=fromMin(Math.min(start, Math.max(toMin(h.from),toMin(h.to)-15))); }
+    renderBkForm(); }
+});
+document.addEventListener('change', e=>{
+  const el=e.target; if(el.dataset.hr==null) return;
+  const h=openHours()[+el.dataset.hr], f=el.dataset.f; if(!h) return;
+  if(f==='open') h.open=el.checked; else if(el.value) h[f]=el.value;
+  syncHours(); save(); render();
+});
 
 render();
 </script>
