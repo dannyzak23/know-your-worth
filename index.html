@@ -1792,9 +1792,10 @@ const COMBOS=[['Nails, lashes and brows + waxing and facials',['beauty','therapy
 function overheadsForAll(keys){ const out=[]; keys.forEach(k=>overheadsFor(k).forEach(o=>{ if(!out.some(x=>x.group===o.group && x.name===o.name)) out.push(o); })); return out; }
 // ---------- running costs to start from, by kind of work ----------
 function overheadsFor(ind){
-  const g={beauty:'salon',therapy:'salon',makeup:'mobile',hair:'salon',barber:'salon',dog:'dog',build:'van',paint:'van',plaster:'van',electric:'van',plumb:'van',joiner:'van',garden:'van',clean:'clean',valet:'valet',cake:'cake',other:'mobile'}[ind]||'salon';
+  const g={beauty:'salon',therapy:'therapy',makeup:'mobile',hair:'salon',barber:'salon',dog:'dog',build:'van',paint:'van',plaster:'van',electric:'van',plumb:'van',joiner:'van',garden:'van',clean:'clean',valet:'valet',cake:'cake',other:'mobile'}[ind]||'salon';
   const sets={
     salon:null,
+    therapy:[['monthly','Room, chair or desk rent',400],['monthly','Booking app subscription',15],['monthly','Phone and internet',20],['monthly','Marketing and ads',30],['monthly','Design and admin apps',11],['monthly','Laundry',20],['yearly','Insurance',180],['yearly','Accountant',300],['yearly','Training and courses',300],['equipment','Treatment couch',180,5],['equipment','Card reader',99,3]],
     mobile:[['monthly','Phone and internet',20],['monthly','Marketing and ads',30],['monthly','Fuel',60],['yearly','Insurance',120],['yearly','Accountant',300],['yearly','Training and courses',200],['equipment','Kit and cases',400,3]],
     dog:[['monthly','Room, chair or desk rent',300],['monthly','Booking app subscription',15],['monthly','Phone and internet',20],['monthly','Marketing and ads',20],['monthly','Electricity and heating',60],['yearly','Insurance',180],['yearly','Accountant',300],['yearly','Blade sharpening',120],['equipment','Clippers and scissors',450,3],['equipment','Dryer',350,5],['equipment','Grooming table and bath',600,7]],
     van:[['monthly','Van finance or lease',250],['monthly','Fuel',200],['monthly','Phone and internet',25],['monthly','Marketing and ads',40],['monthly','Waste disposal',30],['yearly','Insurance',900],['yearly','Accountant',400],['yearly','Trade memberships and certificates',250],['yearly','Van tax, MOT and servicing',600],['equipment','Power tools',1500,4],['equipment','Hand tools',500,5],['equipment','Ladders and access',300,6]],
@@ -1853,13 +1854,15 @@ function quickStep(st){
   if(st.type==='hoursq') return {q:'How much do you work?', why:'Count everything: time with clients, breaks, messages and cleaning up.',
     body:`<div class="fields"><label class="field">Hours a week<input id="wiz-hours" type="number" inputmode="decimal" min="0" step="1" value="${esc(s.hours)}" data-set="hours"></label>
       <label class="field">Weeks off a year<span class="hint">Holidays, bank holidays, sick days</span><input id="wiz-weeksOff" type="number" inputmode="decimal" min="0" max="51" step="1" value="${esc(s.weeksOff)}" data-set="weeksOff"></label></div>`};
-  if(st.type==='costq'){ const own=s.costMode==='own', typical=overheadsForAll(selInds()), tsum=overheadsMonth({overheads:typical});
-    return {q:'What does it cost to run your business each month?', why:`Rent, insurance, phone, apps, equipment and so on. Not ${W().items}.`,
-      body:`<div class="choices">
-        <button class="choice" data-act="costq-typical" aria-pressed="${!own}">Use typical costs for my kind of work<small>About ${gbp0(tsum)} a month. You can change each one later under More.</small></button>
-        <button class="choice" data-act="costq-own" aria-pressed="${own}">I know my own figure<small>Type one monthly total</small></button></div>
-        ${own?`<label class="field">My running costs each month<span class="money-in"><input id="wiz-cost" type="number" inputmode="decimal" min="0" step="10" value="${esc(Math.round(overheadsMonth(s)))}" data-costown="1"></span></label>`
-          :`<details class="fold"><summary>See what is included</summary><div class="list">${typical.map(o=>`<div class="item"><div class="grow"><p>${esc(o.name)}</p></div><span class="num small">${gbp0(o.amount)}${o.group==='monthly'?' a month':o.group==='yearly'?' a year':` over ${o.years} years`}</span></div>`).join('')}</div></details>`}`};
+  if(st.type==='costq'){ const UNIT={monthly:'a month',yearly:'a year',equipment:'to buy'};
+    return {q:'What do you pay to run your business?', why:`These are typical costs for your kind of work. Change any that are wrong, and put 0 for anything you do not pay. Leave out ${W().items}.`,
+      body:`<div class="list">${(s.overheads||[]).map(o=>`<div class="item" style="gap:8px">
+          ${o.custom?`<input id="oh-name-${o.id}" class="grow" aria-label="What is it?" placeholder="What is it?" value="${esc(o.name)}" data-oh="${o.id}" data-f="name">`:`<label class="grow" for="oh-amt-${o.id}">${esc(o.name)}</label>`}
+          <span class="money-in" style="flex:none;width:104px"><input id="oh-amt-${o.id}" type="number" inputmode="decimal" min="0" step="1" value="${esc(o.amount)}" aria-label="${esc(o.name||'Cost')}, ${UNIT[o.group]}" data-oh="${o.id}" data-f="amount"></span>
+          <span class="small muted" style="flex:none;width:56px">${UNIT[o.group]}</span></div>`).join('')}</div>
+        <button class="btn small ghost" data-act="costq-add">+ Add another monthly cost</button>
+        <p class="live">That comes to about <span class="num">${gbp0(overheadsMonth(s))}</span> a month.</p>
+        <p class="small muted">Yearly costs and equipment are spread across the months. You can change all of this later under More.</p>`};
   }
   return null;
 }
@@ -2014,6 +2017,7 @@ document.addEventListener('click', e=>{
   if(act==='pick-treat'){ if(!wizFull && el.checked){ const t=state.treatments.find(x=>x.id===el.dataset.id); if(t && !t._q){ t._q=1; t.exPrice=t.price; t.exPerWeek=t.perWeek; t.price=0; t.perWeek=0; save(); } } }
   else if(act==='costq-typical'){ s.costMode='typical'; s._ohEdited=false; s.overheads=overheadsForAll(selInds()); save(); render(); }
   else if(act==='costq-own'){ s.costMode='own'; save(); render(); }
+  else if(act==='costq-add'){ const o={id:uid(),group:'monthly',name:'',custom:true,amount:0,years:3}; s._ohEdited=true; s.overheads=[...(s.overheads||[]),o]; save(); render(); const n=document.getElementById('oh-name-'+o.id); if(n) n.focus(); }
   else if(act==='use-price'){ const c=compute(state).treatments.find(t=>t.id===el.dataset.id), t=state.treatments.find(x=>x.id===el.dataset.id); if(c&&t){ t.price=c.suggested; save(); render(); toast(`${t.name} is now ${money(t.price)}`); } }
   else if(act==='use-all-prices'){ compute(state).treatments.forEach(c=>{ if(c.flag==='below'||c.flag==='under'){ const t=state.treatments.find(x=>x.id===c.id); if(t) t.price=c.suggested; } }); save(); render(); toast('Prices updated'); }
   else if(act==='edit-treat'){ openTreat=el.dataset.id; view='treatments'; render(); const n=document.getElementById('treat-'+openTreat); if(n&&n.scrollIntoView) n.scrollIntoView({block:'start'}); }
