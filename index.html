@@ -2361,6 +2361,7 @@ const GUIDE=[
   ['Change or delete a booking',"Tap Change on the booking. To delete it, tap 'Delete this booking' at the bottom of that sheet, then tap it again.",'diary'],
   ['See the whole month',"At the top of the Diary, tap Month. Each day shows how many bookings it has. Tap a day to see them. Tap Week to go back.",'diary'],
   ['Put a booking in your phone calendar',"On the booking, tap Calendar, then 'Google Calendar' or 'Apple or other calendar'. Your phone then reminds you like any other event.",'diary'],
+  ['Say how many uses you get from a product',"Tap Prices, then Treatments, then the treatment. Under each product, change 'How many uses do you get from' it, then tap Done. The cost of each treatment updates straight away. You can also do this in the set-up questions.",'treatments'],
   ['Reorder a product quickly',"Tap Prices, then Products, then the product. Paste the web page you buy it from into 'Link to order it'. An Order button then shows next to it, so you can reorder in one tap.",'stock'],
   ['Run a group class',"Tap Prices, then the treatment. Type how many places it has, how many usually come, and when it runs each week. The price is for each person. Book each person into the same time in the Diary, and clients can join it online until it is full.",'treatments'],
   ['Let clients book online',"At the bottom of Diary, under 'Let clients book online', type your mobile number and tap 'Share my booking link'. Send it to clients or put it in your Instagram bio. They pick a treatment and a free time and send you a request. Tap the link in their message to add it to your diary.",'diary'],
@@ -2774,12 +2775,19 @@ document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.close
 document.addEventListener('change',e=>{ const el=e.target, d=el.dataset||{}; if(!d.ct) return; const t=state.treatments.find(x=>x.id===d.ct); if(!t||!t.times||!t.times[+d.i]) return;
   t.times[+d.i][+d.k]= d.k==='0'?+el.value:el.value; syncClassWeek(t); save(); render(); });
 
+
+
 // ===================== product costs in set-up, and order links =====================
 // only web links are allowed as order links, so a typed 'javascript:' can never run
 function orderHref(u){ u=String(u||'').trim(); if(!u) return ''; if(!/^[a-z][a-z0-9+.-]*:/i.test(u)) u='https://'+u; return /^https?:\/\/[^\s]+\.[^\s]+/i.test(u)?u:''; }
 const orderBtn=(p,cls)=>{ const h=orderHref(p.url); return h?`<a class="btn small ${cls||'ghost'}" href="${esc(h)}" target="_blank" rel="noopener noreferrer">Order</a>`:''; };
 const urlField=(id,p)=>`<label class="field">Link to order it<span class="hint">Paste the page you buy it from, to reorder in one tap</span><input id="${id}" type="url" inputmode="url" autocomplete="off" placeholder="e.g. salonservices.com/..." value="${esc(p.url||'')}" data-pf="${p.id}" data-f="url"></label>`;
 
+// how many uses she gets from one, for each treatment that uses it
+function usesBlock(p){ const ts=state.treatments.filter(t=>(t.recipe||[]).some(r=>r.productId===p.id)); if(!ts.length) return '';
+  const box=(t,label)=>{ const r=t.recipe.find(x=>x.productId===p.id); return `<label class="field">${label}<input id="wp-n-${p.id}-${t.id}" type="number" inputmode="decimal" min="0" step="1" value="${esc(r.perPack||'')}" data-ru="${t.id}" data-p="${p.id}"></label>`; };
+  return ts.length===1 ? box(ts[0],`How many uses do you get from one ${esc(packLabel(p))}?<span class="hint">For ${esc(ts[0].name)}</span>`)
+    : `<p class="small" style="font-weight:600;margin:0">How many uses do you get from one ${esc(packLabel(p))}?</p><div class="fields">${ts.map(t=>box(t,esc(t.name))).join('')}</div>`; }
 const wizStepsBeforeProd=wizSteps;
 wizSteps=function(){ const st=wizStepsBeforeProd().slice(); if(wizFull||st.some(x=>x.type==='prodq')) return st; const i=st.findIndex(x=>x.type==='quicklist'); if(i>=0) st.splice(i+1,0,{type:'prodq'}); return st; };
 const quickStepBeforeProd=quickStep;
@@ -2789,7 +2797,8 @@ quickStep=function(st){ if(st.type!=='prodq') return quickStepBeforeProd(st);
     <div class="fields"><label class="field">Size you buy<span class="row" style="flex-wrap:nowrap;gap:8px"><input id="wp-z-${p.id}" type="number" inputmode="decimal" min="0" step="any" aria-label="Size of ${esc(p.name)}" value="${esc(p.size)}" data-pf="${p.id}" data-f="size" style="flex:1"><select id="wp-u-${p.id}" aria-label="Unit for ${esc(p.name)}" data-pf="${p.id}" data-f="unit" style="flex:1">${UNITS.map(u=>`<option ${u===p.unit?'selected':''}>${u}</option>`).join('')}</select></span></label>
       ${moneyField('wp-c-'+p.id,'What one costs you','',p.packCost,`data-pf="${p.id}" data-f="packCost"`)}
       <label class="field">Where you buy it<input id="wp-s-${p.id}" list="sup-list" placeholder="Pick one or type your own" value="${esc(p.supplier||'')}" data-pf="${p.id}" data-f="supplier"></label>
-      ${urlField('wp-l-'+p.id,p)}</div></article>`).join('');
+      ${urlField('wp-l-'+p.id,p)}</div>
+    ${usesBlock(p)}</article>`).join('');
   return {q:`What your ${W().items} cost`, why:`These are typical UK prices for what your ${W().many} use. Change any that are different for you. You can skip this and change them later.`,
     body: used.length?`${supData()}<div class="stack">${rows}</div>`:`<p class="muted">None of your ${W().many} use any ${W().items} yet. Tap Next.</p>`}; };
 
