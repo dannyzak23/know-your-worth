@@ -2032,8 +2032,28 @@ document.addEventListener('change', e=>{
 // plus the profit she wants for each hour with a client. What she wants to take home no longer changes prices:
 // it only feeds the "how many treatments do I need" sum.
 const ALL_TRADES=false; // set to true to bring the other kinds of work back
-if(!ALL_TRADES){ IND_GROUPS.length=0; IND_GROUPS.push(['Tick all that apply',['beauty','therapy','makeup']]); }
-INDUSTRIES.makeup.label='Make-up';
+// ---------- electrolysis and laser hair removal ----------
+addProducts([P('probes','Electrolysis probes (sterile)','50 pieces',35),P('gelcool','Laser cooling gel','5 litres',25),P('glasses','Client eye shields','10 pieces',20),
+  P('razors','Disposable razors','50 pieces',10),P('aloe','Aloe soothing gel','500 ml',10),P('spf','SPF 50 aftercare','50 sachets',25),P('wipes','Antiseptic skin wipes','100 pieces',6)]);
+addServices('laser',[
+  S('elec15','Electrolysis 15 minutes',15,10,6,20,[['probes',25],['wipes',50],['aloe',100],['gloves',50],['couch',360]]),
+  S('elec30','Electrolysis 30 minutes',30,10,4,32,[['probes',25],['wipes',50],['aloe',80],['gloves',50],['couch',360]]),
+  S('lzlip','Laser upper lip',15,10,4,40,[['gelcool',300],['razors',50],['glasses',400],['aloe',150],['spf',50],['gloves',50],['couch',360]],PT),
+  S('lzarm','Laser underarms',15,10,4,55,[['gelcool',200],['razors',50],['glasses',400],['aloe',100],['spf',50],['gloves',50],['couch',360]],PT),
+  S('lzbikini','Laser bikini line',20,10,3,65,[['gelcool',150],['razors',50],['glasses',400],['aloe',80],['spf',50],['gloves',50],['couch',360]],PT),
+  S('lzhalfleg','Laser half legs',40,10,2,120,[['gelcool',60],['razors',50],['glasses',400],['aloe',40],['spf',50],['gloves',50],['couch',360]],PT),
+  S('lzfullleg','Laser full legs',60,10,1,190,[['gelcool',35],['razors',40],['glasses',400],['aloe',25],['spf',50],['gloves',50],['couch',360]],PT),
+  S('lzconsult','Consultation and patch test',20,5,2,15,[['gelcool',600],['glasses',400],['gloves',50]],PT)]);
+INDUSTRIES.laser={label:'Electrolysis or laser hair removal',w:BEAUTY_W,hours:false,patch:true,example:'e.g. Laser chin',newItem:'e.g. Numbing cream',sup:'beauty'};
+INDUSTRIES.therapy.label='Beauty therapy (waxing, facials, massage, tanning)';
+INDUSTRIES.hair.label='Hairdressing';
+INDUSTRIES.barber.label='Barbering';
+const overheadsForBase=overheadsFor;
+overheadsFor=function(ind){ if(ind!=='laser') return overheadsForBase(ind);
+  return [['monthly','Room or clinic rent',500],['monthly','Laser machine finance',350],['monthly','Booking app subscription',15],['monthly','Phone and internet',20],['monthly','Marketing and ads',40],['monthly','Laundry',20],
+    ['yearly','Insurance',350],['yearly','Accountant',300],['yearly','Laser safety adviser and local licence',400],['yearly','Machine servicing',300],['equipment','Treatment couch',180,5],['equipment','Electrolysis machine',900,7],['equipment','Card reader',99,3]]
+    .map(([group,name,amount,years])=>({id:uid(),group,name,amount,years:years||3})); };
+if(!ALL_TRADES){ IND_GROUPS.length=0; IND_GROUPS.push(['Tick all that apply',['beauty','therapy','hair','barber','laser']]); }
 APPS.other.note='Type in your own fee';
 const profitHourOf=s=>s.profitHour==null?20:(+s.profitHour||0);
 
