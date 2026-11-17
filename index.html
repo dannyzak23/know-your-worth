@@ -2273,6 +2273,7 @@ const GUIDE=[
   ['Change or delete a booking',"Tap Change on the booking. To delete it, tap 'Delete this booking' at the bottom of that sheet, then tap it again.",'diary'],
   ['See the whole month',"At the top of the Diary, tap Month. Each day shows how many bookings it has. Tap a day to see them. Tap Week to go back.",'diary'],
   ['Put a booking in your phone calendar',"On the booking, tap Calendar, then 'Google Calendar' or 'Apple or other calendar'. Your phone then reminds you like any other event.",'diary'],
+  ['Let clients book online',"At the bottom of Diary, under 'Let clients book online', type your mobile number and tap 'Share my booking link'. Send it to clients or put it in your Instagram bio. They pick a treatment and a free time and send you a request. Tap the link in their message to add it to your diary.",'diary'],
   ['Send a reminder',"Tap Reminder on the booking, then 'Copy message'. Paste it into a text, WhatsApp or email. The app does not send it for you.",'diary'],
   ['Record a deposit',"Type it in 'Deposit taken' when you make the booking.",'diary'],
   ['Book a holiday or a day off',"At the bottom of Diary, tap '+ Add time off'. Pick the dates, then tap Save.",'diary']]],
@@ -2344,6 +2345,90 @@ document.addEventListener('click', async e=>{ const el=e.target.closest&&e.targe
     if(await plClaudeSave()){ toast('Inside Claude, use Google Calendar, or open the app from its web address'); return; } // Claude does not hand over calendar files
     const a2=document.createElement('a'); a2.href=URL.createObjectURL(new Blob([calFile(b)],{type:'text/calendar'})); a2.download='booking.ics'; a2.click(); setTimeout(()=>URL.revokeObjectURL(a2.href),5000); }
 }, true);
+
+// ---- online booking: a link clients open to pick a treatment and a free time ----
+// No server: her free times travel inside the link (after the #, so they are never sent to any website), and the
+// client's request comes back to her by WhatsApp, text or email with a link that adds it to her diary.
+// shortcut: the link is a snapshot of her free times when she made it; upgrade to live times with the server add-on.
+const APP_URL=()=>/github\.io$|localhost$/.test(location.hostname)?location.origin+location.pathname:'https://dannyzak23.github.io/know-your-worth/';
+const b64e=o=>btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const b64d=s=>{ try{ s=s.replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4) s+='='; return JSON.parse(decodeURIComponent(escape(atob(s)))); }catch(e){ return null; } };
+const bookPage=()=>({days:14,phone:'',email:'',...(state.setup.bookPage||{})});
+function freeTimes(x){ const h=hoursFor('me')[dayIdx(x)]; if(!(dayMins(h)>0)||onHoliday('me',x)) return [];
+  const busy=state.bookings.filter(b=>b.date===x&&b.staffId==='me'&&b.status!=='cancelled').map(b=>[toMin(b.time),toMin(b.time)+(+b.mins||0)+(+(svc(b.serviceId)||{}).prepMin||0)]);
+  if(breakMins(h)>0) busy.push([toMin(h.bFrom),toMin(h.bTo)]);
+  let free=[[toMin(h.from),toMin(h.to)]];
+  busy.forEach(([s,e])=>{ free=free.flatMap(([a,b])=>e<=a||s>=b?[[a,b]]:[[a,Math.min(s,b)],[Math.max(e,a),b]].filter(([p,q])=>q-p>=15)); });
+  return free; }
+const slots=(free,len)=>free.flatMap(([a,b])=>{ const o=[]; for(let t=Math.ceil(a/15)*15;t+len<=b;t+=15) o.push(t); return o; });
+function bookLink(){ const bp=bookPage(), c=compute(state), days=[];
+  for(let i=1;i<=bp.days;i++){ const x=addDays(todayStr(),i), f=freeTimes(x); if(f.length) days.push([x,f]); }
+  return APP_URL()+'#book='+b64e({b:(state.setup.brand||{}).businessName||'',t:c.treatments.filter(t=>!t.addon).map(t=>[t.id,t.name,+t.price||t.suggested,+t.clientMin||0,+t.prepMin||0]),d:days,w:bp.phone,e:bp.email,m:todayStr()}); }
+function bookCard(){ const bp=bookPage();
+  return `<article class="card"><h3>Let clients book online</h3>
+    <p class="small muted">Share a link. Clients pick a treatment and a free time, and it sends you the request by WhatsApp, text or email. Tap the link in their message to add it to your diary.</p>
+    <label class="field">Your mobile number<span class="hint">Requests come to this by WhatsApp or text</span><input id="bp-phone" type="tel" autocomplete="tel" value="${esc(bp.phone)}" data-bp="phone"></label>
+    <label class="field">Your email<span class="hint">Optional</span><input id="bp-email" type="email" autocomplete="email" value="${esc(bp.email)}" data-bp="email"></label>
+    <label class="field">How far ahead clients can book<select id="bp-days" data-bp="days">${[[7,'1 week'],[14,'2 weeks'],[28,'4 weeks']].map(([v,l])=>`<option value="${v}" ${+bp.days===v?'selected':''}>${l}</option>`).join('')}</select></label>
+    <div class="row"><button class="btn" data-act="bp-share">Share my booking link</button><button class="btn ghost" data-act="bp-preview">See what clients see</button></div>
+    <p class="small muted">The link shows your free times as they are when you share it, so share a fresh one when your diary changes, say once a week. Nothing is booked until you add it.</p></article>`; }
+
+// ---- what the client sees ----
+let BK=null, bf={t:null,d:null,time:null,name:'',phone:'',note:'',sent:false};
+function bookFace(){ const B=BK, live=B.d.filter(([x])=>x>todayStr()), tr=B.t.find(t=>t[0]===bf.t), len=tr?tr[3]+tr[4]:0;
+  const head=`<div><h2>${esc(B.b||'Book an appointment')}</h2><p class="muted">Choose a treatment and a time, then send your request.</p></div>`;
+  if(!live.length) return `<section class="stack">${head}<div class="notice warn">This booking link is out of date. Send a message to ask for a time.</div></section>`;
+  const days=tr?live.filter(([,f])=>slots(f,len).length):[], day=days.find(([x])=>x===bf.d), times=day?slots(day[1],len):[];
+  return `<section class="stack">${head}
+  <article class="card"><h3>1. Choose a treatment</h3><div class="choices">${B.t.map(t=>`<button class="choice" data-act="bf-t" data-v="${esc(t[0])}" aria-pressed="${bf.t===t[0]}">${esc(t[1])}<small>${money(t[2])} · about ${t[3]} min</small></button>`).join('')}</div></article>
+  ${tr?`<article class="card" id="bf-days"><h3>2. Choose a day</h3>${days.length?`<div class="chips">${days.map(([x])=>`<button class="chip" data-act="bf-d" data-v="${x}" aria-pressed="${bf.d===x}">${fmtDay(x)}</button>`).join('')}</div>`:'<p class="muted">No free times for this one at the moment. Send a message to ask.</p>'}</article>`:''}
+  ${day?`<article class="card" id="bf-times"><h3>3. Choose a time</h3><div class="chips">${times.map(t=>`<button class="chip" data-act="bf-time" data-v="${t}" aria-pressed="${bf.time===t}">${fmtT(fromMin(t))}</button>`).join('')}</div></article>`:''}
+  ${day&&bf.time!=null?`<article class="card" id="bf-you"><h3>4. Your details</h3>
+    <label class="field">Your name<input id="bf-name" autocomplete="name" value="${esc(bf.name)}" data-bf="name"></label>
+    <label class="field">Your mobile number<input id="bf-phone" type="tel" autocomplete="tel" value="${esc(bf.phone)}" data-bf="phone"></label>
+    <label class="field">Anything we should know?<span class="hint">Optional</span><input id="bf-note" value="${esc(bf.note)}" data-bf="note"></label>
+    <p class="live">${esc(tr[1])}, ${fmtDay(bf.d)} at ${fmtT(fromMin(bf.time))}, ${money(tr[2])}</p>
+    <div class="stack">${B.w?`<button class="btn" data-act="bf-send" data-via="wa">Send by WhatsApp</button><button class="btn ghost" data-act="bf-send" data-via="sms">Send by text</button>`:''}${B.e?`<button class="btn ghost" data-act="bf-send" data-via="email">Send by email</button>`:''}</div>
+    ${bf.sent?`<div class="notice ok">Once you have sent the message, that is it. ${esc(B.b||'They')} will reply to confirm.</div>`:'<p class="small muted">This sends a booking request. It is not booked until you hear back.</p>'}</article>`:''}
+  <p class="small muted">Free times as of ${fmtDay(B.m)}.</p></section>`; }
+function bfMessage(){ const B=BK, tr=B.t.find(t=>t[0]===bf.t), n=bf.name.trim(), p=bf.phone.trim(), o=bf.note.trim();
+  const link=location.origin+location.pathname+'#add='+b64e({t:bf.t,n:tr[1],d:bf.d,h:fromMin(bf.time),c:n,p,o});
+  return `Hi${B.b?' '+B.b:''}, I would like to book ${tr[1]} on ${fmtDay(bf.d)} at ${fmtT(fromMin(bf.time))}.\nName: ${n}${p?`\nPhone: ${p}`:''}${o?`\nNote: ${o}`:''}\n\nTo add this to your diary, tap: ${link}`; }
+const HASH=(typeof location!=='undefined'&&location.hash)||'';
+if(HASH.startsWith('#book=')){ const d=b64d(HASH.slice(6)); if(d&&Array.isArray(d.t)&&Array.isArray(d.d)){ BK=d;
+  render=function(){ ['header','#bottomnav'].forEach(q=>{ const n=document.querySelector(q); if(n) n.hidden=true; }); document.title=(BK.b||'Book')+' · Book an appointment'; document.getElementById('main').innerHTML=bookFace(); }; } }
+
+// ---- her side: a request link adds the booking in one tap ----
+let addReq=null;
+function showAdd(A){ const t=svc(A.t), o=document.getElementById('overlay'), w=t?bkWarnings({date:A.d,time:A.h,staffId:'me',serviceId:t.id,addons:[],clientId:''}):[]; addReq=A;
+  o.innerHTML=`<div class="card" style="max-width:480px;width:100%"><h3>Booking request</h3>
+    <p><b>${esc(A.c||'Someone')}</b> would like ${esc(A.n||'a booking')} on ${fmtDay(A.d)} at ${fmtT(A.h)}.</p>${A.p?`<p class="small muted">Phone: ${esc(A.p)}</p>`:''}${A.o?`<p class="small muted">Note: ${esc(A.o)}</p>`:''}
+    ${t?'':`<div class="notice warn">${esc(A.n||'That treatment')} is not in your list any more, so it cannot be added. Reply to them instead.</div>`}${w.map(x=>`<div class="notice warn">${esc(x)}</div>`).join('')}
+    <div class="row">${t?'<button class="btn" data-act="add-req">Add to my diary</button>':''}<button class="btn ghost" data-act="add-req-no">Not now</button></div>
+    <p class="small muted">Remember to reply to them to confirm.</p></div>`; o.hidden=false; }
+if(HASH.startsWith('#add=')){ const A=b64d(HASH.slice(5)); if(A&&A.d&&A.h) setTimeout(function tryAdd(){ if(view==='lock'){ setTimeout(tryAdd,1000); return; } showAdd(A); },0); }
+function addRequest(A){ const t=svc(A.t); if(!t) return null; const nm=(A.c||'').trim();
+  let cl=nm&&state.clients.find(c=>c.name.trim().toLowerCase()===nm.toLowerCase()); if(!cl&&nm){ cl={id:uid(),name:nm,phone:A.p||'',patchTests:[]}; state.clients.push(cl); } else if(cl&&A.p&&!cl.phone) cl.phone=A.p;
+  const d={date:A.d,time:A.h,staffId:'me',serviceId:t.id,addons:[]}, b={id:uid(),...d,clientId:cl?cl.id:'',mins:bkMins(d),price:bkAutoPrice(d),deposit:0,notes:A.o||'',status:'booked'};
+  state.bookings.push(b); return b; }
+
+document.addEventListener('click', e=>{ const el=e.target.closest&&e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act, v=el.dataset.v;
+  if(a==='bf-t'||a==='bf-d'||a==='bf-time'){ if(a==='bf-t'){ bf.t=v; bf.d=null; bf.time=null; } else if(a==='bf-d'){ bf.d=v; bf.time=null; } else bf.time=+v;
+    render(); const n=document.getElementById(a==='bf-t'?'bf-days':a==='bf-d'?'bf-times':'bf-you'); if(n) n.scrollIntoView({behavior:'smooth',block:'start'}); }
+  else if(a==='bf-send'){ if(!bf.name.trim()){ toast('Type your name first'); const n=document.getElementById('bf-name'); if(n) n.focus(); return; }
+    const msg=encodeURIComponent(bfMessage()), via=el.dataset.via;
+    if(via==='wa') window.open(`https://wa.me/${waNumber(BK.w)}?text=${msg}`,'_blank'); else location.href= via==='sms'?`sms:${String(BK.w).replace(/\s/g,'')}?&body=${msg}`:`mailto:${BK.e}?subject=${encodeURIComponent('Booking request')}&body=${msg}`;
+    bf.sent=true; render(); }
+  else if(a==='bp-share'||a==='bp-preview'){ const bp=bookPage(); if(!bp.phone.trim()&&!bp.email.trim()){ toast('Add your mobile number or email first, so requests reach you'); const n=document.getElementById('bp-phone'); if(n) n.focus(); return; }
+    const url=bookLink(); if(a==='bp-preview'){ window.open(url,'_blank'); return; }
+    if(navigator.share) navigator.share({title:'Book with '+((state.setup.brand||{}).businessName||'me'),url}).catch(()=>{}); else copyText(url); }
+  else if(a==='add-req'||a==='add-req-no'){ const A=addReq; addReq=null; document.getElementById('overlay').hidden=true; try{ history.replaceState(null,'',location.pathname); }catch(_){}
+    if(a==='add-req'&&A){ const b=addRequest(A); if(b){ save(); view='diary'; diaryMode='week'; diaryWeek=weekStart(b.date); render(); toast('Added to your diary. Reply to them to confirm'); } } }
+});
+document.addEventListener('input', e=>{ const d=(e.target&&e.target.dataset)||{}; if(d.bf) bf[d.bf]=e.target.value; });
+document.addEventListener('change', e=>{ const el=e.target, f=el&&el.dataset&&el.dataset.bp; if(!f) return; state.setup.bookPage={...bookPage(),[f]:f==='days'?+el.value:el.value.trim()}; save(); });
+const vDiaryMonthWeek=vDiary;
+vDiary=function(){ const h=vDiaryMonthWeek(); if(diaryMode==='month') return h; const i=h.lastIndexOf('</section>'); return h.slice(0,i)+bookCard()+h.slice(i); };
 
 // ===================== MODULE: price list designer =====================
 // Her choices live in state.setup.priceList; anything she has not set falls back to her branding.
