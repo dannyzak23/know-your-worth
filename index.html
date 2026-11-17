@@ -1171,7 +1171,7 @@ function renderHolForm(){
     <label class="field">Who<select id="hol-who" data-hol="staffId">${people().map(p=>`<option value="${p.id}" ${p.id===d.staffId?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>
     <div class="fields"><label class="field">From<input id="hol-from" type="date" value="${esc(d.from)}" data-hol="from" required></label><label class="field">To<input id="hol-to" type="date" value="${esc(d.to)}" data-hol="to" required></label></div>
     <label class="field">Note<input id="hol-note" placeholder="e.g. Holiday, training, bank holiday" value="${esc(d.note||'')}" data-hol="note"></label>
-    ${state.bookings.some(b=>b.staffId===d.staffId && b.status==='booked' && b.date>=d.from && b.date<=d.to)?`<div class="notice warn">${esc(personName(d.staffId))} already has bookings in these dates. Move them in the diary.</div>`:''}
+    ${state.bookings.some(b=>b.staffId===d.staffId && b.status==='booked' && b.date>=d.from && b.date<=d.to)?`<div class="notice warn">${d.staffId==='me'?'You already have':esc(personName(d.staffId))+' already has'} bookings in these dates. Move them in the diary.</div>`:''}
     <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="bk-close">Cancel</button><button class="btn" type="submit">Save</button></div></form>`;
   o.hidden=false;
 }
@@ -1857,16 +1857,8 @@ function quickStep(st){
   if(st.type==='hoursq') return {q:'How much do you work?', why:'Count everything: time with clients, breaks, messages and cleaning up.',
     body:`<div class="fields"><label class="field">Hours a week<input id="wiz-hours" type="number" inputmode="decimal" min="0" step="1" value="${esc(s.hours)}" data-set="hours"></label>
       <label class="field">Weeks off a year<span class="hint">Holidays, bank holidays, sick days</span><input id="wiz-weeksOff" type="number" inputmode="decimal" min="0" max="51" step="1" value="${esc(s.weeksOff)}" data-set="weeksOff"></label></div>`};
-  if(st.type==='costq'){ const UNIT={monthly:'a month',yearly:'a year',equipment:'to buy'};
-    return {q:'What do you pay to run your business?', why:`These are typical costs for your kind of work. Change any that are wrong, and put 0 for anything you do not pay. Leave out ${W().items}.`,
-      body:`<div class="list">${(s.overheads||[]).map(o=>`<div class="item" style="gap:8px">
-          ${o.custom?`<input id="oh-name-${o.id}" class="grow" aria-label="What is it?" placeholder="What is it?" value="${esc(o.name)}" data-oh="${o.id}" data-f="name">`:`<label class="grow" for="oh-amt-${o.id}">${esc(o.name)}</label>`}
-          <span class="money-in" style="flex:none;width:104px"><input id="oh-amt-${o.id}" type="number" inputmode="decimal" min="0" step="1" value="${esc(o.amount)}" aria-label="${esc(o.name||'Cost')}, ${UNIT[o.group]}" data-oh="${o.id}" data-f="amount"></span>
-          <span class="small muted" style="flex:none;width:56px">${UNIT[o.group]}</span></div>`).join('')}</div>
-        <button class="btn small ghost" data-act="costq-add">+ Add another monthly cost</button>
-        <p class="live">That comes to about <span class="num">${gbp0(overheadsMonth(s))}</span> a month.</p>
-        <p class="small muted">Yearly costs and equipment are spread across the months. You can change all of this later under More.</p>`};
-  }
+  if(st.type==='costq') return {q:'What do you pay to run your business?', why:`These are typical costs for your kind of work. Change any that are wrong, and put 0 for anything you do not pay. Leave out ${W().items}.`,
+      body:`${costList()}<p class="small muted">Yearly costs and equipment are spread across the months. You can change these any time on the Prices screen.</p>`};
   return null;
 }
 
@@ -2109,6 +2101,9 @@ vPrices=function(){
           ${up.length&&c.planSug&&anyPrice&&Math.ceil(c.planSug.target)<Math.ceil(p.target)?`<p class="small muted">If you put those prices up, you only need about ${Math.ceil(c.planSug.target)} a month.</p>`:''}
           `}
     </section>`;
+  const numbers=`<section class="card"><h3>Your numbers</h3><p class="small muted">Change these here and your prices update straight away.</p>
+      ${moneyField('pn-profitHour',`What you want to earn for each hour with a ${W().cust}`,'0 to just cover your costs',c.profitRate,'data-set="profitHour"')}
+      <details class="fold" data-sec="p-costs" ${moreOpen==='p-costs'?'open':''}><summary><span class="grow">Running costs<small>${gbp0(overheadsMonth(s))} a month · tap to change</small></span></summary><div class="stack">${costList()}</div></details></section>`;
   const rows=all.map(t=>{ const [cls,lab]=FLAG[t.flag];
     return `<details class="fold"><summary><span class="grow">${esc(t.name)}</span><span class="num">${+t.price>0?money(t.price):money(t.suggested)}</span><span class="pill ${cls}">${t.flag==='none'?'Suggested':t.flag==='below'?'Below cost':lab}</span></summary>
       <div class="prices"><div><div class="k">Your price</div><div class="v">${+t.price>0?money(t.price):'–'}</div></div>
@@ -2116,7 +2111,7 @@ vPrices=function(){
         <div class="sugg"><div class="k">Suggested</div><div class="v">${money(t.suggested)}</div></div></div>
       <p class="small muted">It costs you about <b>${gbp(t.cost)}</b> to do: ${gbp(t.productCost)} of ${W().items} and ${gbp(t.timeCost)} of running costs. ${t.profitNow!=null?`At your price you keep <b>${gbp(t.profitNow)}</b> each time`:`At the suggested price you keep <b>${gbp(t.earnings)}</b> each time`}${also.length?`, after ${alsoTxt}`:''}.${t.flag==='under'||t.flag==='below'?` At ${money(t.suggested)} you would keep ${gbp(t.earnings)}.`:''}${t.patch?' Needs a patch test.':''}</p>
       <button class="btn small ghost" data-act="edit-treat" data-id="${t.id}">Change this ${W().one}</button></details>`; }).join('');
-  return `${head}${earn}${target}
+  return `${head}${earn}${target}${numbers}
   ${!s._prodEdited?`<div class="notice info">The cost of your ${W().items} is a typical figure for now. <button class="btn small ghost" data-tab="stock">Check my ${W().items}</button></div>`:''}
   <section class="stack"><h3>All your prices</h3>${rows}</section>
   <details class="fold"><summary><span class="grow">How we worked this out</span></summary><div class="stack">
@@ -2136,6 +2131,7 @@ vMore=function(){
   const sec=(key,title,sub,body)=>`<details class="fold" data-sec="${key}" ${moreOpen===key?'open':''}><summary><span class="grow">${title}<small>${sub}</small></span></summary><div class="stack">${body}</div></details>`;
   const ph=profitHourOf(s);
   return `<section class="stack"><h2>More</h2>
+  ${sec('help','How do I do that?','Step by step for everything in the app',guideCard())}
   <div><h3>Your business</h3></div>
   ${sec('hours','Opening hours',`${openDays()} day${openDays()===1?'':'s'} · ${nf(Math.round(openMinutesWeek()/6)/10)} hours a week`,hoursEditor())}
   ${sec('costs','Running costs',`${gbp0(overheadsMonth(s))} a month`,overheadEditor())}
@@ -2167,6 +2163,75 @@ vMore=function(){
   <p class="small muted">Know Your Worth is a test version. Prices and tax are estimates using 2026/27 rates, not tax or financial advice.</p></section>`;
 };
 
+
+
+// ===================== MODULE: plain lists and the how-to guide =====================
+// running costs as a plain list with a box beside each one (set-up and the Prices screen)
+function costList(){ const s=state.setup, UNIT={monthly:'a month',yearly:'a year',equipment:'to buy'};
+  return `<div class="list">${(s.overheads||[]).map(o=>`<div class="item" style="gap:8px">
+      ${o.custom?`<input id="oh-name-${o.id}" class="grow" aria-label="What is it?" placeholder="What is it?" value="${esc(o.name)}" data-oh="${o.id}" data-f="name">`:`<label class="grow" for="oh-amt-${o.id}">${esc(o.name)}</label>`}
+      <span class="money-in" style="flex:none;width:104px"><input id="oh-amt-${o.id}" type="number" inputmode="decimal" min="0" step="1" value="${esc(o.amount)}" aria-label="${esc(o.name||'Cost')}, ${UNIT[o.group]}" data-oh="${o.id}" data-f="amount"></span>
+      <span class="small muted" style="flex:none;width:56px">${UNIT[o.group]}</span></div>`).join('')}</div>
+    <button class="btn small ghost" data-act="costq-add">+ Add another monthly cost</button>
+    <p class="live">That comes to about <span class="num">${gbp0(overheadsMonth(s))}</span> a month.</p>`; }
+
+// How to do everything. Names in 'single quotes' are the words on the buttons, so keep them exact.
+const GUIDE=[
+['Getting started',[
+  ['Set the app up',"Answer the nine short steps when you first open it. It takes about two minutes. To do them again, tap More, then 'Answer the questions again'."],
+  ['Try it with made-up figures',"On the very first screen, tap 'Try it with example figures'."],
+  ['Find your way around',"The five buttons along the bottom are Prices, Diary, Money, Clients and More. Prices and Money have extra tabs along the top."]]],
+['Prices',[
+  ['See what to charge',"Tap Prices. Each treatment shows your price and a label: Good, Under-priced or Below cost. Tap a treatment to see what it costs you and what you keep."],
+  ['Use a suggested price',"On Prices, the box at the top lists the prices to put up. Tap the Use button beside one, or 'Use all the suggested prices'. An Undo button shows for a few seconds."],
+  ['Change a price, a time or how many you do',"Tap Prices, then Treatments at the top, then the treatment. Change 'Your price', 'Minutes with the client' or 'How many a week', then tap Done."],
+  ['Add or remove a treatment',"Tap Prices, then Treatments. The button at the bottom adds your own. To remove one, open it and tap Remove."],
+  ['Say which products a treatment uses',"Open the treatment under Treatments. Under 'Products it uses', pick a product and tap Add. The uses box is how many treatments you get from one bottle or pack."],
+  ['Change what a product costs',"Tap Prices, then Products, then the product. Change 'What one costs you' and tap Done. The button at the bottom adds a new product."],
+  ['Keep count of your stock',"On Products, tick 'Keep count of how many I have left, and tell me when to reorder'. Then use the minus and plus buttons as you use things up or buy more."],
+  ['Change your running costs',"On Prices, under 'Your numbers', tap 'Running costs' and type over any figure. Put 0 for anything you do not pay. To add yearly costs or equipment, tap More, then 'Running costs'."],
+  ['Change what you earn an hour',"On Prices, under 'Your numbers', type a new amount. Your suggested prices change straight away."],
+  ['Set a monthly target',"On Prices, under 'Your target', type what you want to take home each month. It tells you how many treatments that takes. It does not change your prices."],
+  ['Make a price list picture',"At the bottom of Prices, tap 'From my prices'. Press and hold the picture to save it."],
+  ['See how the prices are worked out',"At the bottom of Prices, tap 'How we worked this out'."]]],
+['Diary',[
+  ['Add a booking',"Tap Diary, then '+ Booking' on the day. Pick the treatment, the time and the client, then tap 'Save booking'. For someone new, leave Client on 'New client (type below)' and type their name."],
+  ['See another week',"Use the arrows at the top of the diary. 'This week' brings you back."],
+  ['Mark a booking as paid',"On the booking, next to 'Paid by', tap Card, Cash or Transfer. It is added to your money in."],
+  ['Record a no-show or a cancellation',"On the booking, tap No-show or Cancelled. A no-show keeps any deposit."],
+  ['Change or delete a booking',"Tap Change on the booking. Tap the cross to delete it."],
+  ['Send a reminder',"Tap Reminder on the booking, then 'Copy message'. Paste it into a text, WhatsApp or email. The app does not send it for you."],
+  ['Record a deposit',"Type it in 'Deposit taken' when you make the booking."],
+  ['Book a holiday or a day off',"At the bottom of Diary, tap '+ Add time off'. Pick who, then the dates, then tap Save."],
+  ['Understand the warnings',"The booking form warns you if you are closed, on a break, on holiday or double-booked, or if the client needs a patch test. You can still save the booking."]]],
+['Money',[
+  ['Record money coming in',"Tap Money. Under the quick add heading, tap the treatment you just did. For anything else, open 'Add money in'."],
+  ['Record something you paid for',"Tap Money and open 'Add money out'. Fill in the date, the amount, who you paid and what kind of cost. Add a receipt photo if you have one."],
+  ['Record a business trip in your car',"Tap Money and open 'Mileage'. Type the date, the miles there and back and where you went, then tap 'Add trip'."],
+  ['Fix or delete an entry',"Find it in the list on Money. Tap Change, or the cross to delete it."],
+  ['See how much to put aside for tax',"Tap Money, then Tax at the top. 'Your tax pot' shows the estimate. Type what you have saved in 'Money you have put aside so far'."],
+  ['Get your figures for a tax return or an accountant',"Tap Money, then Tax. Under 'For your Self Assessment', tap 'Copy summary' and paste it into a message or email. 'Copy for Excel' on the Money lists copies every entry."],
+  ['See how the month went',"Tap Money, then Report at the top."]]],
+['Clients',[
+  ['Add a client',"Tap Clients, type their name in the box at the top and tap Add. Booking someone new in the diary adds them too."],
+  ['See or change the details of a client',"Tap Clients, then Open beside their name. Phone, email and notes are under Details."],
+  ['Record a patch test',"Open the client. Under 'Patch tests', pick the date, the product and the result, then tap 'Add patch test'."],
+  ['Fill in a consultation form',"Open the client. Under 'Consultation form', fill in the answers, let them sign with a finger, then tap 'Save signature and answers'."],
+  ['Copy emails for a newsletter',"On Clients, tap 'Copy email list for a newsletter'. It only includes clients who ticked 'Happy to get offers and reminders'."],
+  ['Delete a client',"Open the client and tap 'Delete this client' at the bottom."]]],
+['Settings and your data',[
+  ['Change your opening hours',"Tap More, then 'Opening hours'. Tick the days you work and set the times. '+ Break' adds a lunch break. The weeks you take off a year are at the bottom."],
+  ['Add someone who works for you',"Tap More, then 'People who work for you', then '+ Add a person'. Tick 'Works different days or times from your opening hours' to give them their own hours."],
+  ['Tell it about a job or a student loan',"Tap More, then 'A job or student loan'. This keeps the tax estimate right."],
+  ['Change card fees',"Tap More, then 'Profit and card fees'."],
+  ['Say you live in Scotland',"Tap More, then 'Your target', then 'Where you live'."],
+  ['Add your name, logo and colours',"Tap More, then 'Your name, logo and colours'."],
+  ['Back up your data',"Tap More, then 'Back up and restore', then 'Copy backup'. Paste it somewhere safe, like your notes. Everything is kept on this phone only, so do this often."],
+  ['Get your data back, or move to a new phone',"Open the app on the phone, tap More, then 'Back up and restore', then 'Restore a backup'. Paste your backup and tap Restore."],
+  ['Lock the app',"Tap More, then 'Lock the app' and choose a passcode. If you forget it, nobody can get your data back."],
+  ['Delete everything',"Tap More, then 'Start again', then 'Delete all my data'. Tap it a second time to confirm."]]]
+];
+function guideCard(){ return GUIDE.map(([g,qs])=>`<details class="fold"><summary><span class="grow">${g}</span></summary><div class="stack">${qs.map(([q,a])=>`<p><b>${esc(q)}.</b> ${esc(a)}</p>`).join('')}</div></details>`).join(''); }
 
 // ===================== MODULE: opening hours =====================
 // A day is {open, from, to, bFrom?, bTo?} (bFrom/bTo = one break). A staff member with their own
