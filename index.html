@@ -1858,7 +1858,7 @@ function quickStep(st){
     body:`<div class="fields"><label class="field">Hours a week<input id="wiz-hours" type="number" inputmode="decimal" min="0" step="1" value="${esc(s.hours)}" data-set="hours"></label>
       <label class="field">Weeks off a year<span class="hint">Holidays, bank holidays, sick days</span><input id="wiz-weeksOff" type="number" inputmode="decimal" min="0" max="51" step="1" value="${esc(s.weeksOff)}" data-set="weeksOff"></label></div>`};
   if(st.type==='costq') return {q:'What do you pay to run your business?', why:`These are typical costs for your kind of work. Change any that are wrong, and put 0 for anything you do not pay. Leave out ${W().items}.`,
-      body:`${costList()}<p class="small muted">Yearly costs and equipment are spread across the months. You can change these any time on the Prices screen.</p>`};
+      body:`${costList()}<p class="small muted">Yearly costs and one-offs are spread across the months. You can change these any time on the Prices screen.</p>`};
   return null;
 }
 
@@ -2013,7 +2013,7 @@ document.addEventListener('click', e=>{
   if(act==='pick-treat'){ if(!wizFull && el.checked){ const t=state.treatments.find(x=>x.id===el.dataset.id); if(t && !t._q){ t._q=1; t.exPrice=t.price; t.exPerWeek=t.perWeek; t.price=0; t.perWeek=0; save(); } } }
   else if(act==='costq-typical'){ s.costMode='typical'; s._ohEdited=false; s.overheads=overheadsForAll(selInds()); save(); render(); }
   else if(act==='costq-own'){ s.costMode='own'; save(); render(); }
-  else if(act==='costq-add'){ const o={id:uid(),group:'monthly',name:'',custom:true,amount:0,years:3}; s._ohEdited=true; s.overheads=[...(s.overheads||[]),o]; save(); render(); const n=document.getElementById('oh-name-'+o.id); if(n) n.focus(); }
+  else if(act==='costq-add'){ const o={id:uid(),group:el.dataset.g||'monthly',name:'',custom:true,amount:0,years:3}; s._ohEdited=true; s.overheads=[...(s.overheads||[]),o]; save(); render(); const n=document.getElementById('oh-name-'+o.id); if(n) n.focus(); }
   else if(act==='use-price'){ const c=compute(state).treatments.find(t=>t.id===el.dataset.id), t=state.treatments.find(x=>x.id===el.dataset.id); if(c&&t){ t.price=c.suggested; save(); render(); toast(`${t.name} is now ${money(t.price)}`); } }
   else if(act==='use-all-prices'){ compute(state).treatments.forEach(c=>{ if(c.flag==='below'||c.flag==='under'){ const t=state.treatments.find(x=>x.id===c.id); if(t) t.price=c.suggested; } }); save(); render(); toast('Prices updated'); }
   else if(act==='edit-treat'){ openTreat=el.dataset.id; view='treatments'; render(); const n=document.getElementById('treat-'+openTreat); if(n&&n.scrollIntoView) n.scrollIntoView({block:'start'}); }
@@ -2167,13 +2167,18 @@ vMore=function(){
 
 // ===================== MODULE: plain lists and the how-to guide =====================
 // running costs as a plain list with a box beside each one (set-up and the Prices screen)
-function costList(){ const s=state.setup, UNIT={monthly:'a month',yearly:'a year',equipment:'to buy'};
-  return `<div class="list">${(s.overheads||[]).map(o=>`<div class="item" style="gap:8px">
+// three headed groups, each with its own add button, so a new cost lands under the right heading
+function costList(){ const s=state.setup;
+  const row=(o,unit)=>`<div class="item" style="gap:8px">
       ${o.custom?`<input id="oh-name-${o.id}" class="grow" aria-label="What is it?" placeholder="What is it?" value="${esc(o.name)}" data-oh="${o.id}" data-f="name">`:`<label class="grow" for="oh-amt-${o.id}">${esc(o.name)}</label>`}
-      <span class="money-in" style="flex:none;width:104px"><input id="oh-amt-${o.id}" type="number" inputmode="decimal" min="0" step="1" value="${esc(o.amount)}" aria-label="${esc(o.name||'Cost')}, ${UNIT[o.group]}" data-oh="${o.id}" data-f="amount"></span>
-      <span class="small muted" style="flex:none;width:56px">${UNIT[o.group]}</span></div>`).join('')}</div>
-    <button class="btn small ghost" data-act="costq-add">+ Add another monthly cost</button>
-    <p class="live">That comes to about <span class="num">${gbp0(overheadsMonth(s))}</span> a month.</p>`; }
+      <span class="money-in" style="flex:none;width:104px"><input id="oh-amt-${o.id}" type="number" inputmode="decimal" min="0" step="1" value="${esc(o.amount)}" aria-label="${esc(o.name||'Cost')}, ${unit}" data-oh="${o.id}" data-f="amount"></span>
+      <span class="small muted" style="flex:none;width:56px">${unit}</span></div>`;
+  return [['monthly','Every month','a month','+ Add a monthly cost',''],['yearly','Every year','a year','+ Add a yearly cost',''],
+          ['equipment','One-offs','to buy','+ Add a one-off','Things you buy once, like a lamp or a couch. The cost is spread over the years they last.']]
+    .map(([g,title,unit,add,hint])=>`<div class="stack" style="gap:6px"><h3 style="font-size:1rem">${title}</h3>${hint?`<p class="small muted">${hint}</p>`:''}
+      <div class="list">${(s.overheads||[]).filter(o=>o.group===g).map(o=>row(o,unit)).join('')}</div>
+      <button class="btn small ghost" data-act="costq-add" data-g="${g}">${add}</button></div>`).join('')
+    +`<p class="live">That comes to about <span class="num">${gbp0(overheadsMonth(s))}</span> a month.</p>`; }
 
 // How to do everything. Names in 'single quotes' are the words on the buttons, so keep them exact.
 const GUIDE=[
@@ -2189,7 +2194,7 @@ const GUIDE=[
   ['Say which products a treatment uses',"Open the treatment under Treatments. Under 'Products it uses', pick a product and tap Add. The uses box is how many treatments you get from one bottle or pack."],
   ['Change what a product costs',"Tap Prices, then Products, then the product. Change 'What one costs you' and tap Done. The button at the bottom adds a new product."],
   ['Keep count of your stock',"On Products, tick 'Keep count of how many I have left, and tell me when to reorder'. Then use the minus and plus buttons as you use things up or buy more."],
-  ['Change your running costs',"On Prices, under 'Your numbers', tap 'Running costs' and type over any figure. Put 0 for anything you do not pay. To add yearly costs or equipment, tap More, then 'Running costs'."],
+  ['Change your running costs',"On Prices, under 'Your numbers', tap 'Running costs' and type over any figure. Put 0 for anything you do not pay. Monthly costs, yearly costs and one-offs each have their own add button."],
   ['Change what you earn an hour',"On Prices, under 'Your numbers', type a new amount. Your suggested prices change straight away."],
   ['Set a monthly target',"On Prices, under 'Your target', type what you want to take home each month. It tells you how many treatments that takes. It does not change your prices."],
   ['Make a price list picture',"At the bottom of Prices, tap 'From my prices'. Press and hold the picture to save it."],
