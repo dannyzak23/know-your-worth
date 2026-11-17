@@ -1268,25 +1268,7 @@ function priceExtras(c){
     <p><b>${priceAdj>=0?'+':''}${priceAdj}%</b> on all your current prices: about <b class="num">${gbp0(then)}</b> a month before tax (now <span class="num">${gbp0(now)}</span>).</p>
     ${fewer>0?`<p class="small muted">Or earn what you earn now with about <b>${Math.round(fewer)}</b> fewer bookings a month.</p>`:''}
     <p class="small muted">Assumes the same number of bookings. Some clients may go elsewhere if prices rise a lot.</p></section>
-  <section class="card"><h3>Price list for Instagram or your wall</h3><div class="row"><button class="btn ghost" data-act="pl-make" data-k="current">From my prices</button><button class="btn ghost" data-act="pl-make" data-k="suggested">From suggested prices</button></div></section>`;
-}
-function makePriceList(kind){
-  const c=compute(state), b=state.setup.brand||{}, pal=PALETTES[b.palette]||PALETTES.berry;
-  const rows=c.treatments.map(t=>({name:t.name, price: kind==='suggested'?t.suggested:(+t.price||t.suggested), add:t.addon, unit:t.unitLabel}));
-  const cv=document.createElement('canvas'); cv.width=1080; const hrs=hoursSummary(); cv.height=Math.max(1350, 360+rows.length*92+hrs.length*52+110); const x=cv.getContext('2d');
-  x.fillStyle=pal.soft; x.fillRect(0,0,cv.width,cv.height);
-  x.fillStyle=pal.accent; x.fillRect(0,0,cv.width,230);
-  x.fillStyle='#ffffff'; x.font='800 72px "Bricolage Grotesque", "Segoe UI", sans-serif'; x.fillText(b.businessName||'Price list',72,140);
-  x.font='500 34px Figtree, "Segoe UI", sans-serif'; x.fillText(b.businessName?'Price list':'Know Your Worth',72,195);
-  let y=320; x.textBaseline='alphabetic';
-  rows.forEach(r=>{ x.fillStyle='#1d1a26'; x.font='600 40px Figtree, "Segoe UI", sans-serif'; x.fillText(r.name+(r.add&&r.unit?` (per ${r.unit})`:r.add?' (add-on)':''),72,y);
-    const ps=new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2,minimumFractionDigits:0}).format(r.price); x.fillStyle=pal.accent; x.font='700 44px Figtree, "Segoe UI", sans-serif';
-    const w=x.measureText(ps).width; x.fillText(ps,cv.width-72-w,y); x.fillStyle='rgba(0,0,0,.12)'; x.fillRect(72,y+28,cv.width-144,2); y+=92; });
-  y+=30; x.fillStyle=pal.accent; x.font='700 36px Figtree, "Segoe UI", sans-serif'; x.fillText('Opening hours',72,y); y+=54;
-  x.fillStyle='#1d1a26'; x.font='500 34px Figtree, "Segoe UI", sans-serif'; hrs.forEach(l=>{ x.fillText(l,72,y,cv.width-144); y+=52; });
-  const o=document.getElementById('overlay');
-  o.innerHTML=`<div class="card" style="max-width:520px;width:100%;max-height:92vh;overflow:auto"><img src="${cv.toDataURL('image/png')}" alt="Your price list" style="width:100%;border-radius:10px"><p class="small muted">On a phone, press and hold the picture to save it. On a computer, right-click and save.</p><button class="btn" data-act="bk-close">Close</button></div>`;
-  o.hidden=false;
+  <section class="card"><h3>Price list for Instagram or your wall</h3><p class="small muted">Pick a design, then your own wording, colours and what to show.</p><button class="btn ghost" data-act="pl-make">Make my price list</button></section>`;
 }
 
 // ---------- tax extras, branding, privacy, backup ----------
@@ -2197,7 +2179,7 @@ const GUIDE=[
   ['Change your running costs',"On Prices, under 'Your numbers', tap 'Running costs' and type over any figure. Put 0 for anything you do not pay. Monthly costs, yearly costs and one-offs each have their own add button."],
   ['Change what you earn an hour',"On Prices, under 'Your numbers', type a new amount. Your suggested prices change straight away."],
   ['Set a monthly target',"On Prices, under 'Your target', type what you want to take home each month. It tells you how many treatments that takes. It does not change your prices."],
-  ['Make a price list picture',"At the bottom of Prices, tap 'From my prices'. Press and hold the picture to save it."],
+  ['Make a price list picture',"At the bottom of Prices, tap 'Make my price list'. Pick a design, change the wording and colours, and untick anything you do not want on it. Then tap 'Save or share'."],
   ['See how the prices are worked out',"At the bottom of Prices, tap 'How we worked this out'."]]],
 ['Diary',[
   ['Add a booking',"Tap Diary, then '+ Booking' on the day. Pick the treatment, the time and the client, then tap 'Save booking'. For someone new, leave Client on 'New client (type below)' and type their name."],
@@ -2237,6 +2219,74 @@ const GUIDE=[
   ['Delete everything',"Tap More, then 'Start again', then 'Delete all my data'. Tap it a second time to confirm."]]]
 ];
 function guideCard(){ return GUIDE.map(([g,qs])=>`<details class="fold"><summary><span class="grow">${g}</span></summary><div class="stack">${qs.map(([q,a])=>`<p><b>${esc(q)}.</b> ${esc(a)}</p>`).join('')}</div></details>`).join(''); }
+
+// ===================== MODULE: price list designer =====================
+// Her choices live in state.setup.priceList; anything she has not set falls back to her branding.
+const PL_TPL={ band:{name:'Band',page:'bg',band:true}, clean:{name:'Clean',page:'white',centre:true,rule:true},
+               bold:{name:'Bold',page:'accent'}, frame:{name:'Framed',page:'bg',centre:true,frame:true} };
+function plOptions(){ const s=state.setup, b=s.brand||{}, pal=PALETTES[b.palette]||PALETTES.berry, p=s.priceList||{};
+  return {tpl:PL_TPL[p.tpl]?p.tpl:'band', title:p.title??'Price list', name:p.name??(b.businessName||''), footer:p.footer||'', hours:p.hours!==false,
+          hide:p.hide||[], accent:p.accent||pal.accent, bg:p.bg||pal.soft, kind:p.kind==='suggested'?'suggested':'current'}; }
+function plRows(o){ return compute(state).treatments.filter(t=>!o.hide.includes(t.id)).map(t=>({name:t.name+(t.addon&&t.unitLabel?` (per ${t.unitLabel})`:t.addon?' (add-on)':''), price:o.kind==='suggested'?t.suggested:(+t.price||t.suggested)})); }
+// dark or white writing, whichever shows up on that colour (so any colour she picks stays readable)
+const plInk=hex=>{ const n=parseInt(String(hex).slice(1),16)||0, l=(0.299*(n>>16&255)+0.587*(n>>8&255)+0.114*(n&255))/255; return l>0.6?'#1d1a26':'#ffffff'; };
+let plLogo=null, plTimer=0;
+function plLogoImg(){ const src=(state.setup.brand||{}).logo; if(!src) return null;
+  if(!plLogo||plLogo.src!==src){ const img=new Image(); plLogo={src,img}; img.onload=plRefresh; img.src=src; }
+  return plLogo.img.complete&&plLogo.img.naturalWidth?plLogo.img:null; }
+function plDraw(o){ const T=PL_TPL[o.tpl], rows=plRows(o), hrs=o.hours?hoursSummary():[], W=1080, X=T.frame?120:72, lg=plLogoImg(), up=lg&&T.centre?150:0;
+  const big=o.name||o.title, small=o.name?o.title:'';
+  const H=Math.max(1350, 350+up+rows.length*92+(hrs.length?hrs.length*52+110:0)+(o.footer?140:0)+(T.frame?80:40));
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const x=cv.getContext('2d');
+  const page=T.page==='accent'?o.accent:T.page==='white'?'#ffffff':o.bg, ink=plInk(page), strong=T.page==='accent'?ink:o.accent, line=ink==='#ffffff'?'rgba(255,255,255,.25)':'rgba(0,0,0,.12)';
+  x.fillStyle=page; x.fillRect(0,0,W,H);
+  if(T.frame){ x.strokeStyle=o.accent; x.lineWidth=6; x.strokeRect(44,44,W-88,H-88); }
+  let head=strong; if(T.band){ x.fillStyle=o.accent; x.fillRect(0,0,W,230); head=plInk(o.accent); }
+  if(lg){ if(T.centre) x.drawImage(lg,W/2-65,70,130,130); else x.drawImage(lg,W-X-130,T.band?50:70,130,130); }
+  const tx=T.centre?W/2:X, room=W-2*X-(lg&&!T.centre?160:0); x.textAlign=T.centre?'center':'left';
+  x.fillStyle=head; x.font='800 72px "Bricolage Grotesque", "Segoe UI", sans-serif'; x.fillText(big,tx,(T.band?140:170)+up,room);
+  if(small){ x.fillStyle=T.band?head:ink; x.font='500 34px Figtree, "Segoe UI", sans-serif'; x.fillText(small,tx,(T.band?195:225)+up,room); }
+  if(T.rule){ x.fillStyle=o.accent; x.fillRect(W/2-60,255+up,120,4); }
+  let y=(T.band?320:350)+up; x.textAlign='left';
+  const fmt=new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2,minimumFractionDigits:0});
+  rows.forEach(r=>{ const ps=fmt.format(r.price); x.font='700 44px Figtree, "Segoe UI", sans-serif'; const w=x.measureText(ps).width; x.fillStyle=strong; x.fillText(ps,W-X-w,y);
+    x.fillStyle=ink; x.font='600 40px Figtree, "Segoe UI", sans-serif'; x.fillText(r.name,X,y,W-2*X-w-30); x.fillStyle=line; x.fillRect(X,y+28,W-2*X,2); y+=92; });
+  if(hrs.length){ y+=30; x.fillStyle=strong; x.font='700 36px Figtree, "Segoe UI", sans-serif'; x.fillText('Opening hours',X,y); y+=54;
+    x.fillStyle=ink; x.font='500 34px Figtree, "Segoe UI", sans-serif'; hrs.forEach(l=>{ x.fillText(l,X,y,W-2*X); y+=52; }); }
+  if(o.footer){ x.textAlign='center'; x.fillStyle=strong; x.font='700 38px Figtree, "Segoe UI", sans-serif'; x.fillText(o.footer,W/2,H-(T.frame?110:70),W-2*X); }
+  return cv; }
+function plRefresh(){ clearTimeout(plTimer); plTimer=setTimeout(()=>{ const im=document.getElementById('pl-img'); if(im) im.src=plDraw(plOptions()).toDataURL('image/png'); },80); }
+function plSet(k,v){ state.setup.priceList={...(state.setup.priceList||{}),[k]:v}; save(); plRefresh(); }
+function plOpen(){ const o=document.getElementById('overlay'), op=plOptions();
+  const chip=(k,v,l)=>`<button class="chip" data-act="pl-set" data-k="${k}" data-v="${v}" aria-pressed="${op[k]===v}">${l}</button>`;
+  o.innerHTML=`<div class="card" style="max-width:520px;width:100%;max-height:92vh;overflow:auto">
+    <img id="pl-img" alt="Your price list" style="width:100%;border-radius:10px">
+    <div class="row"><button class="btn" data-act="pl-save">Save or share</button><button class="btn ghost" data-act="bk-close">Close</button></div>
+    <p class="small muted">If that does not work on your phone, press and hold the picture to save it.</p>
+    <h3>Make it yours</h3>
+    <div class="field">Design<div class="chips">${Object.entries(PL_TPL).map(([k,t])=>chip('tpl',k,t.name)).join('')}</div></div>
+    <label class="field">Heading<input id="pl-title" value="${esc(op.title)}" data-pl="title"></label>
+    <label class="field">Your business name<span class="hint">Leave it empty to show none</span><input id="pl-name" value="${esc(op.name)}" placeholder="e.g. Nails by Sophie" data-pl="name"></label>
+    <label class="field">Line at the bottom<span class="hint">How to book, or where to find you</span><input id="pl-footer" value="${esc(op.footer)}" placeholder="e.g. Message me to book" data-pl="footer"></label>
+    <div class="fields"><label class="field">Main colour<input id="pl-accent" type="color" value="${esc(op.accent)}" data-pl="accent" style="height:46px;padding:4px"></label>
+      <label class="field">Background<input id="pl-bg" type="color" value="${esc(op.bg)}" data-pl="bg" style="height:46px;padding:4px"></label></div>
+    <button class="btn small ghost" data-act="pl-reset">Back to my usual colours</button>
+    <div class="field">Prices to show<div class="chips">${chip('kind','current','My prices')}${chip('kind','suggested','Suggested prices')}</div></div>
+    <label class="row small"><input type="checkbox" id="pl-hours" data-pl="hours" ${op.hours?'checked':''}> Show my opening hours</label>
+    <div class="field">What to show<div class="stack" style="gap:8px">${state.treatments.map(t=>`<label class="row small" style="flex-wrap:nowrap"><input type="checkbox" data-plt="${t.id}" ${op.hide.includes(t.id)?'':'checked'} style="flex:none"><span>${esc(t.name)}</span></label>`).join('')}</div></div>
+    <button class="btn ghost" data-act="bk-close">Close</button></div>`;
+  o.hidden=false; plRefresh(); }
+function makePriceList(kind){ if(kind) state.setup.priceList={...(state.setup.priceList||{}),kind}; plOpen(); }
+function plSave(){ plDraw(plOptions()).toBlob(async blob=>{ const f=new File([blob],'price-list.png',{type:'image/png'});
+    try{ if(navigator.canShare&&navigator.canShare({files:[f]})){ await navigator.share({files:[f]}); return; } }catch(e){ if(e&&e.name==='AbortError') return; }
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='price-list.png'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000); },'image/png'); }
+document.addEventListener('click', e=>{ const el=e.target.closest&&e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act;
+  if(a==='pl-set'){ plSet(el.dataset.k,el.dataset.v); el.parentElement.querySelectorAll('.chip').forEach(c=>c.setAttribute('aria-pressed',String(c===el))); }
+  else if(a==='pl-reset'){ const p={...(state.setup.priceList||{})}; delete p.accent; delete p.bg; state.setup.priceList=p; save(); plOpen(); }
+  else if(a==='pl-save') plSave(); });
+document.addEventListener('input', e=>{ const el=e.target, d=el.dataset||{};
+  if(d.pl) plSet(d.pl, el.type==='checkbox'?el.checked:el.value);
+  else if(d.plt){ const hide=plOptions().hide.filter(id=>id!==d.plt); if(!el.checked) hide.push(d.plt); plSet('hide',hide); } });
 
 // ===================== MODULE: opening hours =====================
 // A day is {open, from, to, bFrom?, bTo?} (bFrom/bTo = one break). A staff member with their own
