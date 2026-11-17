@@ -2809,6 +2809,74 @@ vStock=function(){ let h=vStockBeforeUrl();
     if(i>=0) h=h.slice(0,i)+`<div class="stack" style="gap:8px">${urlField('pl-'+p.id,p)}${orderBtn(p)?`<div>${orderBtn(p)}</div>`:''}</div>`+h.slice(i); }
   return h; };
 
+
+// ===================== client booking page: month calendar, like Calendly =====================
+// Choose a treatment, then a highlighted day on a month calendar, then a time from the list, then your details.
+let bfMonth=null; // {t: treatment id, m: 'YYYY-MM'} so a new treatment starts on its own first free month
+const BF_CSS=`.bf-list{display:flex;flex-direction:column;gap:8px}
+.bf-item{display:flex;justify-content:space-between;align-items:center;gap:12px;text-align:left;width:100%;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);font:inherit;cursor:pointer}
+.bf-item small{display:block;color:var(--muted);font-size:.85rem;margin-top:2px;font-weight:400}
+.bf-item:hover,.bf-item:focus-visible{border-color:var(--accent)}
+.bf-price{font-weight:700;white-space:nowrap}
+.card.bf-sum{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px}
+.card.bf-sum .grow{flex:1;min-width:0}
+.bf-sum small{display:block;color:var(--muted)}
+.bf-sum .bf-when{color:var(--accent);font-weight:700;margin-top:2px}
+.bf-cal-head{display:flex;align-items:center;justify-content:space-between;margin:4px 0}
+.bf-cal-head b{font-size:1.05rem}
+.bf-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;text-align:center}
+.bf-cal .wd{font-size:.72rem;color:var(--muted);font-weight:600;padding:4px 0}
+.bf-day{aspect-ratio:1/1;width:100%;max-width:46px;margin:auto;border-radius:50%;border:0;background:transparent;color:var(--muted);font:600 .95rem var(--body);display:flex;align-items:center;justify-content:center;opacity:.45}
+button.bf-day{background:var(--accent-soft);color:var(--accent);opacity:1;cursor:pointer}
+button.bf-day[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink,#fff)}
+.bf-day.today{box-shadow:inset 0 0 0 1.5px var(--muted)}
+.bf-times{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.bf-slot{padding:12px 8px;border:1.5px solid var(--accent);color:var(--accent);background:transparent;border-radius:10px;font:700 1rem var(--body);cursor:pointer}
+.bf-slot small{display:block;font-weight:500;font-size:.75rem;color:var(--muted)}
+.bf-slot:hover,.bf-slot:focus-visible{background:var(--accent-soft)}`;
+if(typeof document!=='undefined'&&document.head&&document.head.insertAdjacentHTML) document.head.insertAdjacentHTML('beforeend',`<style>${BF_CSS}</style>`);
+const longDay=x=>dt(x).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
+const monthName=m=>dt(m+'-01').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+const addMonth=(m,n)=>{ const d=new Date(+m.slice(0,4),+m.slice(5,7)-1+n,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); };
+
+bookFace=function(){ const B=BK, live=B.d.filter(([x])=>x>todayStr()), tr=B.t.find(t=>t[0]===bf.t), len=tr?tr[3]+tr[4]:0;
+  const head=`<div><h2>${esc(B.b||'Book an appointment')}</h2><p class="muted">Book an appointment</p></div>`;
+  if(!live.length) return `<section class="stack">${head}<div class="notice warn">This booking link is out of date. Send a message to ask for a time.</div></section>`;
+  const each=t=>t[5]>0?' each':'';
+  if(!tr) return `<section class="stack">${head}<article class="card"><h3>Choose a treatment</h3><div class="bf-list">${B.t.map(t=>`<button class="bf-item" data-act="bf-t" data-v="${esc(t[0])}"><span><b>${esc(t[1])}</b><small>${t[3]} min${t[5]>0?' · group class':''}</small></span><span class="bf-price">${money(t[2])}${each(t)}</span></button>`).join('')}</div></article>
+    <p class="small muted">Free times as of ${fmtDay(B.m)}.</p></section>`;
+  const cls=tr[5]>0, ks=cls?((B.k||{})[tr[0]]||[]).filter(([x])=>x>todayStr()):[];
+  const avail=cls?[...new Set(ks.map(([x])=>x))]:live.filter(([,f])=>slots(f,len).length).map(([x])=>x);
+  const timesOn=x=>cls?ks.filter(([d])=>d===x).map(([,m])=>m):slots((live.find(([d])=>d===x)||[0,[]])[1],len);
+  const leftOf=m=>{ const k=ks.find(([d,mm])=>d===bf.d&&mm===m); return k?k[2]:0; };
+  const sum=`<article class="card bf-sum"><div class="grow"><b>${esc(tr[1])}</b><small>${tr[3]} min · ${money(tr[2])}${each(tr)}${cls?' · group class':''}</small>${bf.time!=null?`<small class="bf-when">${longDay(bf.d)}, ${fmtT(fromMin(bf.time))}</small>`:''}</div>
+    <button class="btn small ghost" data-act="${bf.time!=null?'bf-retime':'bf-reset'}">Change</button></article>`;
+  let body='';
+  if(bf.time==null){
+    if(!avail.length) body=`<article class="card" id="bf-days"><h3>Choose a day and time</h3><p class="muted">${cls?'No classes with places left at the moment':'No free times for this one at the moment'}. Send a message to ask.</p></article>`;
+    else { const first=avail[0].slice(0,7), last=avail[avail.length-1].slice(0,7);
+      let m=bfMonth&&bfMonth.t===bf.t?bfMonth.m:(bf.d||avail[0]).slice(0,7); if(m<first) m=first; if(m>last) m=last;
+      const on=new Set(avail), start=dayIdx(m+'-01'), n=new Date(+m.slice(0,4),+m.slice(5,7),0).getDate(), td=todayStr();
+      const cells=Array.from({length:start},()=>'<span></span>').concat(Array.from({length:n},(_,i)=>{ const x=m+'-'+String(i+1).padStart(2,'0');
+        return on.has(x)?`<button class="bf-day${x===td?' today':''}" data-act="bf-d" data-v="${x}" aria-pressed="${bf.d===x}" aria-label="${longDay(x)}, times free">${i+1}</button>`:`<span class="bf-day${x===td?' today':''}" aria-hidden="true">${i+1}</span>`; }));
+      const times=bf.d&&on.has(bf.d)?timesOn(bf.d):[];
+      body=`<article class="card" id="bf-days"><h3>Choose a day and time</h3>
+        <div class="bf-cal-head"><button class="iconbtn" data-act="bf-m" data-v="${addMonth(m,-1)}" aria-label="Previous month" ${m<=first?'disabled':''}>‹</button><b>${monthName(m)}</b><button class="iconbtn" data-act="bf-m" data-v="${addMonth(m,1)}" aria-label="Next month" ${m>=last?'disabled':''}>›</button></div>
+        <div class="bf-cal">${['M','T','W','T','F','S','S'].map(d=>`<span class="wd" aria-hidden="true">${d}</span>`).join('')}${cells.join('')}</div>
+        <div id="bf-times">${times.length?`<p style="margin:10px 0 6px"><b>${longDay(bf.d)}</b></p><div class="bf-times">${times.map(t=>{ const l=cls?leftOf(t):0; return `<button class="bf-slot" data-act="bf-time" data-v="${t}">${fmtT(fromMin(t))}${cls?`<small>${l} place${l>1?'s':''} left</small>`:''}</button>`; }).join('')}</div>`
+          :`<p class="small muted" style="margin-top:8px">Tap a highlighted day to see the times.</p>`}</div></article>`; } }
+  else body=`<article class="card" id="bf-you"><h3>Your details</h3>
+    <label class="field">Your name<input id="bf-name" autocomplete="name" value="${esc(bf.name)}" data-bf="name"></label>
+    <label class="field">Your mobile number<input id="bf-phone" type="tel" autocomplete="tel" value="${esc(bf.phone)}" data-bf="phone"></label>
+    <label class="field">Anything we should know?<span class="hint">Optional</span><input id="bf-note" value="${esc(bf.note)}" data-bf="note"></label>
+    <div class="stack">${B.w?`<button class="btn" data-act="bf-send" data-via="wa">Send by WhatsApp</button><button class="btn ghost" data-act="bf-send" data-via="sms">Send by text</button>`:''}${B.e?`<button class="btn ghost" data-act="bf-send" data-via="email">Send by email</button>`:''}</div>
+    ${bf.sent?`<div class="notice ok">Once you have sent the message, that is it. ${esc(B.b||'They')} will reply to confirm.</div>`:'<p class="small muted">This sends a booking request. It is not booked until you hear back.</p>'}</article>`;
+  return `<section class="stack">${head}${sum}${body}<p class="small muted">Free times as of ${fmtDay(B.m)}.</p></section>`; };
+
+document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.closest('[data-act="bf-m"],[data-act="bf-reset"],[data-act="bf-retime"]'); if(!el||el.disabled) return; const a=el.dataset.act;
+  if(a==='bf-m') bfMonth={t:bf.t,m:el.dataset.v}; else if(a==='bf-reset'){ bf.t=null; bf.d=null; bf.time=null; bfMonth=null; } else bf.time=null;
+  render(); if(a!=='bf-m'&&window.scrollTo) window.scrollTo(0,0); });
+
 render();
 </script>
 </body></html>
