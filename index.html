@@ -2296,6 +2296,9 @@ function guideCard(){ return GUIDE.map(([g,qs])=>`<details class="fold"><summary
 
 UNDOABLE.add('hr-copy'); UNDOABLE.add('bk-reopen'); // both can be undone from the bar at the bottom
 
+// What she earns an hour is not asked in set-up (beginners could not answer it). It starts at £20 and is changed under 'Your numbers' on Prices.
+const wizStepsAll=wizSteps; wizSteps=function(){ return wizStepsAll().filter(x=>x.type!=='profitq'); };
+
 // ===================== MODULE: price list designer =====================
 // Her choices live in state.setup.priceList; anything she has not set falls back to her branding.
 const PL_TPL={ band:{name:'Band',page:'bg',band:true}, clean:{name:'Clean',page:'white',centre:true,rule:true},
