@@ -154,6 +154,7 @@ td input,td select{padding:6px 8px;font-size:.92rem;min-width:70px}
 .toast{position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;z-index:30}
 details summary{cursor:pointer;font-weight:700}
 .example-flag{background:var(--warn-soft);color:var(--warn);font-weight:700;font-size:.8rem;padding:4px 10px;border-radius:999px}
+.prices>div{display:flex;flex-direction:column;justify-content:space-between}
 </style>
 
 <header class="top">
@@ -512,7 +513,7 @@ async function copyText(text){
   try{ await navigator.clipboard.writeText(text); toast('Copied'); }
   catch(e){ const o=document.getElementById('overlay'); o.innerHTML=`<div class="card" style="max-width:640px;width:100%"><h3>Copy this</h3><textarea id="copybox" rows="10">${esc(text)}</textarea><button class="btn" data-act="close-overlay">Done</button></div>`; o.hidden=false; const tb=document.getElementById('copybox'); tb.focus(); tb.select(); }
 }
-const TABS=()=>[['prices','Prices'],['diary','Diary'],['clients',W().cust==='client'?'Clients':'Customers'],['treatments',W().Many],['stock','Stock'],['money','Money in and out'],['taxyear','Tax year'],['report','Report'],['more','More']];
+const TABS=()=>[['prices','Prices'],['diary','Diary'],['clients',W().cust==='client'?'Clients':'Customers'],['treatments',W().Many],['stock','Products'],['money','Money in and out'],['taxyear','Tax year'],['report','Report'],['more','More']];
 function renderTabs(){
   const n=document.getElementById('tabs');
   n.innerHTML = (view==='wizard'||view==='lock') ? '' : TABS().map(([k,l])=>`<button data-tab="${k}" ${view===k?'aria-current="page"':''}>${l}</button>`).join('');
@@ -867,6 +868,7 @@ function vTaxYear(){
     sm.useAllowance?`Trading allowance used instead of expenses: ${gbp(sm.deduction)}`:`Total allowable expenses: ${gbp(sm.expenses)}`,
     ...(!sm.useAllowance?CATEGORIES.filter(c=>sm.byCat[c]).map(c=>`  ${c}: ${gbp(sm.byCat[c])}`):[]),
     `Profit: ${gbp(sm.profit)}`,`Estimated income tax and Class 4 NI: ${gbp(sm.tax)}`,'Estimate only. Check against your HMRC return.'].join('\n');
+  const cc=compute(state), estMonth=taxOnProfit(Math.max(0,(cc.treatments.some(t=>+t.price>0)?cc.atCurrent:cc.atSuggested).profit*12),region,R,taxOpts(state.setup))/12; // from her prices, for before she has recorded anything
   return `<section class="stack"><div class="row" style="justify-content:space-between"><div><h2>Tax year ${label}</h2><p class="muted">6 April ${ty} to 5 April ${ty+1}</p></div>
     <select aria-label="Tax year" data-act="pick-year" style="width:auto">${years.map(y=>`<option value="${y}" ${y===ty?'selected':''}>${y}/${String((y+1)%100).padStart(2,'0')}</option>`).join('')}</select></div>
   <div class="grid2">
@@ -877,9 +879,9 @@ function vTaxYear(){
   </div>
   ${sm.useAllowance?`<div class="notice info">Your expenses are under ${gbp0(R.tradingAllowance)}, so the £1,000 trading allowance gives you a bigger deduction. You can claim one or the other, not both.</div>`:''}
   ${isCurrent?`<article class="card"><h3>Your tax pot</h3>
-    <p>If the rest of the year goes like this, the bill for ${label} is about <b class="num">${gbp0(projTax)}</b> on <span class="num">${gbp0(projProfit)}</span> profit${pp.loan>0?`, including ${gbp0(pp.loan)} student loan`:''}${+state.setup.otherIncome>0?'. Your job income is counted first, so more of this profit is taxed':''}.</p>
+    <p ${sm.income?'':'hidden'}>If the rest of the year goes like this, the bill for ${label} is about <b class="num">${gbp0(projTax)}</b> on <span class="num">${gbp0(projProfit)}</span> profit${pp.loan>0?`, including ${gbp0(pp.loan)} student loan`:''}${+state.setup.otherIncome>0?'. Your job income is counted first, so more of this profit is taxed':''}.</p>
     ${moneyField('pot-saved','Money you have put aside so far','',saved,'data-set="potSaved"')}
-    ${saved>=sm.tax?`<div class="notice ok">You have put aside enough for the tax so far. Keep going: about <b class="num">${gbp0(Math.max(0,(projTax-saved)/Math.max(1,Math.round((1-frac)*12))))}</b> a month for the rest of the year.</div>`
+    ${!sm.income?`<div class="notice info">You have not recorded any money in yet. Going by your prices and how many ${W().many} you do, ${estMonth>=1?`put aside about <b class="num">${gbp0(estMonth)}</b> a month for tax`:'there is no tax to put aside yet'}.</div>`:saved>=sm.tax?`<div class="notice ok">You have put aside enough for the tax so far. Keep going: about <b class="num">${gbp0(Math.max(0,(projTax-saved)/Math.max(1,Math.round((1-frac)*12))))}</b> a month for the rest of the year.</div>`
       :`<div class="notice warn">Put aside another <b class="num">${gbp0(sm.tax-saved)}</b> to catch up.</div>`}
   </article>`:''}
   <article class="card"><h3>For your Self Assessment</h3>
@@ -1117,14 +1119,15 @@ function vDiary(){
           <div class="grow"><p style="white-space:normal"><b>${esc(bookingLabel(b))}</b></p><p class="small muted" style="white-space:normal">${esc(cl?cl.name:'No name')} · ${esc(personName(b.staffId))} · ${gbp(+b.price)}${+b.deposit?` · deposit ${gbp(+b.deposit)}`:''}</p>
             </div>
           <span class="pill ${cls}">${lab}</span><button class="iconbtn" aria-label="Delete booking" data-act="bk-del" data-id="${b.id}">✕</button>
-          ${b.status==='booked'?`<div class="row" style="flex-basis:100%;gap:6px"><button class="btn small" data-act="bk-done" data-id="${b.id}" data-m="Card">Paid by card</button><button class="btn small ghost" data-act="bk-done" data-id="${b.id}" data-m="Cash">Paid cash</button><button class="btn small ghost" data-act="bk-done" data-id="${b.id}" data-m="Bank transfer">Paid by transfer</button><button class="btn small ghost" data-act="bk-noshow" data-id="${b.id}">No-show</button><button class="btn small ghost" data-act="bk-cancel" data-id="${b.id}">Cancelled</button><button class="btn small ghost" data-act="bk-edit" data-id="${b.id}">Change</button><button class="btn small ghost" data-act="bk-remind" data-id="${b.id}">Reminder</button></div>`:''}</div>`; }).join('')}</div>`
+          ${b.status==='booked'?`<div class="row" style="flex-basis:100%;gap:6px"><span class="small muted">Paid by</span><button class="btn small" data-act="bk-done" data-id="${b.id}" data-m="Card" aria-label="Paid by card">Card</button><button class="btn small ghost" data-act="bk-done" data-id="${b.id}" data-m="Cash" aria-label="Paid by cash">Cash</button><button class="btn small ghost" data-act="bk-done" data-id="${b.id}" data-m="Bank transfer" aria-label="Paid by bank transfer">Transfer</button></div>
+          <div class="row" style="flex-basis:100%;gap:4px">${[['bk-remind','Reminder'],['bk-edit','Change'],['bk-noshow','No-show'],['bk-cancel','Cancelled']].map(([a,l])=>`<button class="btn small ghost" style="flex:1 1 60px;min-width:0;padding-inline:2px" data-act="${a}" data-id="${b.id}">${l}</button>`).join('')}</div>`:''}</div>`; }).join('')}</div>`
         : `<p class="small muted">${offs.some(p=>p.id==='me')?'You are off.':'No bookings.'}</p>`}
     </article>`; }).join('')}
   <article class="card"><div class="treat-head"><h3>Holidays and days off</h3><button class="btn small" data-act="hol-new">+ Add time off</button></div>
     <div class="list">${offRows}</div>
     <div class="list">${state.holidays.slice().sort((a,b)=>a.from.localeCompare(b.from)).map(h=>`<div class="item"><div class="grow"><p><b>${esc(personName(h.staffId))}</b>: ${fmtDay(h.from)}${h.to!==h.from?' to '+fmtDay(h.to):''}</p><p class="small muted">${esc(h.note||'')}</p></div><button class="iconbtn" aria-label="Delete" data-act="hol-del" data-id="${h.id}">✕</button></div>`).join('')}</div>
   </article>
-  <p class="small muted">Marking a booking as paid adds it to Money in and takes the ${W().items} it uses off your stock. A no-show keeps the deposit as income. This diary is for you; clients booking themselves online needs the paid server add-on later.</p>
+  <p class="small muted">Marking a booking as paid adds it to your money in. A no-show keeps the deposit.</p>
   </section>`;
 }
 function bkWarnings(d){
@@ -1248,7 +1251,7 @@ function vReport(){
   <article class="card"><h3>Bookings</h3><div class="grid2"><div class="stat"><span class="label">Paid</span><span class="value">${done.length}</span></div><div class="stat"><span class="label">No-shows</span><span class="value">${ns.length}</span><span class="small muted">${pct(nsRate)} · you planned for ${pct(+state.setup.noShow||0)}</span></div><div class="stat"><span class="label">Cancelled</span><span class="value">${cx.length}</span></div><div class="stat"><span class="label">Deposits kept</span><span class="value">${gbp0(kept)}</span></div></div>
     ${nsRate>(+state.setup.noShow||0)+0.02 && done.length>=10?`<div class="notice warn">More no-shows than you planned for. Think about taking bigger deposits, or change the no-show answer on More so prices cover it.</div>`:''}</article>
   <article class="card"><h3>Best and worst earners</h3><div class="list">${ranked.map((r,i)=>`<div class="item"><div class="grow"><p><b>${esc(r.name)}</b></p><p class="small muted">${r.n} done</p></div><span class="num">${gbp0(r.v)}</span>${i===0?'<span class="pill ok">Top</span>':i===ranked.length-1&&ranked.length>2?'<span class="pill warn">Lowest</span>':''}</div>`).join('') || '<p class="small muted">No paid bookings this month. Mark bookings as paid in the diary.</p>'}</div></article>
-  <article class="card"><h3>Stock to reorder</h3><p>${c.products.filter(p=>p.reorder).map(p=>esc(p.name)).join(', ')||'Nothing.'}</p></article>
+  ${state.setup.trackStock?`<article class="card"><h3>Stock to reorder</h3><p>${c.products.filter(p=>p.reorder).map(p=>esc(p.name)).join(', ')||'Nothing.'}</p></article>`:''}
   </section>`;
 }
 
@@ -1456,7 +1459,7 @@ function showReminder(b){ const cl=clientById(b.clientId), msg=reminderText(b), 
   o.innerHTML=`<div class="card" style="max-width:520px;width:100%"><div class="treat-head"><h3>Reminder message</h3><button class="iconbtn" aria-label="Close" data-act="bk-close">✕</button></div>
     <textarea id="rem-text" rows="5">${esc(msg)}</textarea>
     <div class="row"><button class="btn" data-act="rem-copy">Copy message</button>${wa?`<a class="btn ghost" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(msg)}">Open in WhatsApp</a>`:''}</div>
-    <p class="small muted">${cl&&cl.email?`Email: ${esc(cl.email)}. `:''}${cl&&cl.phone?`Phone: ${esc(cl.phone)}. `:'Add a phone number on their card to get a WhatsApp button. '}Paste the message into a text, WhatsApp or email. Sending reminders automatically needs the server add-on.</p></div>`;
+    <p class="small muted">${cl&&cl.email?`Email: ${esc(cl.email)}. `:''}${cl&&cl.phone?`Phone: ${esc(cl.phone)}. `:'Add a phone number on their card to get a WhatsApp button. '}Paste the message into a text, WhatsApp or email.</p></div>`;
   o.hidden=false; }
 function newsletterList(){ return state.clients.filter(c=>c.email && c.consult && c.consult.answers && c.consult.answers.marketing); }
 
@@ -1874,7 +1877,7 @@ const ICON={prices:'<path d="M20 4h-7L3.5 13.5a2 2 0 0 0 0 2.8l4.2 4.2a2 2 0 0 0
   clients:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/>',
   more:'<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'};
 function navGroups(){ return [
-  {key:'prices',label:'Prices',views:[['prices','Prices'],['treatments',W().Many],['stock','Stock']]},
+  {key:'prices',label:'Prices',views:[['prices','Prices'],['treatments',W().Many],['stock','Products']]},
   {key:'diary',label:'Diary',views:[['diary','Diary']]},
   {key:'money',label:'Money',views:[['money','In and out'],['taxyear','Tax'],['report','Report']]},
   {key:'clients',label:W().cust==='client'?'Clients':'Customers',views:[['clients','Clients']]},
@@ -1952,11 +1955,11 @@ vTreatments=function(){
     <button class="btn" data-act="add-treat">+ Add your own ${W().one}</button></section>`;
 };
 vStock=function(){
-  const c=compute(state), reorder=c.products.filter(p=>p.reorder), expiring=c.products.filter(p=>p.lost>0.05);
+  const ts=!!state.setup.trackStock, c=compute(state), reorder=c.products.filter(p=>p.reorder), expiring=c.products.filter(p=>p.lost>0.05);
   const card=p=>{ const n=Math.round((+p.inStock||0)*10)/10;
-    if(openProd!==p.id) return `<div class="rowbtn" style="cursor:default"><button class="grow linkish" data-act="prod-open" data-id="${p.id}"><b>${esc(p.name)}</b><small>${esc(packLabel(p))} · ${gbp(+p.packCost)}${p.supplier?' · '+esc(p.supplier):''}${p.weeksLeft!=null?` · about ${Math.round(p.weeksLeft)} weeks left`:''}</small></button>
-        ${p.reorder?'<span class="pill warn">Reorder</span>':''}
-        <span class="stepper"><button aria-label="One fewer ${esc(p.name)}" data-act="stock-dec" data-id="${p.id}">−</button><span class="num">${nf(n)}</span><button aria-label="One more ${esc(p.name)}" data-act="stock-inc" data-id="${p.id}">+</button></span></div>`;
+    if(openProd!==p.id) return `<div class="rowbtn" style="cursor:default"><button class="grow linkish" data-act="prod-open" data-id="${p.id}"><b>${esc(p.name)}</b><small>${esc(packLabel(p))} · ${gbp(+p.packCost)}${p.supplier?' · '+esc(p.supplier):''}${ts&&p.weeksLeft!=null?` · about ${Math.round(p.weeksLeft)} weeks left`:''}</small></button>
+        ${ts&&p.reorder?'<span class="pill warn">Reorder</span>':''}
+        <span class="stepper" ${ts?'':'hidden'}><button aria-label="One fewer ${esc(p.name)}" data-act="stock-dec" data-id="${p.id}">−</button><span class="num">${nf(n)}</span><button aria-label="One more ${esc(p.name)}" data-act="stock-inc" data-id="${p.id}">+</button></span></div>`;
     return `<article class="card">
       <label class="field">Name<input id="pn-${p.id}" value="${esc(p.name)}" data-pf="${p.id}" data-f="name"></label>
       <div class="fields">
@@ -1964,15 +1967,16 @@ vStock=function(){
         ${moneyField('pc-'+p.id,'What one costs you','',p.packCost,`data-pf="${p.id}" data-f="packCost"`)}
         <label class="field">Where you buy it<input id="ps-${p.id}" list="sup-list" placeholder="Pick one or type your own" value="${esc(p.supplier||'')}" data-pf="${p.id}" data-f="supplier"></label>
         ${numField('pg-'+p.id,'Goes off after (weeks)','Empty if it keeps',p.shelfWeeks||'',`data-pf="${p.id}" data-f="shelfWeeks" placeholder="Keeps"`,'step="1"')}
-        ${numField('pi-'+p.id,'How many you have','',n,`data-pf="${p.id}" data-f="inStock"`,'step="1"')}
-        ${numField('pr-'+p.id,'Reorder when down to','',p.reorderAt,`data-pf="${p.id}" data-f="reorderAt"`,'step="1"')}</div>
-      <p class="small muted">${p.packsPerWeek?`You get through about ${nf(Math.round(p.packsPerWeek*100)/100)} a week${p.weeksLeft!=null?`, so what you have lasts about ${Math.round(p.weeksLeft)} weeks`:''}.`:`No ${W().one} uses this yet.`}</p>
+        ${!ts?'':numField('pi-'+p.id,'How many you have','',n,`data-pf="${p.id}" data-f="inStock"`,'step="1"')}
+        ${!ts?'':numField('pr-'+p.id,'Reorder when down to','',p.reorderAt,`data-pf="${p.id}" data-f="reorderAt"`,'step="1"')}</div>
+      <p class="small muted" ${ts?'':'hidden'}>${p.packsPerWeek?`You get through about ${nf(Math.round(p.packsPerWeek*100)/100)} a week${p.weeksLeft!=null?`, so what you have lasts about ${Math.round(p.weeksLeft)} weeks`:''}.`:`No ${W().one} uses this yet.`}</p>
       <div class="row" style="justify-content:space-between"><button class="btn" data-act="prod-close">Done</button><button class="btn ghost" data-act="del-product" data-id="${p.id}">Remove</button></div></article>`; };
-  return `<section class="stack">${supData()}<div><h2>Stock</h2><p class="muted">Tap one to change what it costs. Use − and + when you use one up or buy more.</p></div>
-    ${reorder.length?`<div class="notice warn"><b>Time to reorder:</b> ${reorder.map(p=>esc(p.name)).join(', ')}</div>`:''}
-    ${expiring.map(p=>`<div class="notice info"><b>${esc(p.name)}</b> goes off before you finish it. About ${pct0(p.lost)} gets thrown away, and your prices already allow for that.</div>`).join('')}
+  return `<section class="stack">${supData()}<div><h2>${ts?'Stock':'Your products'}</h2><p class="muted">Tap one to change what it costs you${ts?'. Use − and + when you use one up or buy more':''}.</p></div>
+    ${ts&&reorder.length?`<div class="notice warn"><b>Time to reorder:</b> ${reorder.map(p=>esc(p.name)).join(', ')}</div>`:''}
+    ${(ts?expiring:[]).map(p=>`<div class="notice info"><b>${esc(p.name)}</b> goes off before you finish it. About ${pct0(p.lost)} gets thrown away, and your prices already allow for that.</div>`).join('')}
     ${c.products.map(card).join('') || `<p class="muted">Nothing here yet.</p>`}
-    <button class="btn" data-act="add-product">+ Add ${an(W().item)} ${W().item}</button></section>`;
+    <button class="btn" data-act="add-product">+ Add ${an(W().item)} ${W().item}</button>
+    <label class="row small" style="flex-wrap:nowrap;align-items:flex-start"><input type="checkbox" id="st-track" data-setbool="trackStock" ${ts?'checked':''} style="flex:none"><span>Keep count of how many I have left, and tell me when to reorder</span></label></section>`;
 };
 
 // ---------- more: sections that open one at a time ----------
@@ -2061,8 +2065,8 @@ quickStep=function(st){
       <div class="notice info"><b>You get:</b> what each treatment costs you, the price that covers it, and how many you need to do to earn what you want.</div>
       <div class="notice info"><b>Private.</b> Everything you type stays on this phone. We cannot see it.</div></div>`};
   if(st.type==='profitq'){ const v=profitHourOf(s);
-    return {q:'How much profit do you want from each hour with a client?', why:'This is what is left for you after products and running costs. A 30-minute treatment gets half of it. Pick the first one to see break-even prices only.',
-      body:`<div class="choices">${[[0,'Just cover my costs','Break-even prices, no profit'],[10,'£10 an hour'],[15,'£15 an hour'],[20,'£20 an hour'],[25,'£25 an hour'],[30,'£30 an hour']].map(([n,l,sub])=>`<button class="choice" data-act="wiz-chip" data-key="profitHour" data-v="${n}" aria-pressed="${v===n}">${l}${sub?`<small>${sub}</small>`:''}</button>`).join('')}</div>
+    return {q:'How much do you want to earn for each hour with a client?', why:'This is what you keep for the hour, after products and running costs and before tax. Not sure? Pick £20. You can change it later.',
+      body:`<div class="choices">${[[0,'Just cover my costs','Nothing on top'],[10,'£10 an hour'],[15,'£15 an hour'],[20,'£20 an hour'],[25,'£25 an hour'],[30,'£30 an hour']].map(([n,l,sub])=>`<button class="choice" data-act="wiz-chip" data-key="profitHour" data-v="${n}" aria-pressed="${v===n}">${l}${sub?`<small>${sub}</small>`:''}</button>`).join('')}</div>
         <label class="field">Or type your own amount per hour<span class="money-in"><input id="wiz-profitHour" type="number" inputmode="decimal" min="0" step="1" value="${esc(v)}" data-set="profitHour"></span></label>`};
   }
   if(st.type==='app') return {q:'How do clients mostly pay you?', why:'Card fees come off every payment, so they are part of what a treatment costs you.',
@@ -2102,15 +2106,15 @@ vPrices=function(){
        : `<p>You need to do about <b class="num">${Math.ceil(p.target)}</b> ${T} a month. That is about <b class="num">${Math.ceil(p.perWeek)}</b> a week, or <b class="num">${Math.ceil(p.perDay)}</b> a day over ${days} day${days===1?'':'s'}.</p>
           ${fitLine(c,p)}
           ${hasBookings?`<p class="small muted">${team?'You and your team do':'You do'} about ${Math.round(c.bookingsMonth)} a month now${c.bookingsMonth>=p.target?', so you are there':`, so you need about ${Math.ceil(p.target-c.bookingsMonth)} more`}.</p>`:''}
-          <p class="small muted">Just to cover your running costs you need about ${Math.ceil(p.breakEven)} a month.${up.length&&c.planSug&&anyPrice&&Math.ceil(c.planSug.target)<Math.ceil(p.target)?` If you put those prices up, the target drops to about ${Math.ceil(c.planSug.target)} a month.`:''}</p>
-          <p class="small muted">This uses ${anyPrice?'your prices':'the suggested prices'} and your usual mix of ${T}. Changing the target does not change your prices.</p>`}
+          ${up.length&&c.planSug&&anyPrice&&Math.ceil(c.planSug.target)<Math.ceil(p.target)?`<p class="small muted">If you put those prices up, you only need about ${Math.ceil(c.planSug.target)} a month.</p>`:''}
+          `}
     </section>`;
   const rows=all.map(t=>{ const [cls,lab]=FLAG[t.flag];
     return `<details class="fold"><summary><span class="grow">${esc(t.name)}</span><span class="num">${+t.price>0?money(t.price):money(t.suggested)}</span><span class="pill ${cls}">${t.flag==='none'?'Suggested':t.flag==='below'?'Below cost':lab}</span></summary>
       <div class="prices"><div><div class="k">Your price</div><div class="v">${+t.price>0?money(t.price):'–'}</div></div>
-        <div><div class="k">Break-even</div><div class="v">${gbp(t.minimum)}</div></div>
+        <div><div class="k">Covers costs</div><div class="v">${gbp(t.minimum)}</div></div>
         <div class="sugg"><div class="k">Suggested</div><div class="v">${money(t.suggested)}</div></div></div>
-      <p class="small muted">It costs you about <b>${gbp(t.cost)}</b> to do: ${gbp(t.productCost)} of ${W().items} and ${gbp(t.timeCost)} towards your running costs (${fmtTime(t.mins,t)} with set-up). ${t.profitNow!=null?`At your price you make ${gbp(t.profitNow)} each time. `:''}${+t.price===t.suggested?'':`At the suggested price you make ${gbp(t.earnings)}. `}${also.length?`That is after ${alsoTxt}.`:''}${t.patch?' Needs a patch test.':''}</p>
+      <p class="small muted">It costs you about <b>${gbp(t.cost)}</b> to do: ${gbp(t.productCost)} of ${W().items} and ${gbp(t.timeCost)} of running costs. ${t.profitNow!=null?`At your price you keep <b>${gbp(t.profitNow)}</b> each time`:`At the suggested price you keep <b>${gbp(t.earnings)}</b> each time`}${also.length?`, after ${alsoTxt}`:''}.${t.flag==='under'||t.flag==='below'?` At ${money(t.suggested)} you would keep ${gbp(t.earnings)}.`:''}${t.patch?' Needs a patch test.':''}</p>
       <button class="btn small ghost" data-act="edit-treat" data-id="${t.id}">Change this ${W().one}</button></details>`; }).join('');
   return `${head}${earn}${target}
   ${!s._prodEdited?`<div class="notice info">The cost of your ${W().items} is a typical figure for now. <button class="btn small ghost" data-tab="stock">Check my ${W().items}</button></div>`:''}
@@ -2118,9 +2122,10 @@ vPrices=function(){
   <details class="fold"><summary><span class="grow">How we worked this out</span></summary><div class="stack">
     <p><b>What a treatment costs you</b> is its ${W().items} plus a share of your running costs${c.team.people.length?' and team wages':''}.</p>
     <p>Your running costs are <b class="num">${gbp0(c.overheads)}</b> a month. Shared across about <b>${Math.round(c.billable)}</b> hours of ${T} a month, that is <b class="num">${gbp(c.overheadRate)}</b> for each hour.${team&&hasBookings?" That includes your team's working hours: we assume they are as busy as you.":''}${hasBookings?'':' We have assumed a typical working month until you tell us how many you do.'}</p>
-    <p><b>Break-even</b> is the price where you cover that cost${also.length?`, plus ${alsoTxt}`:''}, and make nothing.</p>
+    <p><b>Covers costs</b> is the price where you cover that cost${also.length?`, plus ${alsoTxt}`:''}, and make nothing.</p>
     ${ns>0?`<p><b>No-shows</b>: we allow for ${nf(Math.round(s.noShow*1000)/10)}% of clients not turning up, with a deposit covering ${nf(Math.round(s.deposit*100))}% of what you lose. That adds about ${nf(Math.round(ns*1000)/10)}% to each price. You can change both under More, in Profit and card fees.</p>`:''}
-    <p><b>Suggested</b> adds ${be?'nothing on top, because you chose break-even prices':`the ${gbp0(c.profitRate)} an hour you want to make`}, then rounds up.${s.vat?' VAT is added.':''} You can change this under More.</p>
+    <p><b>Suggested</b> adds ${be?'nothing on top, because you chose to just cover your costs':`the ${gbp0(c.profitRate)} an hour you want to make`}, then rounds up.${s.vat?' VAT is added.':''} You can change this under More.</p>
+    ${p?`<p><b>Your target</b> uses ${anyPrice?'your prices':'the suggested prices'} and your usual mix of ${T}. Just to cover your running costs you need about ${Math.ceil(p.breakEven)} a month. Changing the target does not change your prices.</p>`:''}
     <p class="small muted">These are estimates, not tax advice.</p></div></details>
   ${priceExtras(c)}`;
 };
@@ -2131,25 +2136,30 @@ vMore=function(){
   const sec=(key,title,sub,body)=>`<details class="fold" data-sec="${key}" ${moreOpen===key?'open':''}><summary><span class="grow">${title}<small>${sub}</small></span></summary><div class="stack">${body}</div></details>`;
   const ph=profitHourOf(s);
   return `<section class="stack"><h2>More</h2>
-  ${sec('pricing','Profit and card fees',`${ph?gbp0(ph)+' an hour profit':'Break-even prices'}`,`<div class="fields">
-      <label class="field">Profit you want from each hour with a ${W().cust}<span class="hint">0 for break-even prices</span><span class="money-in"><input id="m-profitHour" type="number" inputmode="decimal" min="0" step="1" value="${esc(ph)}" data-set="profitHour"></span></label>
-      ${num('roundTo','Round prices up to the nearest (£)','1 or 5')}
-      ${num('cardPct','Card fee (%)','What your card reader or app takes',0.01,100)}${num('cardFixed','Card fee per payment (pence)','',1,100)}
-      ${num('noShow','Clients who do not turn up (%)','',1,100)}${num('deposit','How much of a no-show your deposit covers (%)','0 if you take no deposit',5,100)}
-      ${IND().patch?num('patchValidDays','How long a patch test lasts (days)','Follow your insurer'):''}</div>
-      <label class="row small"><input type="checkbox" id="m-vat" data-setbool="vat" ${s.vat?'checked':''}> I am VAT registered (most people working alone are not)</label>`)}
+  <div><h3>Your business</h3></div>
   ${sec('hours','Opening hours',`${openDays()} day${openDays()===1?'':'s'} · ${nf(Math.round(openMinutesWeek()/6)/10)} hours a week`,hoursEditor())}
   ${sec('costs','Running costs',`${gbp0(overheadsMonth(s))} a month`,overheadEditor())}
-  ${sec('team','People who work for you',(s.staff||[]).length?`${s.staff.length} on the team`:'Nobody yet',staffEditor())}
   ${sec('pay','Your target',`${gbp0(s.takeHome)} a month`,`<div class="fields">
       <label class="field">What you want to take home each month<span class="hint">Does not change your prices</span><span class="money-in"><input id="m-takeHome" type="number" inputmode="decimal" step="50" value="${esc(s.takeHome)}" data-set="takeHome"></span></label>
       <label class="field">Where you live<select id="m-region" data-setsel="region"><option value="ruk" ${s.region!=='sco'?'selected':''}>England, Wales or Northern Ireland</option><option value="sco" ${s.region==='sco'?'selected':''}>Scotland</option></select></label></div>`)}
+  ${sec('pricing','Profit and card fees',`${ph?gbp0(ph)+' an hour profit':'Just covering costs'}`,`<div class="fields">
+      <label class="field">Profit you want from each hour with a ${W().cust}<span class="hint">0 to just cover your costs</span><span class="money-in"><input id="m-profitHour" type="number" inputmode="decimal" min="0" step="1" value="${esc(ph)}" data-set="profitHour"></span></label>
+      
+      ${num('cardPct','Card fee (%)','What your card reader or app takes',0.01,100)}</div>
+      <p class="small muted"><b>Fine tuning.</b> Leave these as they are if you are not sure.</p>
+      <div class="fields">${num('roundTo','Round prices up to the nearest (£)','1 or 5')}${num('cardFixed','Card fee per payment (pence)','',1,100)}
+      ${num('noShow','Clients who do not turn up (%)','',1,100)}${num('deposit','How much of a no-show your deposit covers (%)','0 if you take no deposit',5,100)}
+      ${IND().patch?num('patchValidDays','How long a patch test lasts (days)','Follow your insurer'):''}</div>
+      <label class="row small"><input type="checkbox" id="m-vat" data-setbool="vat" ${s.vat?'checked':''}> I am VAT registered (most people working alone are not)</label>`)}
+  <div><h3>Extras</h3><p class="small muted">Most people working alone can skip these.</p></div>
+  ${sec('team','People who work for you',(s.staff||[]).length?`${s.staff.length} on the team`:'Nobody yet',staffEditor())}
   ${sec('tax','A job or student loan',+s.otherIncome>0||s.studentLoan!=='none'?'Added':'Not added',taxExtraEditor())}
   ${sec('brand','Your name, logo and colours',esc((s.brand||{}).businessName||'Not set'),brandEditor())}
+  ${sec('lock','Lock the app',lockKey?'On':'Off',lockCard())}
+  <div><h3>Your data</h3></div>
   ${sec('backup','Back up and restore',s.lastBackup?`Last backup ${fmtDay(s.lastBackup)}`:'No backup yet',`<p class="muted">Everything is kept on this phone only. Copy a backup and keep it somewhere safe, like your notes or an email to yourself.</p>
       <label class="row small"><input type="checkbox" id="bk-photos"> Include receipt photos (much bigger)</label>
       <div class="row"><button class="btn ghost" data-act="backup">Copy backup</button><button class="btn ghost" data-act="restore-open">Restore a backup</button></div>`)}
-  ${sec('lock','Lock the app',lockKey?'On':'Off',lockCard())}
   ${sec('questions','Answer the questions again','Takes about 2 minutes',`<p class="muted">Your money records, diary and ${W().cust}s stay as they are.</p><button class="btn ghost" data-act="rerun-quick">Start the questions</button>`)}
   ${sec('privacy','Privacy and feedback','How your data is kept',privacyCard())}
   ${sec('reset','Start again','Delete everything on this phone',`<p class="muted">This deletes everything on this phone, including receipt photos.</p>
@@ -2205,7 +2215,8 @@ function hoursEditor(hs=openHours(), who='me'){
           :`<button class="btn small ghost" data-act="hr-brk" data-hr="${i}" data-who="${who}">+ Break</button>`}</span>`
         :`<span class="muted">${who==='me'?'Closed':'Not in'}</span>`}</div>`).join('')}</div>
     ${hs.filter(h=>h.open).length>1?`<button class="btn small ghost" data-act="hr-copy" data-who="${who}">Use ${DAYS[first]}'s times for every ${who==='me'?'open':'working'} day</button>`:''}
-    <p class="live">${who==='me'?'Open':'Works'} ${openDays(hs)} day${openDays(hs)===1?'':'s'}, <span class="num">${nf(weekHours(hs))}</span> hours a week${hs.some(h=>breakMins(h)>0)?', not counting breaks':''}.</p></div>`;
+    <p class="live">${who==='me'?'Open':'Works'} ${openDays(hs)} day${openDays(hs)===1?'':'s'}, <span class="num">${nf(weekHours(hs))}</span> hours a week${hs.some(h=>breakMins(h)>0)?', not counting breaks':''}.</p>
+    ${who==='me'?`<label class="field">Weeks you take off a year<span class="hint">Holidays, bank holidays and sick days</span><input id="hr-weeksOff" type="number" inputmode="numeric" min="0" max="51" step="1" value="${esc(state.setup.weeksOff)}" data-set="weeksOff"></label>`:''}</div>`;
 }
 // staff card: the tick box, and their own week once it is ticked
 function staffHoursBlock(m){
