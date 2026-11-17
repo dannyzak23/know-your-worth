@@ -2179,7 +2179,7 @@ const GUIDE=[
   ['Change your running costs',"On Prices, under 'Your numbers', tap 'Running costs' and type over any figure. Put 0 for anything you do not pay. Monthly costs, yearly costs and one-offs each have their own add button."],
   ['Change what you earn an hour',"On Prices, under 'Your numbers', type a new amount. Your suggested prices change straight away."],
   ['Set a monthly target',"On Prices, under 'Your target', type what you want to take home each month. It tells you how many treatments that takes. It does not change your prices."],
-  ['Make a price list picture',"At the bottom of Prices, tap 'Make my price list'. Pick a design and a shape (Square or Portrait for an Instagram post, Story for a story). Add a logo or photo, change the wording and colours, and untick anything you do not want on it. Then tap 'Save or share'."],
+  ['Make a price list picture',"At the bottom of Prices, tap 'Make my price list'. Pick a design and a shape (Square or Portrait for an Instagram post, Story for a story). Add a logo or photo, change the wording and colours, and untick anything you do not want on it. A long list is split over two or more pictures to post together. Then tap 'Save or share'."],
   ['See how the prices are worked out',"At the bottom of Prices, tap 'How we worked this out'."]]],
 ['Diary',[
   ['Add a booking',"Tap Diary, then '+ Booking' on the day. Pick the treatment, the time and the client, then tap 'Save booking'. For someone new, leave Client on 'New client (type below)' and type their name."],
@@ -2230,21 +2230,29 @@ function plOptions(){ const s=state.setup, b=s.brand||{}, pal=PALETTES[b.palette
   return {tpl:PL_TPL[p.tpl]?p.tpl:'band', fmt:PL_FMT[p.fmt]?p.fmt:'portrait', title:p.title??'Price list', name:p.name??(b.businessName||''), footer:p.footer||'', hours:p.hours!==false,
           hide:p.hide||[], accent:p.accent||pal.accent, bg:p.bg||pal.soft, kind:p.kind==='suggested'?'suggested':'current', photo:p.photo??(b.logo||'')}; }
 function plRows(o){ return compute(state).treatments.filter(t=>!o.hide.includes(t.id)).map(t=>({name:t.name+(t.addon&&t.unitLabel?` (per ${t.unitLabel})`:t.addon?' (add-on)':''), price:o.kind==='suggested'?t.suggested:(+t.price||t.suggested)})); }
-// Where everything sits. The fixed shapes shrink the list (f) until it fits; Long grows the page instead.
-function plLayout(o,nRows,nHrs){ const T=PL_TPL[o.tpl], F=PL_FMT[o.fmt], top=F.top||0, bot=(F.bot||0)+(T.frame?90:50);
-  const y0=top+(T.band?320:350), foot=o.footer?100:0, body=nRows*92+(nHrs?84+nHrs*52:0);
-  if(!F.h) return {W:1080,H:Math.max(1350,y0+body+foot+bot),f:1,top,bot,y0};
-  const room=F.h-y0-foot-bot, f=Math.min(1,room/Math.max(1,body));
-  return {W:1080,H:F.h,f,top,bot,y0:y0+(F.top?Math.max(0,(room-body*f)/2):0)}; } // a short list sits in the middle of a Story
+// What goes on each picture. A list that nearly fits is shrunk a little; a longer one is shared out over
+// two or more pictures at full size, with the opening hours on the last. Long is one tall picture.
+function plPages(o){ const T=PL_TPL[o.tpl], F=PL_FMT[o.fmt], rows=plRows(o), hrs=o.hours?hoursSummary():[], n=rows.length;
+  const top=F.top||0, bot=(F.bot||0)+(T.frame?90:50), base=top+(T.band?320:350), foot=o.footer?100:0, need=hrs.length?84+hrs.length*52:0;
+  if(!F.h) return [{rows,hrs,H:Math.max(1350,base+n*92+need+foot+bot),top,bot,y0:base,f:1,n:1,of:1}];
+  const room=F.h-base-foot-bot, body=(r,h)=>r.length*92+(h.length?need:0), fit=(r,h)=>room/Math.max(1,body(r,h)), ok=(r,h)=>fit(r,h)>=0.85; // shrink by 15% at most
+  const split=P=>{ const per=Math.ceil(n/P), c=[]; for(let i=0;i<n;i+=per) c.push(rows.slice(i,i+per)); return c.length?c:[[]]; };
+  let c=[rows];
+  if(!ok(rows,hrs)){ c=split(Math.ceil(n/Math.max(1,Math.floor(room/92)))||1);
+    if(need&&!ok(c[c.length-1],hrs)) c=split(c.length+1); }      // one more picture, shared out evenly, often makes room for the hours
+  const out=c.map((r,i)=>[r,need&&i===c.length-1&&ok(r,hrs)?hrs:[]]);
+  if(need&&!out[out.length-1][1].length) out.push([[],hrs]);     // still no room: the hours get a picture of their own
+  const f=Math.min(1,...out.map(([r,h])=>fit(r,h)));             // the same size writing on every picture
+  return out.map(([r,h],i)=>({rows:r,hrs:h,H:F.h,top,bot,f,n:i+1,of:out.length,y0:base+(F.top?Math.max(0,(room-body(r,h)*f)/2):0)})); } // a short list sits in the middle of a Story
 // dark or white writing, whichever shows up on that colour (so any colour she picks stays readable)
 const plInk=hex=>{ const n=parseInt(String(hex).slice(1),16)||0, l=(0.299*(n>>16&255)+0.587*(n>>8&255)+0.114*(n&255))/255; return l>0.6?'#1d1a26':'#ffffff'; };
 let plPic=null, plTimer=0;
 function plPhotoImg(src){ if(!src) return null;
   if(!plPic||plPic.src!==src){ const img=new Image(); plPic={src,img}; img.onload=plRefresh; img.src=src; }
   return plPic.img.complete&&plPic.img.naturalWidth?plPic.img:null; }
-function plDraw(o){ const T=PL_TPL[o.tpl], rows=plRows(o), hrs=o.hours?hoursSummary():[], L=plLayout(o,rows.length,hrs.length), {W,H,f}=L, X=T.frame?120:72, ph=plPhotoImg(o.photo);
+function plDraw(o,L){ const T=PL_TPL[o.tpl], W=1080, {H,f}=L, X=T.frame?120:72, ph=plPhotoImg(o.photo);
   const big=o.name||o.title, small=o.name?o.title:'';
-  const cv=document.createElement('canvas'); cv.width=W; cv.height=H; cv._f=f; const x=cv.getContext('2d');
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const x=cv.getContext('2d');
   const page=T.page==='accent'?o.accent:T.page==='white'?'#ffffff':o.bg, ink=plInk(page), strong=T.page==='accent'?ink:o.accent, line=ink==='#ffffff'?'rgba(255,255,255,.25)':'rgba(0,0,0,.12)';
   x.fillStyle=page; x.fillRect(0,0,W,H);
   if(T.frame){ x.strokeStyle=o.accent; x.lineWidth=6; x.strokeRect(44,44,W-88,H-88); }
@@ -2258,26 +2266,31 @@ function plDraw(o){ const T=PL_TPL[o.tpl], rows=plRows(o), hrs=o.hours?hoursSumm
   if(T.rule){ x.fillStyle=o.accent; x.fillRect(W/2-60,L.top+255,120,4); }
   let y=L.y0-50+50*f; x.textAlign='left';
   const fmt=new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2,minimumFractionDigits:0}), font=(wt,px)=>`${wt} ${Math.round(px*f)}px Figtree, "Segoe UI", sans-serif`;
-  rows.forEach(r=>{ const ps=fmt.format(r.price); x.font=font(700,44); const w=x.measureText(ps).width; x.fillStyle=strong; x.fillText(ps,W-X-w,y);
+  L.rows.forEach(r=>{ const ps=fmt.format(r.price); x.font=font(700,44); const w=x.measureText(ps).width; x.fillStyle=strong; x.fillText(ps,W-X-w,y);
     x.fillStyle=ink; x.font=font(600,40); x.fillText(r.name,X,y,W-2*X-w-30); x.fillStyle=line; x.fillRect(X,y+28*f,W-2*X,2); y+=92*f; });
-  if(hrs.length){ y+=30*f; x.fillStyle=strong; x.font=font(700,36); x.fillText('Opening hours',X,y); y+=54*f;
-    x.fillStyle=ink; x.font=font(500,34); hrs.forEach(l=>{ x.fillText(l,X,y,W-2*X); y+=52*f; }); }
-  if(o.footer){ x.textAlign='center'; x.fillStyle=strong; x.font='700 38px Figtree, "Segoe UI", sans-serif'; x.fillText(o.footer,W/2,H-L.bot-20,W-2*X); }
+  if(L.hrs.length){ y+=30*f; x.fillStyle=strong; x.font=font(700,36); x.fillText('Opening hours',X,y); y+=54*f;
+    x.fillStyle=ink; x.font=font(500,34); L.hrs.forEach(l=>{ x.fillText(l,X,y,W-2*X); y+=52*f; }); }
+  const more=L.of>1;
+  if(o.footer){ x.textAlign='center'; x.fillStyle=strong; x.font='700 38px Figtree, "Segoe UI", sans-serif'; x.fillText(o.footer,W/2,H-L.bot-20,W-2*X-(more?220:0)); }
+  if(more){ x.textAlign='right'; x.fillStyle=ink; x.globalAlpha=.65; x.font='600 28px Figtree, "Segoe UI", sans-serif'; x.fillText(`${L.n} of ${L.of}`,W-X,H-L.bot-20); x.globalAlpha=1; }
   return cv; }
-function plRefresh(){ clearTimeout(plTimer); plTimer=setTimeout(()=>{ const im=document.getElementById('pl-img'); if(!im) return;
-    const cv=plDraw(plOptions()), n=document.getElementById('pl-fit'); im.src=cv.toDataURL('image/png'); if(n) n.hidden=!(cv._f<0.75); },80); }
+function plCanvases(){ const o=plOptions(); return plPages(o).map(L=>plDraw(o,L)); }
+function plRefresh(){ clearTimeout(plTimer); plTimer=setTimeout(()=>{ const box=document.getElementById('pl-imgs'); if(!box) return;
+    const cvs=plCanvases(), n=document.getElementById('pl-count');
+    box.innerHTML=cvs.map((c,i)=>`<img src="${c.toDataURL('image/png')}" alt="Your price list${cvs.length>1?`, picture ${i+1} of ${cvs.length}`:''}" style="width:100%;border-radius:10px">`).join('');
+    if(n){ n.hidden=cvs.length<2; n.textContent=`Your list is on ${cvs.length} pictures so the writing stays big. Post them together.`; } },80); }
 function plSet(k,v){ state.setup.priceList={...(state.setup.priceList||{}),[k]:v}; save(); plRefresh(); }
 function plOpen(){ const o=document.getElementById('overlay'), op=plOptions();
   const chip=(k,v,l)=>`<button class="chip" data-act="pl-set" data-k="${k}" data-v="${v}" aria-pressed="${op[k]===v}">${l}</button>`;
   o.innerHTML=`<div class="card" style="max-width:520px;width:100%;max-height:92vh;overflow:auto">
-    <img id="pl-img" alt="Your price list" style="width:100%;border-radius:10px">
-    <p id="pl-fit" class="notice warn" hidden>The writing is small because there is a lot to fit. Untick some treatments below, or pick the Long shape.</p>
+    <div id="pl-imgs" class="stack" style="gap:10px"></div>
+    <p id="pl-count" class="notice info" hidden></p>
     <div class="row"><button class="btn" data-act="pl-save">Save or share</button><button class="btn ghost" data-act="bk-close">Close</button></div>
-    <p class="small muted">If that does not work on your phone, press and hold the picture to save it.</p>
+    <p class="small muted">If that does not work on your phone, press and hold a picture to save it.</p>
     <h3>Make it yours</h3>
     <div class="field">Design<div class="chips">${Object.entries(PL_TPL).map(([k,t])=>chip('tpl',k,t.name)).join('')}</div></div>
     <div class="field">Shape<div class="chips">${Object.entries(PL_FMT).map(([k,t])=>chip('fmt',k,t.name)).join('')}</div>
-      <p class="small muted">Square and Portrait suit Instagram posts. Story suits stories. Long fits everything, for printing.</p></div>
+      <p class="small muted">Square and Portrait suit Instagram posts. Story suits stories. A long list is split over two or more pictures. Long puts everything on one tall picture, for printing.</p></div>
     <div class="field">Logo or photo<p class="small muted">Shows as a circle in the top corner.</p><div class="row">
       <label class="btn small ghost" style="cursor:pointer">${op.photo?'Change the picture':'Choose a picture'}<input type="file" accept="image/*" data-plphoto="1" hidden></label>
       ${op.photo?`<button class="btn small ghost" data-act="pl-photo-del">Remove it</button>`:''}</div></div>
@@ -2296,9 +2309,10 @@ function plOpen(){ const o=document.getElementById('overlay'), op=plOptions();
 function plReopen(){ const c=document.getElementById('overlay').firstElementChild, t=c?c.scrollTop:0; plOpen(); document.getElementById('overlay').firstElementChild.scrollTop=t; }
 function makePriceList(kind){ if(kind) state.setup.priceList={...(state.setup.priceList||{}),kind}; plOpen(); }
 async function plPhoto(file){ const url=await blobToDataURL(await shrinkTo(file,400)); if(!url){ toast('That picture could not be read'); return; } plSet('photo',url); plReopen(); }
-function plSave(){ plDraw(plOptions()).toBlob(async blob=>{ const f=new File([blob],'price-list.png',{type:'image/png'});
-    try{ if(navigator.canShare&&navigator.canShare({files:[f]})){ await navigator.share({files:[f]}); return; } }catch(e){ if(e&&e.name==='AbortError') return; }
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='price-list.png'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000); },'image/png'); }
+async function plSave(){ const cvs=plCanvases(), blobs=await Promise.all(cvs.map(c=>new Promise(r=>c.toBlob(r,'image/png'))));
+  const name=i=>cvs.length>1?`price-list-${i+1}.png`:'price-list.png', files=blobs.map((b,i)=>new File([b],name(i),{type:'image/png'}));
+  try{ if(navigator.canShare&&navigator.canShare({files})){ await navigator.share({files}); return; } }catch(e){ if(e&&e.name==='AbortError') return; }
+  blobs.forEach((b,i)=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name(i); a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000); }); }
 document.addEventListener('click', e=>{ const el=e.target.closest&&e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act;
   if(a==='pl-set'){ plSet(el.dataset.k,el.dataset.v); el.parentElement.querySelectorAll('.chip').forEach(c=>c.setAttribute('aria-pressed',String(c===el))); }
   else if(a==='pl-reset'){ const p={...(state.setup.priceList||{})}; delete p.accent; delete p.bg; state.setup.priceList=p; save(); plReopen(); }
