@@ -280,22 +280,23 @@ function compute(state){
   const treatments=state.treatments.map(t=>{
     const mins=(+t.clientMin||0)+(+t.prepMin||0), hrs=mins/60;
     const productCost=treatmentProductCost(t,pmap);
-    const timeCost=hrs*overheadRate;               // this treatment's share of the running costs
+    const people=+t.places>1?Math.max(1,Math.min(+t.places,+t.fill||+t.places)):1; // a class shares its time across the people in it
+    const timeCost=hrs*overheadRate/people;        // this treatment's share of the running costs
     const cost=productCost+timeCost;
     const minimum=gross(cost);                     // break-even price
-    const suggested=Math.ceil(gross(cost+hrs*profitRate)/roundTo - 1e-9)*roundTo;
+    const suggested=Math.ceil(gross(cost+hrs*profitRate/people)/roundTo - 1e-9)*roundTo;
     const price=+t.price||0;
     const profitNow= price>0 ? net(price)-cost : null;
     const earnings=net(suggested)-cost;
-    const perHour= hrs>0 ? earnings/hrs : 0;
+    const perHour= hrs>0 ? earnings*people/hrs : 0;
     const contribNow= price>0 ? net(price)-productCost : null, contribSug=net(suggested)-productCost;
     let flag='none'; if(price>0){ flag= price<minimum-0.005 ? 'below' : (price<suggested ? 'under' : 'ok'); }
-    return {...t, mins, productCost, timeCost, cost, minimum, suggested, profitNow, earnings, perHour, contribNow, contribSug, flag};
+    return {...t, people, mins, productCost, timeCost, cost, minimum, suggested, profitNow, earnings, perHour, contribNow, contribSug, flag};
   });
-  const bookingsMonth=treatments.reduce((a,t)=>a+(+t.perWeek||0),0)*wk*k;
-  const productsMonth=treatments.reduce((a,t)=>a+(+t.perWeek||0)*t.productCost,0)*wk*k;
+  const bookingsMonth=treatments.reduce((a,t)=>a+(+t.perWeek||0)*t.people,0)*wk*k;
+  const productsMonth=treatments.reduce((a,t)=>a+(+t.perWeek||0)*t.people*t.productCost,0)*wk*k;
   function month(priceKey, f=1){
-    const takings=treatments.reduce((a,t)=>a+(+t.perWeek||0)*(priceKey==='suggested'?t.suggested:(+t.price||0)*f),0)*wk/vatF*k;
+    const takings=treatments.reduce((a,t)=>a+(+t.perWeek||0)*t.people*(priceKey==='suggested'?t.suggested:(+t.price||0)*f),0)*wk/vatF*k;
     const fees=takings*pct+bookingsMonth*fixed; // card fees plus self-employed shares
     const noShows=takings*(+s.noShow||0)*(1-(+s.deposit||0));
     return {takings,fees,noShows,profit:takings-fees-productsMonth-overheads-noShows};
@@ -1129,7 +1130,7 @@ function vDiary(){
       ${offs.length?`<div class="chips">${offs.map(p=>`<span class="pill warn">${p.id==='me'?'You are off':esc(p.name)+' is off'}</span>`).join('')}</div>`:''}
       ${bks.length?`<div class="list">${bks.map(b=>{ const [cls,lab]=STATUS[b.status]||STATUS.booked; const cl=clientById(b.clientId);
         return `<div class="item" style="align-items:flex-start;flex-wrap:wrap"><div class="num" style="min-width:64px">${fmtT(b.time)}</div>
-          <div class="grow"><p style="white-space:normal"><b>${esc(bookingLabel(b))}</b></p><p class="small muted" style="white-space:normal">${esc(cl?cl.name:'No name')} · ${esc(personName(b.staffId))} · ${gbp(+b.price)}${+b.deposit?` · deposit ${gbp(+b.deposit)}`:''}</p>
+          <div class="grow"><p style="white-space:normal"><b>${esc(bookingLabel(b))}</b>${classTag(b)}</p><p class="small muted" style="white-space:normal">${esc(cl?cl.name:'No name')} · ${esc(personName(b.staffId))} · ${gbp(+b.price)}${+b.deposit?` · deposit ${gbp(+b.deposit)}`:''}</p>
             </div>
           <span class="pill ${cls}">${lab}</span>
           ${b.status==='booked'?`<div class="row" style="flex-basis:100%;gap:6px"><span class="small muted">Paid by</span><button class="btn small" data-act="bk-done" data-id="${b.id}" data-m="Card" aria-label="Paid by card">Card</button><button class="btn small ghost" data-act="bk-done" data-id="${b.id}" data-m="Cash" aria-label="Paid by cash">Cash</button><button class="btn small ghost" data-act="bk-done" data-id="${b.id}" data-m="Bank transfer" aria-label="Paid by bank transfer">Transfer</button></div>
@@ -1147,7 +1148,8 @@ function bkWarnings(d){
   const w=[]; const t=svc(d.serviceId); if(!t) return w;
   const mins=bkMins(d), start=toMin(d.time), end=start+mins;
   if(onHoliday(d.staffId,d.date)) w.push(d.staffId==='me'?'You are booked off that day.':`${personName(d.staffId)} is booked off that day.`);
-  const clash=state.bookings.find(b=>b.id!==d.id && b.date===d.date && b.staffId===d.staffId && b.status!=='cancelled' && toMin(b.time)<end && toMin(b.time)+(+b.mins||0)>start);
+  const clash=state.bookings.find(b=>b.id!==d.id && b.date===d.date && b.staffId===d.staffId && b.status!=='cancelled' && toMin(b.time)<end && toMin(b.time)+(+b.mins||0)>start && !(isClass(t)&&b.serviceId===d.serviceId&&b.time===d.time));
+  if(isClass(t)&&classCount(t.id,d.date,d.time,d.id)>=+t.places) w.push(`This class is full (${+t.places} places).`);
   if(clash) w.push(`Clashes with ${bookingLabel(clash)} at ${fmtT(clash.time)}.`);
   const needsPatch=t.patch || (d.addons||[]).some(a=>+a.qty>0 && (svc(a.id)||{}).patch);
   if(needsPatch && IND().patch){ const ps=d.clientId?patchState(d.clientId,d.date):'missing'; if(ps!=='ok') w.push(`${PATCH_MSG[ps]}. A patch test is needed at least 48 hours before.`); }
@@ -2091,6 +2093,8 @@ addServices('fitness',[
   S('pthome','Home visit session',60,30,3,50,[['mats',100]]),
   S('privpil','Private Pilates or yoga session',60,15,4,55,[['mats',100]]),
   S('duet','Duet session (two people)',60,15,2,70,[['mats',80]]),
+  S('matclass','Group mat Pilates or yoga class',60,15,0,12,[['mats',20]],{places:12,fill:8}),
+  S('reformer','Small group reformer class',50,10,0,25,[['mats',30]],{places:4,fill:3}),
   S('progadd','Written programme',30,0,1,25,[],AD)]);
 addServices('coach',[
   S('coinit','First consultation',60,15,3,75,[]),
@@ -2357,6 +2361,7 @@ const GUIDE=[
   ['Change or delete a booking',"Tap Change on the booking. To delete it, tap 'Delete this booking' at the bottom of that sheet, then tap it again.",'diary'],
   ['See the whole month',"At the top of the Diary, tap Month. Each day shows how many bookings it has. Tap a day to see them. Tap Week to go back.",'diary'],
   ['Put a booking in your phone calendar',"On the booking, tap Calendar, then 'Google Calendar' or 'Apple or other calendar'. Your phone then reminds you like any other event.",'diary'],
+  ['Run a group class',"Tap Prices, then the treatment. Type how many places it has, how many usually come, and when it runs each week. The price is for each person. Book each person into the same time in the Diary, and clients can join it online until it is full.",'treatments'],
   ['Let clients book online',"At the bottom of Diary, under 'Let clients book online', type your mobile number and tap 'Share my booking link'. Send it to clients or put it in your Instagram bio. They pick a treatment and a free time and send you a request. Tap the link in their message to add it to your diary.",'diary'],
   ['Send a reminder',"Tap Reminder on the booking, then 'Copy message'. Paste it into a text, WhatsApp or email. The app does not send it for you.",'diary'],
   ['Record a deposit',"Type it in 'Deposit taken' when you make the booking.",'diary'],
@@ -2441,13 +2446,14 @@ const bookPage=()=>({days:14,phone:'',email:'',...(state.setup.bookPage||{})});
 function freeTimes(x){ const h=hoursFor('me')[dayIdx(x)]; if(!(dayMins(h)>0)||onHoliday('me',x)) return [];
   const busy=state.bookings.filter(b=>b.date===x&&b.staffId==='me'&&b.status!=='cancelled').map(b=>[toMin(b.time),toMin(b.time)+(+b.mins||0)+(+(svc(b.serviceId)||{}).prepMin||0)]);
   if(breakMins(h)>0) busy.push([toMin(h.bFrom),toMin(h.bTo)]);
+  state.treatments.filter(isClass).forEach(t=>classTimesOn(t,x).forEach(hh=>busy.push([toMin(hh),toMin(hh)+(+t.clientMin||0)+(+t.prepMin||0)])));
   let free=[[toMin(h.from),toMin(h.to)]];
   busy.forEach(([s,e])=>{ free=free.flatMap(([a,b])=>e<=a||s>=b?[[a,b]]:[[a,Math.min(s,b)],[Math.max(e,a),b]].filter(([p,q])=>q-p>=15)); });
   return free; }
 const slots=(free,len)=>free.flatMap(([a,b])=>{ const o=[]; for(let t=Math.ceil(a/15)*15;t+len<=b;t+=15) o.push(t); return o; });
 function bookLink(){ const bp=bookPage(), c=compute(state), days=[];
   for(let i=1;i<=bp.days;i++){ const x=addDays(todayStr(),i), f=freeTimes(x); if(f.length) days.push([x,f]); }
-  return APP_URL()+'#book='+b64e({b:(state.setup.brand||{}).businessName||'',t:c.treatments.filter(t=>!t.addon).map(t=>[t.id,t.name,+t.price||t.suggested,+t.clientMin||0,+t.prepMin||0]),d:days,w:bp.phone,e:bp.email,m:todayStr()}); }
+  return APP_URL()+'#book='+b64e({b:(state.setup.brand||{}).businessName||'',t:c.treatments.filter(t=>!t.addon).map(t=>[t.id,t.name,+t.price||t.suggested,+t.clientMin||0,+t.prepMin||0,isClass(t)?+t.places:0]),k:Object.fromEntries(c.treatments.filter(isClass).map(t=>[t.id,classSessions(t,bp.days)])),d:days,w:bp.phone,e:bp.email,m:todayStr()}); }
 function bookCard(){ const bp=bookPage();
   return `<article class="card"><h3>Let clients book online</h3>
     <p class="small muted">Share a link. Clients pick a treatment and a free time, and it sends you the request by WhatsApp, text or email. Tap the link in their message to add it to your diary.</p>
@@ -2462,11 +2468,13 @@ let BK=null, bf={t:null,d:null,time:null,name:'',phone:'',note:'',sent:false};
 function bookFace(){ const B=BK, live=B.d.filter(([x])=>x>todayStr()), tr=B.t.find(t=>t[0]===bf.t), len=tr?tr[3]+tr[4]:0;
   const head=`<div><h2>${esc(B.b||'Book an appointment')}</h2><p class="muted">Choose a treatment and a time, then send your request.</p></div>`;
   if(!live.length) return `<section class="stack">${head}<div class="notice warn">This booking link is out of date. Send a message to ask for a time.</div></section>`;
-  const days=tr?live.filter(([,f])=>slots(f,len).length):[], day=days.find(([x])=>x===bf.d), times=day?slots(day[1],len):[];
+  const cls=!!(tr&&tr[5]>0), ks=cls?((B.k||{})[tr[0]]||[]).filter(([x])=>x>todayStr()):[];
+  const days=!tr?[]:cls?[...new Set(ks.map(([x])=>x))].map(x=>[x]):live.filter(([,f])=>slots(f,len).length), day=days.find(([x])=>x===bf.d), times=!day?[]:cls?ks.filter(([x])=>x===bf.d).map(([,m])=>m):slots(day[1],len);
+  const left=m=>{ const k=ks.find(([x,mm])=>x===bf.d&&mm===m); return k?` · ${k[2]} place${k[2]>1?'s':''} left`:''; };
   return `<section class="stack">${head}
-  <article class="card"><h3>1. Choose a treatment</h3><div class="choices">${B.t.map(t=>`<button class="choice" data-act="bf-t" data-v="${esc(t[0])}" aria-pressed="${bf.t===t[0]}">${esc(t[1])}<small>${money(t[2])} · about ${t[3]} min</small></button>`).join('')}</div></article>
-  ${tr?`<article class="card" id="bf-days"><h3>2. Choose a day</h3>${days.length?`<div class="chips">${days.map(([x])=>`<button class="chip" data-act="bf-d" data-v="${x}" aria-pressed="${bf.d===x}">${fmtDay(x)}</button>`).join('')}</div>`:'<p class="muted">No free times for this one at the moment. Send a message to ask.</p>'}</article>`:''}
-  ${day?`<article class="card" id="bf-times"><h3>3. Choose a time</h3><div class="chips">${times.map(t=>`<button class="chip" data-act="bf-time" data-v="${t}" aria-pressed="${bf.time===t}">${fmtT(fromMin(t))}</button>`).join('')}</div></article>`:''}
+  <article class="card"><h3>1. Choose a treatment</h3><div class="choices">${B.t.map(t=>`<button class="choice" data-act="bf-t" data-v="${esc(t[0])}" aria-pressed="${bf.t===t[0]}">${esc(t[1])}<small>${money(t[2])}${t[5]>0?' each':''} · about ${t[3]} min${t[5]>0?' · group class':''}</small></button>`).join('')}</div></article>
+  ${tr?`<article class="card" id="bf-days"><h3>2. Choose a day</h3>${days.length?`<div class="chips">${days.map(([x])=>`<button class="chip" data-act="bf-d" data-v="${x}" aria-pressed="${bf.d===x}">${fmtDay(x)}</button>`).join('')}</div>`:`<p class="muted">${cls?'No classes with places left at the moment':'No free times for this one at the moment'}. Send a message to ask.</p>`}</article>`:''}
+  ${day?`<article class="card" id="bf-times"><h3>3. Choose a time</h3><div class="chips">${times.map(t=>`<button class="chip" data-act="bf-time" data-v="${t}" aria-pressed="${bf.time===t}">${fmtT(fromMin(t))}${cls?left(t):''}</button>`).join('')}</div></article>`:''}
   ${day&&bf.time!=null?`<article class="card" id="bf-you"><h3>4. Your details</h3>
     <label class="field">Your name<input id="bf-name" autocomplete="name" value="${esc(bf.name)}" data-bf="name"></label>
     <label class="field">Your mobile number<input id="bf-phone" type="tel" autocomplete="tel" value="${esc(bf.phone)}" data-bf="phone"></label>
@@ -2735,6 +2743,35 @@ document.addEventListener('change', e=>{
   if(f==='open') h.open=el.checked; else if(el.value){ const bad=setHour(h,f,el.value); if(bad){ render(); toast(bad); return; } }
   syncHours(); save(); render();
 });
+
+// ===================== classes: several clients in one session =====================
+// A treatment with more than one place is a class. It runs at set times each week; each person booked is one booking at that time.
+const isClass=t=>!!t&&+t.places>1;
+const DAYS3=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const classCount=(sid,date,time,skip)=>state.bookings.filter(b=>b.id!==skip&&b.serviceId===sid&&b.date===date&&b.time===time&&b.status!=='cancelled').length;
+function classTag(b){ const t=svc(b.serviceId); return isClass(t)?` <span class="pill info">${classCount(t.id,b.date,b.time)} of ${+t.places} booked</span>`:''; }
+const classTimesOn=(t,x)=>(t.times||[]).filter(([d,h])=>d===dayIdx(x)&&h).map(([,h])=>h);
+// the sessions coming up, with places left: [[date, minutes, left]]
+function classSessions(t,days){ const out=[]; for(let i=1;i<=days;i++){ const x=addDays(todayStr(),i); if(onHoliday('me',x)) continue;
+  classTimesOn(t,x).forEach(h=>{ const left=+t.places-classCount(t.id,x,h); if(left>0) out.push([x,toMin(h),left]); }); } return out; }
+
+const vTreatmentsBeforeClasses=vTreatments;
+vTreatments=function(){ let h=vTreatmentsBeforeClasses(); const t=state.treatments.find(x=>x.id===openTreat); if(!t||t.addon) return h;
+  const at=`<label class="row small"><input type="checkbox" id="tad-${t.id}"`, i=h.indexOf(at); if(i<0) return h;
+  const block=`<div class="stack" style="gap:8px">
+    <label class="field">Places in each session<span class="hint">For group classes. Leave empty if you see one ${W().cust} at a time</span><input id="tpl-${t.id}" type="number" inputmode="numeric" min="0" step="1" value="${+t.places>1?t.places:''}" data-tf="${t.id}" data-f="places"></label>
+    ${isClass(t)?`<label class="field">How many usually come<span class="hint">Your price is for each person, so the running costs are shared across this many</span><input id="tfi-${t.id}" type="number" inputmode="numeric" min="1" step="1" value="${t.fill||''}" placeholder="${t.places}" data-tf="${t.id}" data-f="fill"></label>
+    <span class="small" style="font-weight:600">When it runs each week</span>
+    ${(t.times||[]).map(([d,hh],k)=>`<div class="row" style="flex-wrap:nowrap"><select aria-label="Day" data-ct="${t.id}" data-i="${k}" data-k="0">${DAYS3.map((n,j)=>`<option value="${j}" ${j===d?'selected':''}>${n}</option>`).join('')}</select><input type="time" aria-label="Start time" value="${esc(hh||'')}" data-ct="${t.id}" data-i="${k}" data-k="1"><button type="button" class="iconbtn" aria-label="Remove this time" data-act="ct-del" data-id="${t.id}" data-i="${k}">✕</button></div>`).join('')||`<p class="small muted">No times yet. Clients can only book online once it has a time.</p>`}
+    <button type="button" class="btn small ghost" data-act="ct-add" data-id="${t.id}">Add a time</button>`:''}</div>`;
+  return h.slice(0,i)+block+h.slice(i); };
+const syncClassWeek=t=>{ if(isClass(t)) t.perWeek=(t.times||[]).filter(x=>x[1]).length; };
+document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.closest('[data-act="ct-add"],[data-act="ct-del"]'); if(!el) return;
+  const t=state.treatments.find(x=>x.id===el.dataset.id); if(!t) return; t.times=t.times||[];
+  if(el.dataset.act==='ct-add') t.times.push([0,'18:00']); else t.times.splice(+el.dataset.i,1);
+  syncClassWeek(t); save(); render(); });
+document.addEventListener('change',e=>{ const el=e.target, d=el.dataset||{}; if(!d.ct) return; const t=state.treatments.find(x=>x.id===d.ct); if(!t||!t.times||!t.times[+d.i]) return;
+  t.times[+d.i][+d.k]= d.k==='0'?+el.value:el.value; syncClassWeek(t); save(); render(); });
 
 render();
 </script>
