@@ -1036,7 +1036,7 @@ document.addEventListener('change', e=>{
   if(el.dataset.ru){ const t=state.treatments.find(x=>x.id===el.dataset.ru); const r=t&&t.recipe.find(x=>x.productId===el.dataset.p); if(r){ r.perPack=+el.value||0; save(); render(); } return; }
   if(el.dataset.rf){ const t=state.treatments.find(x=>x.id===el.dataset.rf); const r=t.recipe[+el.dataset.i]; r[el.dataset.f]= el.dataset.f==='perPack'?(+el.value||0):el.value; save(); render(); return; }
   if(el.dataset.pf){ const p=state.products.find(x=>x.id===el.dataset.pf); const f=el.dataset.f;
-    p[f]=(f==='name'||f==='unit'||f==='supplier')?el.value:(+el.value||0); save(); render(); return; }
+    p[f]=(f==='name'||f==='unit'||f==='supplier'||f==='url')?el.value:(+el.value||0); save(); render(); return; }
 });
 document.addEventListener('submit', async e=>{
   e.preventDefault();
@@ -2361,6 +2361,7 @@ const GUIDE=[
   ['Change or delete a booking',"Tap Change on the booking. To delete it, tap 'Delete this booking' at the bottom of that sheet, then tap it again.",'diary'],
   ['See the whole month',"At the top of the Diary, tap Month. Each day shows how many bookings it has. Tap a day to see them. Tap Week to go back.",'diary'],
   ['Put a booking in your phone calendar',"On the booking, tap Calendar, then 'Google Calendar' or 'Apple or other calendar'. Your phone then reminds you like any other event.",'diary'],
+  ['Reorder a product quickly',"Tap Prices, then Products, then the product. Paste the web page you buy it from into 'Link to order it'. An Order button then shows next to it, so you can reorder in one tap.",'stock'],
   ['Run a group class',"Tap Prices, then the treatment. Type how many places it has, how many usually come, and when it runs each week. The price is for each person. Book each person into the same time in the Diary, and clients can join it online until it is full.",'treatments'],
   ['Let clients book online',"At the bottom of Diary, under 'Let clients book online', type your mobile number and tap 'Share my booking link'. Send it to clients or put it in your Instagram bio. They pick a treatment and a free time and send you a request. Tap the link in their message to add it to your diary.",'diary'],
   ['Send a reminder',"Tap Reminder on the booking, then 'Copy message'. Paste it into a text, WhatsApp or email. The app does not send it for you.",'diary'],
@@ -2772,6 +2773,32 @@ document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.close
   syncClassWeek(t); save(); render(); });
 document.addEventListener('change',e=>{ const el=e.target, d=el.dataset||{}; if(!d.ct) return; const t=state.treatments.find(x=>x.id===d.ct); if(!t||!t.times||!t.times[+d.i]) return;
   t.times[+d.i][+d.k]= d.k==='0'?+el.value:el.value; syncClassWeek(t); save(); render(); });
+
+// ===================== product costs in set-up, and order links =====================
+// only web links are allowed as order links, so a typed 'javascript:' can never run
+function orderHref(u){ u=String(u||'').trim(); if(!u) return ''; if(!/^[a-z][a-z0-9+.-]*:/i.test(u)) u='https://'+u; return /^https?:\/\/[^\s]+\.[^\s]+/i.test(u)?u:''; }
+const orderBtn=(p,cls)=>{ const h=orderHref(p.url); return h?`<a class="btn small ${cls||'ghost'}" href="${esc(h)}" target="_blank" rel="noopener noreferrer">Order</a>`:''; };
+const urlField=(id,p)=>`<label class="field">Link to order it<span class="hint">Paste the page you buy it from, to reorder in one tap</span><input id="${id}" type="url" inputmode="url" autocomplete="off" placeholder="e.g. salonservices.com/..." value="${esc(p.url||'')}" data-pf="${p.id}" data-f="url"></label>`;
+
+const wizStepsBeforeProd=wizSteps;
+wizSteps=function(){ const st=wizStepsBeforeProd().slice(); if(wizFull||st.some(x=>x.type==='prodq')) return st; const i=st.findIndex(x=>x.type==='quicklist'); if(i>=0) st.splice(i+1,0,{type:'prodq'}); return st; };
+const quickStepBeforeProd=quickStep;
+quickStep=function(st){ if(st.type!=='prodq') return quickStepBeforeProd(st);
+  const used=state.products.filter(p=>state.treatments.some(t=>(t.recipe||[]).some(r=>r.productId===p.id)));
+  const rows=used.map(p=>`<article class="card" style="gap:8px"><h3 style="font-size:1.02rem">${esc(p.name)}</h3>
+    <div class="fields"><label class="field">Size you buy<span class="row" style="flex-wrap:nowrap;gap:8px"><input id="wp-z-${p.id}" type="number" inputmode="decimal" min="0" step="any" aria-label="Size of ${esc(p.name)}" value="${esc(p.size)}" data-pf="${p.id}" data-f="size" style="flex:1"><select id="wp-u-${p.id}" aria-label="Unit for ${esc(p.name)}" data-pf="${p.id}" data-f="unit" style="flex:1">${UNITS.map(u=>`<option ${u===p.unit?'selected':''}>${u}</option>`).join('')}</select></span></label>
+      ${moneyField('wp-c-'+p.id,'What one costs you','',p.packCost,`data-pf="${p.id}" data-f="packCost"`)}
+      <label class="field">Where you buy it<input id="wp-s-${p.id}" list="sup-list" placeholder="Pick one or type your own" value="${esc(p.supplier||'')}" data-pf="${p.id}" data-f="supplier"></label>
+      ${urlField('wp-l-'+p.id,p)}</div></article>`).join('');
+  return {q:`What your ${W().items} cost`, why:`These are typical UK prices for what your ${W().many} use. Change any that are different for you. You can skip this and change them later.`,
+    body: used.length?`${supData()}<div class="stack">${rows}</div>`:`<p class="muted">None of your ${W().many} use any ${W().items} yet. Tap Next.</p>`}; };
+
+const vStockBeforeUrl=vStock;
+vStock=function(){ let h=vStockBeforeUrl();
+  state.products.forEach(p=>{ const b=orderBtn(p); if(!b) return; const a=`data-act="prod-open" data-id="${p.id}">`, i=h.indexOf(a); if(i<0) return; const j=h.indexOf('</button>',i); if(j<0) return; h=h.slice(0,j+9)+b+h.slice(j+9); });
+  const p=state.products.find(x=>x.id===openProd); if(p){ const a='<div class="row" style="justify-content:space-between"><button class="btn" data-act="prod-close">', i=h.indexOf(a);
+    if(i>=0) h=h.slice(0,i)+`<div class="stack" style="gap:8px">${urlField('pl-'+p.id,p)}${orderBtn(p)?`<div>${orderBtn(p)}</div>`:''}</div>`+h.slice(i); }
+  return h; };
 
 render();
 </script>
