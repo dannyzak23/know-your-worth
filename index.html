@@ -1104,7 +1104,7 @@ function bookingLabel(b){ const t=svc(b.serviceId); const adds=(b.addons||[]).fi
 function vDiary(){
   const days=[...Array(7)].map((_,i)=>addDays(diaryWeek,i));
   const yr=todayStr().slice(0,4);
-  const offRows=people().map(p=>{ let d=0; state.holidays.filter(h=>h.staffId===p.id).forEach(h=>{ for(let x=h.from; x<=h.to; x=addDays(x,1)) if(x.slice(0,4)===yr) d++; }); return `<div class="item"><div class="grow"><p><b>${esc(p.name)}</b></p><p class="small muted">${d} day${d===1?'':'s'} off booked in ${yr} · planned about ${nf(p.weeksOff)} weeks</p></div></div>`; }).join('');
+  const offRows=people().map(p=>{ let d=0; state.holidays.filter(h=>h.staffId===p.id).forEach(h=>{ for(let x=h.from; x<=h.to; x=addDays(x,1)) if(x.slice(0,4)===yr) d++; }); return `<div class="item"><div class="grow"><p><b>${esc(p.name)}</b></p><p class="small muted">${d} day${d===1?'':'s'} off booked in ${yr} · planned about ${nf(Math.round(p.weeksOff*Math.max(1,openDays(hoursFor(p.id)))))} days</p></div></div>`; }).join('');
   return `<section class="stack">
   <div class="row" style="justify-content:space-between"><div><h2>Diary</h2><p class="muted">Week of ${fmtDay(diaryWeek)}</p></div>
     <div class="row"><button class="btn small ghost" data-act="dy-prev" aria-label="Previous week">‹</button><button class="btn small ghost" data-act="dy-today">This week</button><button class="btn small ghost" data-act="dy-next" aria-label="Next week">›</button></div></div>
@@ -2225,7 +2225,7 @@ const GUIDE=[
   ['Copy emails for a newsletter',"On Clients, tap 'Copy email list for a newsletter'. It only includes clients who ticked 'Happy to get offers and reminders'."],
   ['Delete a client',"Open the client and tap 'Delete this client' at the bottom."]]],
 ['Settings and your data',[
-  ['Change your opening hours',"Tap More, then 'Opening hours'. Tick the days you work and set the times. '+ Break' adds a lunch break. The weeks you take off a year are at the bottom."],
+  ['Change your opening hours',"Tap More, then 'Opening hours'. Tick the days you work and set the times. '+ Break' adds a lunch break. The days you take off a year are at the bottom."],
   ['Add someone who works for you',"Tap More, then 'People who work for you', then '+ Add a person'. Tick 'Works different days or times from your opening hours' to give them their own hours."],
   ['Tell it about a job or a student loan',"Tap More, then 'A job or student loan'. This keeps the tax estimate right."],
   ['Change card fees',"Tap More, then 'Profit and card fees'."],
@@ -2256,6 +2256,7 @@ const weekHours=hs=>Math.round(openMinutesWeek(hs)/6)/10;
 function fmtT(t){ const [h,m]=(t||'0:0').split(':').map(Number); return `${((h+11)%12)+1}${m?'.'+pad2(m):''}${h<12?'am':'pm'}`; }
 const dayText=(h,brk)=>dayMins(h)>0?`${fmtT(h.from)} to ${fmtT(h.to)}${breakMins(h)>0?`${brk} ${fmtT(h.bFrom)} to ${fmtT(h.bTo)}`:''}`:'';
 function syncHours(){ const s=state.setup; s.daysPerWeek=Math.max(1,openDays()); s.hours=weekHours(); s._hoursSet=true;
+  if(s.daysOff!=null) s.weeksOff=Math.min(51,(+s.daysOff||0)/s.daysPerWeek); // she types days off; the sums still run on weeks
   (s.staff||[]).forEach(m=>{ if(ownHours(m)) m.hours=weekHours(m.openHours); }); }
 function hoursSummary(hs=openHours()){ // "Monday to Friday 9am to 5pm, closed 1pm to 2pm", "Saturday and Sunday closed"
   const key=h=>dayText(h,', closed')||'closed', out=[]; let i=0;
@@ -2286,7 +2287,7 @@ function hoursEditor(hs=openHours(), who='me'){
         :`<span class="muted">${who==='me'?'Closed':'Not in'}</span>`}</div>`).join('')}</div>
     ${hs.filter(h=>h.open).length>1?`<button class="btn small ghost" data-act="hr-copy" data-who="${who}">Use ${DAYS[first]}'s times for every ${who==='me'?'open':'working'} day</button>`:''}
     <p class="live">${who==='me'?'Open':'Works'} ${openDays(hs)} day${openDays(hs)===1?'':'s'}, <span class="num">${nf(weekHours(hs))}</span> hours a week${hs.some(h=>breakMins(h)>0)?', not counting breaks':''}.</p>
-    ${who==='me'?`<label class="field">Weeks you take off a year<span class="hint">Holidays, bank holidays and sick days</span><input id="hr-weeksOff" type="number" inputmode="numeric" min="0" max="51" step="1" value="${esc(state.setup.weeksOff)}" data-set="weeksOff"></label>`:''}</div>`;
+    ${who==='me'?`<label class="field">Days you take off a year<span class="hint">Days you would normally work: holidays, bank holidays and sick days</span><input id="hr-daysOff" type="number" inputmode="numeric" min="0" max="300" step="1" value="${esc(state.setup.daysOff??Math.round((+state.setup.weeksOff||0)*Math.max(1,openDays())))}" data-set="daysOff"></label>`:''}</div>`;
 }
 // staff card: the tick box, and their own week once it is ticked
 function staffHoursBlock(m){
@@ -2338,6 +2339,7 @@ document.addEventListener('click', e=>{
 });
 document.addEventListener('change', e=>{
   const el=e.target;
+  if(el.dataset.set==='daysOff'){ syncHours(); save(); return; } // the box itself is saved by the general handler; this turns it into weeks
   if(el.dataset.sth){ const m=staffById(el.dataset.sth); if(!m) return;
     if(el.checked) m.openHours=JSON.parse(JSON.stringify(openHours())); else delete m.openHours;
     syncHours(); save(); render(); return; }
