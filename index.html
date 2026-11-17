@@ -155,6 +155,14 @@ td input,td select{padding:6px 8px;font-size:.92rem;min-width:70px}
 details summary{cursor:pointer;font-weight:700}
 .example-flag{background:var(--warn-soft);color:var(--warn);font-weight:700;font-size:.8rem;padding:4px 10px;border-radius:999px}
 .prices>div{display:flex;flex-direction:column;justify-content:space-between}
+.card.today{border:2px solid var(--accent);background:var(--accent-soft)}
+.month{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.mhead{text-align:center;font-size:.72rem;color:var(--muted);font-weight:600}
+.mday{min-height:48px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font:600 .95rem var(--body);padding:2px;cursor:pointer}
+.mday.shut{opacity:.45}
+.mday.today{border:2px solid var(--accent);background:var(--accent-soft)}
+.mday .c{color:var(--accent);font-weight:800;font-size:.78rem}
+.mday .o{font-size:.62rem;color:var(--muted)}
 </style>
 
 <header class="top">
@@ -1116,7 +1124,7 @@ function vDiary(){
   ${!state.treatments.filter(t=>!t.addon).length?`<div class="notice warn">Add your ${W().many} first, so bookings know the time and price.</div>`:''}
   ${days.map(d=>{ const offs=people().filter(p=>onHoliday(p.id,d));
     const bks=state.bookings.filter(b=>b.date===d).sort((a,b)=>a.time.localeCompare(b.time));
-    return `<article class="card"><div class="treat-head"><h3>${fmtDay(d)}${d===todayStr()?' · today':''}</h3><button class="btn small" data-act="bk-new" data-date="${d}">+ Booking</button></div>
+    return `<article class="card${d===todayStr()?' today':''}" id="day-${d}"><div class="treat-head"><h3>${fmtDay(d)}${d===todayStr()?' · Today':''}</h3><button class="btn small" data-act="bk-new" data-date="${d}">+ Booking</button></div>
       <p class="small muted" style="margin-top:-6px">${openLine(d)}</p>
       ${offs.length?`<div class="chips">${offs.map(p=>`<span class="pill warn">${p.id==='me'?'You are off':esc(p.name)+' is off'}</span>`).join('')}</div>`:''}
       ${bks.length?`<div class="list">${bks.map(b=>{ const [cls,lab]=STATUS[b.status]||STATUS.booked; const cl=clientById(b.clientId);
@@ -1125,7 +1133,7 @@ function vDiary(){
             </div>
           <span class="pill ${cls}">${lab}</span>
           ${b.status==='booked'?`<div class="row" style="flex-basis:100%;gap:6px"><span class="small muted">Paid by</span><button class="btn small" data-act="bk-done" data-id="${b.id}" data-m="Card" aria-label="Paid by card">Card</button><button class="btn small ghost" data-act="bk-done" data-id="${b.id}" data-m="Cash" aria-label="Paid by cash">Cash</button><button class="btn small ghost" data-act="bk-done" data-id="${b.id}" data-m="Bank transfer" aria-label="Paid by bank transfer">Transfer</button></div>
-          <div class="row" style="flex-basis:100%;gap:4px">${[['bk-remind','Reminder'],['bk-edit','Change'],...(b.date<=todayStr()?[['bk-noshow','No-show']]:[]),['bk-cancel','Cancelled']].map(([a,l])=>`<button class="btn small ghost" style="flex:1 1 60px;min-width:0;padding-inline:2px" data-act="${a}" data-id="${b.id}">${l}</button>`).join('')}</div>`:`<div class="row" style="flex-basis:100%"><button class="btn small ghost" data-act="bk-reopen" data-id="${b.id}">Undo this</button></div>`}</div>`; }).join('')}</div>`
+          <div style="flex-basis:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px">${[['bk-remind','Reminder'],['bk-cal','Calendar'],['bk-edit','Change'],...(b.date<=todayStr()?[['bk-noshow','No-show']]:[]),['bk-cancel','Cancelled']].map(([a,l])=>`<button class="btn small ghost" style="min-width:0;padding-inline:4px" data-act="${a}" data-id="${b.id}">${l}</button>`).join('')}</div>`:`<div class="row" style="flex-basis:100%"><button class="btn small ghost" data-act="bk-reopen" data-id="${b.id}">Undo this</button></div>`}</div>`; }).join('')}</div>`
         : `<p class="small muted">${offs.some(p=>p.id==='me')?'You are off.':'No bookings.'}</p>`}
     </article>`; }).join('')}
   <article class="card"><div class="treat-head"><h3>Holidays and days off</h3><button class="btn small" data-act="hol-new">+ Add time off</button></div>
@@ -2263,6 +2271,8 @@ const GUIDE=[
   ['Mark a booking as paid',"On the booking, next to 'Paid by', tap Card, Cash or Transfer. It is added to your money in for you. Tapped the wrong one? Tap 'Undo this' on the booking.",'diary'],
   ['Record a no-show or a cancellation',"On the booking, tap No-show or Cancelled. A no-show keeps any deposit. No-show only appears once the day has come.",'diary'],
   ['Change or delete a booking',"Tap Change on the booking. To delete it, tap 'Delete this booking' at the bottom of that sheet, then tap it again.",'diary'],
+  ['See the whole month',"At the top of the Diary, tap Month. Each day shows how many bookings it has. Tap a day to see them. Tap Week to go back.",'diary'],
+  ['Put a booking in your phone calendar',"On the booking, tap Calendar, then 'Google Calendar' or 'Apple or other calendar'. Your phone then reminds you like any other event.",'diary'],
   ['Send a reminder',"Tap Reminder on the booking, then 'Copy message'. Paste it into a text, WhatsApp or email. The app does not send it for you.",'diary'],
   ['Record a deposit',"Type it in 'Deposit taken' when you make the booking.",'diary'],
   ['Book a holiday or a day off',"At the bottom of Diary, tap '+ Add time off'. Pick the dates, then tap Save.",'diary']]],
@@ -2298,6 +2308,42 @@ UNDOABLE.add('hr-copy'); UNDOABLE.add('bk-reopen'); // both can be undone from t
 
 // What she earns an hour is not asked in set-up (beginners could not answer it). It starts at £20 and is changed under 'Your numbers' on Prices.
 const wizStepsAll=wizSteps; wizSteps=function(){ return wizStepsAll().filter(x=>x.type!=='profitq'); };
+
+// ---- diary: a month view, today standing out, and adding a booking to her phone's calendar ----
+let diaryMode='week', diaryMonth=todayStr().slice(0,7)+'-01';
+const diaryToggle=()=>`<div class="chips" role="group" aria-label="Show the diary by"><button class="chip" data-act="dy-mode" data-v="week" aria-pressed="${diaryMode==='week'}">Week</button><button class="chip" data-act="dy-mode" data-v="month" aria-pressed="${diaryMode==='month'}">Month</button></div>`;
+function vMonth(){ const d0=dt(diaryMonth), y=d0.getFullYear(), mo=d0.getMonth(), n=new Date(y,mo+1,0).getDate(), lead=(d0.getDay()+6)%7, ds=i=>`${y}-${pad2(mo+1)}-${pad2(i)}`;
+  const cell=i=>{ const x=ds(i), bk=state.bookings.filter(b=>b.date===x&&b.status!=='cancelled').length, open=dayMins(hoursFor('me')[dayIdx(x)])>0, off=onHoliday('me',x);
+    return `<button class="mday${x===todayStr()?' today':''}${open&&!off?'':' shut'}" data-act="dy-day" data-date="${x}" aria-label="${fmtDay(x)}${bk?`, ${bk} booking${bk>1?'s':''}`:''}${off?', you are off':!open?', closed':''}"><span>${i}</span>${bk?`<span class="c">${bk}</span>`:off?'<span class="o">Off</span>':''}</button>`; };
+  return `<section class="stack"><div class="row" style="justify-content:space-between"><div><h2>Diary</h2><p class="muted">${d0.toLocaleDateString('en-GB',{month:'long',year:'numeric'})}</p></div>
+    <div class="row"><button class="btn small ghost" data-act="dy-prev" aria-label="Previous month">‹</button><button class="btn small ghost" data-act="dy-today">This month</button><button class="btn small ghost" data-act="dy-next" aria-label="Next month">›</button></div></div>
+    ${diaryToggle()}
+    <div class="month">${['M','T','W','T','F','S','S'].map(h=>`<span class="mhead" aria-hidden="true">${h}</span>`).join('')}${'<span></span>'.repeat(lead)}${[...Array(n)].map((_,i)=>cell(i+1)).join('')}</div>
+    <p class="small muted">The number on a day is how many bookings it has. Tap a day to see them.</p></section>`; }
+const vDiaryWeek=vDiary;
+vDiary=function(){ return diaryMode==='month'?vMonth():vDiaryWeek().replace('aria-label="Next week">›</button></div></div>','aria-label="Next week">›</button></div></div>'+diaryToggle()); };
+// the booking in her phone's calendar: Google Calendar link, or a calendar file for Apple, Outlook and the rest
+function calTimes(b){ const s=dt(b.date); const [h,m]=b.time.split(':').map(Number); s.setHours(h,m,0,0); const e=new Date(s.getTime()+(+b.mins||bkMins(b)||60)*60000);
+  const f=d=>`${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}T${pad2(d.getHours())}${pad2(d.getMinutes())}00`; return [f(s),f(e)]; }
+function calText(b){ const cl=clientById(b.clientId); return {title:`${bookingLabel(b)}${cl?' · '+cl.name:''}`, details:`${gbp(+b.price)}${+b.deposit?`, deposit ${gbp(+b.deposit)}`:''}${b.notes?`. ${b.notes}`:''}`}; }
+function showCal(b){ const [s,e]=calTimes(b), t=calText(b), o=document.getElementById('overlay');
+  const g=`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(t.title)}&dates=${s}/${e}&details=${encodeURIComponent(t.details)}&ctz=Europe/London`;
+  o.innerHTML=`<div class="card" style="max-width:480px;width:100%"><div class="treat-head"><h3>Add to my calendar</h3><button class="iconbtn" aria-label="Close" data-act="bk-close">✕</button></div>
+    <p class="small muted">${esc(t.title)}, ${fmtDay(b.date)} at ${fmtT(b.time)}. Your phone will remind you like any other event. If you change the booking here, change it in your calendar too.</p>
+    <a class="btn" style="text-decoration:none;text-align:center" target="_blank" rel="noopener" href="${g}">Google Calendar</a>
+    <button class="btn ghost" data-act="cal-ics" data-id="${b.id}">Apple or other calendar</button></div>`; o.hidden=false; }
+function calFile(b){ const [s,e]=calTimes(b), t=calText(b), x=v=>String(v).replace(/[\\;,]/g,m=>'\\'+m).replace(/\n/g,'\\n'), now=new Date().toISOString().replace(/[-:]/g,'').slice(0,15)+'Z';
+  return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Know Your Worth//EN','BEGIN:VEVENT',`UID:${b.id}@knowyourworth`,`DTSTAMP:${now}`,`DTSTART:${s}`,`DTEND:${e}`,`SUMMARY:${x(t.title)}`,`DESCRIPTION:${x(t.details)}`,'END:VEVENT','END:VCALENDAR'].join('\r\n'); } // local times, so the phone reads them as UK time
+document.addEventListener('click', async e=>{ const el=e.target.closest&&e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act;
+  if(a==='dy-mode'){ diaryMode=el.dataset.v; if(diaryMode==='month') diaryMonth=diaryWeek.slice(0,7)+'-01'; render(); }
+  else if(a==='dy-day'){ const x=el.dataset.date; diaryMode='week'; diaryWeek=weekStart(x); render(); const c=document.getElementById('day-'+x); if(c) c.scrollIntoView({block:'start'}); }
+  else if(diaryMode==='month'&&view==='diary'&&(a==='dy-prev'||a==='dy-next'||a==='dy-today')){ e.stopImmediatePropagation(); const d=dt(diaryMonth);
+    if(a==='dy-today') diaryMonth=todayStr().slice(0,7)+'-01'; else { d.setDate(1); d.setMonth(d.getMonth()+(a==='dy-next'?1:-1)); diaryMonth=`${d.getFullYear()}-${pad2(d.getMonth()+1)}-01`; } render(); }
+  else if(a==='bk-cal'){ const b=state.bookings.find(x=>x.id===el.dataset.id); if(b) showCal(b); }
+  else if(a==='cal-ics'){ const b=state.bookings.find(x=>x.id===el.dataset.id); if(!b) return;
+    if(await plClaudeSave()){ toast('Inside Claude, use Google Calendar, or open the app from its web address'); return; } // Claude does not hand over calendar files
+    const a2=document.createElement('a'); a2.href=URL.createObjectURL(new Blob([calFile(b)],{type:'text/calendar'})); a2.download='booking.ics'; a2.click(); setTimeout(()=>URL.revokeObjectURL(a2.href),5000); }
+}, true);
 
 // ===================== MODULE: price list designer =====================
 // Her choices live in state.setup.priceList; anything she has not set falls back to her branding.
