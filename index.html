@@ -2787,24 +2787,38 @@ function orderHref(u){ u=String(u||'').trim(); if(!u) return ''; if(!/^[a-z][a-z
 const orderBtn=(p,cls)=>{ const h=orderHref(p.url); return h?`<a class="btn small ${cls||'ghost'}" href="${esc(h)}" target="_blank" rel="noopener noreferrer">Order</a>`:''; };
 const urlField=(id,p)=>`<label class="field">Link to order it<span class="hint">Paste the page you buy it from, to reorder in one tap</span><input id="${id}" type="url" inputmode="url" autocomplete="off" placeholder="e.g. salonservices.com/..." value="${esc(p.url||'')}" data-pf="${p.id}" data-f="url"></label>`;
 
-// how many uses she gets from one, for each treatment that uses it
-function usesBlock(p){ const ts=state.treatments.filter(t=>(t.recipe||[]).some(r=>r.productId===p.id)); if(!ts.length) return '';
-  const box=(t,label)=>{ const r=t.recipe.find(x=>x.productId===p.id); return `<label class="field">${label}<input id="wp-n-${p.id}-${t.id}" type="number" inputmode="decimal" min="0" step="1" value="${esc(r.perPack||'')}" data-ru="${t.id}" data-p="${p.id}"></label>`; };
-  return ts.length===1 ? box(ts[0],`How many uses do you get from one ${esc(packLabel(p))}?<span class="hint">For ${esc(ts[0].name)}</span>`)
-    : `<p class="small" style="font-weight:600;margin:0">How many uses do you get from one ${esc(packLabel(p))}?</p><div class="fields">${ts.map(t=>box(t,esc(t.name))).join('')}</div>`; }
-const wizStepsBeforeProd=wizSteps;
-wizSteps=function(){ const st=wizStepsBeforeProd().slice(); if(wizFull||st.some(x=>x.type==='prodq')) return st; const i=st.findIndex(x=>x.type==='quicklist'); if(i>=0) st.splice(i+1,0,{type:'prodq'}); return st; };
-const quickStepBeforeProd=quickStep;
-quickStep=function(st){ if(st.type!=='prodq') return quickStepBeforeProd(st);
-  const used=state.products.filter(p=>state.treatments.some(t=>(t.recipe||[]).some(r=>r.productId===p.id)));
-  const rows=used.map(p=>`<article class="card" style="gap:8px"><h3 style="font-size:1.02rem">${esc(p.name)}</h3>
-    <div class="fields"><label class="field">Size you buy<span class="row" style="flex-wrap:nowrap;gap:8px"><input id="wp-z-${p.id}" type="number" inputmode="decimal" min="0" step="any" aria-label="Size of ${esc(p.name)}" value="${esc(p.size)}" data-pf="${p.id}" data-f="size" style="flex:1"><select id="wp-u-${p.id}" aria-label="Unit for ${esc(p.name)}" data-pf="${p.id}" data-f="unit" style="flex:1">${UNITS.map(u=>`<option ${u===p.unit?'selected':''}>${u}</option>`).join('')}</select></span></label>
+// set-up: each treatment lists what it uses, picked from a dropdown. Nothing is filled in for her.
+let qlNew=null; // the treatment whose 'something else' box is open
+const suggestFor=t=>((ALLCAT.find(c=>c.id===t.id)||{}).recipe||[]);
+function tradeProducts(){ const ids=new Set(); selInds().forEach(k=>(CATALOGUES[k]||[]).forEach(c=>c.recipe.forEach(r=>ids.add(r.productId)))); return LIBRARY.filter(p=>ids.has(p.id)); }
+function qlProduct(t,p){ const r=t.recipe.find(x=>x.productId===p.id), owner=state.treatments.find(x=>x.recipe.some(y=>y.productId===p.id));
+  const fields=owner.id!==t.id?`<p class="small muted" style="margin:0">Size and cost are under ${esc(owner.name)}.</p>`:`<div class="fields"><label class="field">Size you buy<span class="row" style="flex-wrap:nowrap;gap:8px"><input id="wp-z-${p.id}" type="number" inputmode="decimal" min="0" step="any" aria-label="Size of ${esc(p.name)}" value="${esc(p.size)}" data-pf="${p.id}" data-f="size" style="flex:1"><select id="wp-u-${p.id}" aria-label="Unit for ${esc(p.name)}" data-pf="${p.id}" data-f="unit" style="flex:1">${UNITS.map(u=>`<option ${u===p.unit?'selected':''}>${u}</option>`).join('')}</select></span></label>
       ${moneyField('wp-c-'+p.id,'What one costs you','',p.packCost,`data-pf="${p.id}" data-f="packCost"`)}
       <label class="field">Where you buy it<input id="wp-s-${p.id}" list="sup-list" placeholder="Pick one or type your own" value="${esc(p.supplier||'')}" data-pf="${p.id}" data-f="supplier"></label>
-      ${urlField('wp-l-'+p.id,p)}</div>
-    ${usesBlock(p)}</article>`).join('');
-  return {q:`What your ${W().items} cost`, why:`These are typical UK prices for what your ${W().many} use. Change any that are different for you. You can skip this and change them later.`,
-    body: used.length?`${supData()}<div class="stack">${rows}</div>`:`<p class="muted">None of your ${W().many} use any ${W().items} yet. Tap Next.</p>`}; };
+      ${urlField('wp-l-'+p.id,p)}</div>`;
+  return `<div class="stack" style="gap:8px;padding-top:10px;border-top:1px solid var(--line)"><div class="treat-head"><b>${esc(p.name)}</b><button type="button" class="iconbtn" aria-label="${esc(p.name)} is not used for ${esc(t.name)}" data-act="wiz-rm-prod" data-t="${t.id}" data-p="${p.id}">✕</button></div>
+    ${fields}<label class="field">How many ${esc(t.name)} do you get from one ${esc(packLabel(p).replace(/^1 /,''))}?<input id="wp-n-${p.id}-${t.id}" type="number" inputmode="decimal" min="0" step="1" value="${esc(r.perPack||'')}" data-ru="${t.id}" data-p="${p.id}"></label></div>`; }
+function qlAdd(t){ const have=new Set(t.recipe.map(r=>r.productId)), sug=suggestFor(t).map(r=>r.productId).filter(id=>!have.has(id));
+  const mine=state.products.map(p=>p.id).filter(id=>!have.has(id)&&!sug.includes(id)), lib=tradeProducts().map(p=>p.id).filter(id=>!have.has(id)&&!sug.includes(id)&&!mine.includes(id));
+  const opt=id=>{ const p=state.products.find(x=>x.id===id)||LIBRARY.find(x=>x.id===id); return p?`<option value="${p.id}">${esc(p.name)}</option>`:''; };
+  const grp=(l,ids)=>ids.length?`<optgroup label="${esc(l)}">${ids.map(opt).join('')}</optgroup>`:'';
+  return `<select id="ql-add-${t.id}" aria-label="Add something you use for ${esc(t.name)}" data-qladd="${t.id}" style="margin-top:4px"><option value="">+ Add what you use for this</option>${grp('Often used for this',sug)}${grp('Already added',mine)}${grp('Others',lib)}<option value="__new">Something else (type it in)</option></select>
+    ${qlNew===t.id?`<div class="row" style="flex-wrap:nowrap"><input id="add-new-${t.id}" placeholder="Name it, e.g. ${esc(IND().newItem)}" style="flex:1"><button type="button" class="btn small" data-act="wiz-new-prod" data-t="${t.id}">Add</button></div>`:''}`; }
+const quickStepBeforeProd=quickStep;
+quickStep=function(st){ const r=quickStepBeforeProd(st); if(st.type!=='quicklist'||!r) return r; let b=r.body;
+  state.treatments.forEach(t=>{ const i=b.indexOf(`<input id="ql-w-${t.id}"`); if(i<0) return; const j=b.indexOf('</article>',i);
+    const ps=t.recipe.map(x=>state.products.find(p=>p.id===x.productId)).filter(Boolean);
+    b=b.slice(0,j)+`<span class="small" style="font-weight:600;margin-top:4px">What you use${ps.length?'':': nothing added yet'}</span>${ps.map(p=>qlProduct(t,p)).join('')}${qlAdd(t)}`+b.slice(j); });
+  return {...r, q:`Your prices and ${W().items}`, why:r.why+` Then add the ${W().items} you use for each one: what you pay, and how many you get out of one.`, body:supData()+b}; };
+document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.closest('[data-act="wiz-new-prod"]'), i=el&&document.getElementById('add-new-'+el.dataset.t); if(i&&i.value.trim()) qlNew=null; },true); // before it redraws
+// picking a treatment in set-up starts it with nothing in it
+document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act;
+  if(a!=='pick-treat'||wizFull||!el.checked) return; const t=state.treatments.find(x=>x.id===el.dataset.id); if(!t||t._r) return;
+  t._r=1; t.recipe=[]; state.products=state.products.filter(p=>state.treatments.some(x=>x.recipe.some(r=>r.productId===p.id))); save(); });
+document.addEventListener('change',e=>{ const el=e.target, tid=el.dataset&&el.dataset.qladd; if(!tid) return; const t=state.treatments.find(x=>x.id===tid), v=el.value; if(!t||!v) return;
+  if(v==='__new'){ qlNew=t.id; render(); setTimeout(()=>{ const i=document.getElementById('add-new-'+t.id); if(i) i.focus(); },0); return; }
+  if(!state.products.some(p=>p.id===v)){ const l=LIBRARY.find(x=>x.id===v); if(!l) return; state.products.push(clone(l)); }
+  const s=suggestFor(t).find(r=>r.productId===v); if(!t.recipe.some(r=>r.productId===v)) t.recipe.push({productId:v,perPack:s?s.perPack:0}); save(); render(); });
 
 const vStockBeforeUrl=vStock;
 vStock=function(){ let h=vStockBeforeUrl();
