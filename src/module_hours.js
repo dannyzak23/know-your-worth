@@ -425,8 +425,8 @@ function priceCard(c,plan){ const s=state.setup, r=profitHourOf(s), hrs=Math.rou
   return `<section class="card"><h3>Your prices and target</h3>
     <p class="small muted">Slide to set what you earn for each hour with a ${W().cust}, or type what you want to take home each month. The two move together. All the way left just covers your costs.</p>
     <label class="field"><span id="sl-val" style="font-weight:700">${slideLabel(r)}</span><input id="sl-profit" type="range" min="0" max="${slideMax(r)}" step="1" value="${esc(Math.round(r))}" data-slide="1" style="accent-color:var(--accent);width:100%" aria-label="What you earn each hour on top of your costs"></label>
-    <div class="grid2"><div class="stat"><span class="label">Each hour with a ${W().cust}</span><span class="value" id="sl-hour">${gbp0(c.overheadRate+r)}</span><span class="small muted" id="sl-hour-sub">${gbp0(c.overheadRate)} for running costs, ${gbp0(r)} for you</span></div>
-      <div class="stat"><span class="label">Take home a month</span><span class="value" id="sl-home">${gbp0(takeHomeAt(r,c))}</span><span class="small muted">working about ${hrs} hours with ${W().cust}s a month</span></div></div>
+    <div class="grid2"><div class="stat hero"><span class="label">${icoTile('clock')}Each hour with a ${W().cust}</span><span class="value" id="sl-hour">${gbp0(c.overheadRate+r)}</span><span class="small muted" id="sl-hour-sub">${gbp0(c.overheadRate)} for running costs, ${gbp0(r)} for you</span></div>
+      <div class="stat"><span class="label">${icoTile('wallet')}Take home a month</span><span class="value" id="sl-home">${gbp0(takeHomeAt(r,c))}</span><span class="small muted">working about ${hrs} hours with ${W().cust}s a month</span></div></div>
     ${moneyField('tg-takeHome','Or type what you want to take home each month','',Math.round(+s.takeHome||0),'data-set="takeHome"')}
     ${targetBoxes(c)}
     <h3 style="font-size:1rem;margin-top:6px">Your prices at this rate</h3>
@@ -701,7 +701,7 @@ function dueReminders(){ const tm=addDays(todayStr(),1); return state.bookings.f
 function remindersBlock(){ const due=dueReminders(); if(!due.length) return '';
   return `<span class="small" style="font-weight:600">Reminders to send for tomorrow</span><div class="list">${due.map(b=>{ const cl=clientById(b.clientId), msg=encodeURIComponent(reminderText(b)), wa=cl?waNumber(cl.phone):'', ph=cl&&cl.phone?String(cl.phone).replace(/\s/g,''):'';
     return `<div class="item" style="flex-wrap:wrap"><div class="grow"><p style="white-space:normal"><b>${fmtT(b.time)}</b> ${esc(cl?cl.name:'No name')}</p><p class="small muted">${esc(bookingLabel(b))}</p></div>
-      ${wa?`<a class="btn small" style="text-decoration:none" href="https://wa.me/${wa}?text=${msg}" target="_blank" rel="noopener noreferrer" data-act="rem-sent" data-id="${b.id}">WhatsApp</a><a class="btn small ghost" style="text-decoration:none" href="sms:${esc(ph)}?&body=${msg}" data-act="rem-sent" data-id="${b.id}">Text</a>`:`<span class="small muted">Add their mobile number under ${W().cust==='client'?'Clients':'Customers'}</span>`}</div>`; }).join('')}</div>`; }
+      ${wa?`<a class="btn small" style="text-decoration:none" href="https://wa.me/${wa}?text=${msg}" target="_blank" rel="noopener noreferrer" data-act="rem-sent" data-id="${b.id}">WhatsApp</a><a class="btn small ghost" style="text-decoration:none" href="sms:${esc(ph)}?&body=${msg}" data-act="rem-sent" data-id="${b.id}">Text</a>`:`<span class="small muted" style="flex-basis:100%">Add their mobile number under ${W().cust==='client'?'Clients':'Customers'}</span>`}</div>`; }).join('')}</div>`; }
 const todayCardBeforeRem=todayCard;
 todayCard=function(){ const h=todayCardBeforeRem(), r=remindersBlock(); if(!r) return h; const i=h.lastIndexOf('</article>'); return h.slice(0,i)+r+h.slice(i); };
 
@@ -730,7 +730,7 @@ document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.close
 function hoursNeeded(c,p){ const team=(state.setup.staff||[]).reduce((a,m)=>a+(+m.hours||0),0), open=openMinutesWeek()/60+team;
   const mix=c.treatments.filter(t=>(+t.perWeek||0)>0), list=mix.length?mix:c.treatments.filter(t=>!t.addon), w=t=>mix.length?(+t.perWeek||0):1;
   const tot=list.reduce((a,t)=>a+w(t),0)||1, avgH=list.reduce((a,t)=>a+w(t)*t.mins,0)/tot/60; return {need:p.perWeek*avgH, open, team}; }
-const statBox=(label,value,sub,cls,id)=>`<div class="stat${cls?' '+cls:''}"${id?` id="${id}"`:''}><span class="label">${label}</span><span class="value">${value}</span>${sub?`<span class="small muted">${sub}</span>`:''}</div>`;
+const statBox=(label,value,sub,cls,id,ico)=>`<div class="stat${cls?' '+cls:''}"${id?` id="${id}"`:''}><span class="label">${ico?icoTile(ico):''}${label}</span><span class="value">${value}</span>${sub?`<span class="small muted">${sub}</span>`:''}</div>`;
 // the set rates, so the percentage makes sense: they only apply to profit over the tax-free amount
 function taxRates(profitMonth){ const R=RULES, yr=Math.max(0,profitMonth*12), sco=state.setup.region==='sco';
   const it=sco?'Scottish income tax (19% to 48%)':yr>R.higherStart?`${pc0(R.basic)} then ${pc0(R.higher)} income tax`:`${pc0(R.basic)} income tax`;
@@ -738,15 +738,25 @@ function taxRates(profitMonth){ const R=RULES, yr=Math.max(0,profitMonth*12), sc
   return `${it} and ${ni} on profit over ${gbp0(R.pa)}`; }
 const pc0=v=>`${Math.round(v*100)}%`;
 function taxBox(profitMonth){ const a=setAside(profitMonth);
-  return statBox('Put aside for tax',a.all>0?pctTxt(a.all):'Nothing',a.all>0?`of all your profit, about ${gbp0(a.month)} a month. That is ${taxRates(profitMonth)}${a.loan>0?`, plus ${pctTxt(a.loan)} student loan`:''}.`:`Your profit is under the ${gbp0(RULES.pa)} tax-free amount at this level`,'','sl-tax'); }
+  return statBox('Put aside for tax',a.all>0?pctTxt(a.all):'Nothing',a.all>0?`of all your profit, about ${gbp0(a.month)} a month. That is ${taxRates(profitMonth)}${a.loan>0?`, plus ${pctTxt(a.loan)} student loan`:''}.`:`Your profit is under the ${gbp0(RULES.pa)} tax-free amount at this level`,'','sl-tax','tax'); }
 function targetBoxes(c){ const s=state.setup, T=W().many, anyPrice=c.treatments.some(t=>+t.price>0), p=anyPrice?c.planNow:c.planSug, tax=taxBox(profitHourOf(s)*fullHours(c));
   if(!(+s.takeHome>0)||!p) return `<div class="grid2">${tax}</div><p class="small muted">${!(+s.takeHome>0)?`Type what you want to take home to see how many ${T} you need to do.`:`Add your prices to see how many ${T} you need to do.`}</p>`;
   const tg=Math.ceil(p.target), h=hoursNeeded(c,p), over=h.open>0&&h.need>h.open, now=Math.round(c.bookingsMonth), more=tg-now;
   return `<div class="grid2">
-    ${statBox(`${T[0].toUpperCase()+T.slice(1)} a month`,tg,`about ${Math.ceil(p.perWeek)} a week, ${Math.ceil(p.perDay)} a day`)}
-    ${h.open>0?statBox('Hours a week',Math.round(h.need),over?`more than the ${nf(Math.round(h.open))} hours ${h.team>0?'you and your team work':'you are open'}`:`of the ${nf(Math.round(h.open))} hours ${h.team>0?'you and your team work':'you are open'}`,over?'warn':''):''}
-    ${c.bookingsMonth>0?statBox('You do now',`${now} a month`,more>0?`about ${more} more needed`:'that is enough',more>0?'':'ok'):''}
+    ${statBox(`${T[0].toUpperCase()+T.slice(1)} a month`,tg,`about ${Math.ceil(p.perWeek)} a week, ${Math.ceil(p.perDay)} a day`,'','','cal')}
+    ${h.open>0?statBox('Hours a week',Math.round(h.need),over?`more than the ${nf(Math.round(h.open))} hours ${h.team>0?'you and your team work':'you are open'}`:`of the ${nf(Math.round(h.open))} hours ${h.team>0?'you and your team work':'you are open'}`,over?'warn':'','','hours'):''}
+    ${c.bookingsMonth>0?statBox('You do now',`${now} a month`,more>0?`about ${more} more needed`:'that is enough',more>0?'':'ok','','chart'):''}
     ${tax}</div>
     ${over?`<div class="notice warn">That is more hours than you work. To get there you would need higher prices, longer hours or lower costs.</div>`:''}`; }
 if(typeof document!=='undefined'&&document.head&&document.head.insertAdjacentHTML) document.head.insertAdjacentHTML('beforeend','<style>.stat.warn{background:var(--warn-soft)}.stat.warn .value{color:var(--warn)}.stat.ok .value{color:var(--ok)}</style>');
 UNDOABLE.add('sl-sug');
+
+// ===================== the look: greeting header and icon tiles =====================
+const ICO={clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',wallet:'<rect x="3" y="6" width="18" height="13" rx="3"/><path d="M16 12.5h2M3 9h18"/>',cal:'<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  chart:'<path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/>',tax:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',hours:'<path d="M5 3h14M5 21h14M7 3c0 5 10 5 10 9s-10 4-10 9M17 3c0 5-10 5-10 9"/>'};
+const icoTile=k=>ICO[k]?`<span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24">${ICO[k]}</svg></span>`:'';
+const greet=()=>{ const h=new Date().getHours(); return h<12?'Good morning':h<18?'Good afternoon':'Good evening'; };
+const applyBrandBeforeHello=applyBrand;
+applyBrand=function(){ applyBrandBeforeHello(); const h=typeof document!=='undefined'&&document.getElementById('brandhead'); if(!h) return;
+  const b=state.setup.brand||{}, nm=b.businessName||'Know Your Worth', ini=nm.split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+  h.innerHTML=`<div class="hello"><span class="avatar">${b.logo?`<img src="${b.logo}" alt="">`:b.businessName?esc(ini):"£"}</span><div><small>${b.businessName?greet():"Welcome to"}</small><b>${esc(nm)}</b></div></div>`; };

@@ -2,7 +2,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
 <style>
 /* Layout: phone-first app shell. Sticky header + tab strip, one column of working cards, numbers in mono. Palette: gel-polish berry on a cool lilac-grey, teal for money that is fine, amber and red for flags. */
 :root{
@@ -164,6 +164,80 @@ details summary{cursor:pointer;font-weight:700}
 .mday.today{border:2px solid var(--accent);background:var(--accent-soft)}
 .mday .c{color:var(--accent);font-weight:800;font-size:.78rem}
 .mday .o{font-size:.62rem;color:var(--muted)}
+</style>
+<style id="kyw-theme">
+/* The look: one clean font, light grey page, white rounded cards with soft edges, pill buttons, figures with small icon tiles. Placed after the base styles so it wins. */
+:root{
+  --bg:#f3f3f6; --surface:#ffffff; --sunk:#f6f6f9; --ink:#111116; --muted:#71717d; --line:#ebebf0;
+  --ok:#14915f; --ok-soft:#e3f5ec; --warn:#b26a00; --warn-soft:#fdf1dc; --bad:#d23b31; --bad-soft:#fde8e6;
+  --display:"Plus Jakarta Sans","Segoe UI",system-ui,sans-serif; --body:"Plus Jakarta Sans","Segoe UI",system-ui,sans-serif; --mono:var(--body);
+  --r:20px; --shadow:0 1px 2px rgba(17,17,22,.04),0 4px 16px rgba(17,17,22,.04);
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e0e11; --surface:#18181d; --sunk:#202027; --ink:#f2f2f5; --muted:#9a9aa6; --line:#26262e;
+  --ok:#3fcf8e; --ok-soft:#12291f; --warn:#f2b24e; --warn-soft:#2e2414; --bad:#ff7a70; --bad-soft:#331a18; --shadow:none}}
+:root[data-theme="dark"]{
+  --bg:#0e0e11; --surface:#18181d; --sunk:#202027; --ink:#f2f2f5; --muted:#9a9aa6; --line:#26262e;
+  --ok:#3fcf8e; --ok-soft:#12291f; --warn:#f2b24e; --warn-soft:#2e2414; --bad:#ff7a70; --bad-soft:#331a18; --shadow:none}
+body{font-feature-settings:"tnum" 1;letter-spacing:-.005em}
+.num,.stat .value,.live .num{font-family:var(--body);font-variant-numeric:tabular-nums}
+h2,.q{font-weight:800;letter-spacing:-.025em}
+h3{font-weight:700;letter-spacing:-.015em}
+/* header: greeting and round badge, no heavy rule */
+header.top{background:var(--bg);border-bottom:0}
+body::before{background:var(--bg)}
+.brand{padding-block:14px 10px}
+.hello{display:flex;align-items:center;gap:12px;min-width:0}
+.hello .avatar{width:44px;height:44px;border-radius:50%;flex:none;display:grid;place-items:center;background:var(--accent);color:var(--accent-ink);font-weight:800;font-size:1rem;overflow:hidden}
+.hello .avatar img{width:100%;height:100%;object-fit:cover}
+.hello small{display:block;color:var(--muted);font-size:.8rem;font-weight:500}
+.hello b{display:block;font-size:1.1rem;font-weight:800;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* top tabs: one segmented switch */
+nav.tabs{background:var(--sunk);border-radius:999px;padding:4px;gap:2px;margin-bottom:8px;width:max-content;max-width:100%}
+nav.tabs button{padding:8px 16px;font-weight:600}
+nav.tabs button[aria-current="page"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(17,17,22,.12)}
+/* bottom menu: a floating rounded bar */
+.bottomnav{left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));border:1px solid var(--line);border-radius:26px;box-shadow:0 8px 30px rgba(17,17,22,.12);padding:6px}
+.bottomnav button{border-radius:18px;padding:8px 2px;font-weight:600}
+.bottomnav button[aria-current="page"]{background:var(--accent-soft);color:var(--accent)}
+main{padding-block:8px 130px}
+/* cards and boxes */
+.card,.fold,.rowbtn{border-radius:var(--r);border:1px solid var(--line);box-shadow:var(--shadow)}
+.card{padding:18px;gap:14px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:14px;gap:4px;box-shadow:var(--shadow)}
+.card .stat{box-shadow:none;background:var(--sunk);border-color:transparent}
+.stat .label{text-transform:none;letter-spacing:0;font-size:.82rem;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:8px}
+.stat .value{font-size:1.65rem;font-weight:800;letter-spacing:-.02em;line-height:1.15}
+.stat .ico{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;background:var(--surface);color:var(--ink);border:1px solid var(--line);flex:none}
+.stat .ico svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.stat.hero{background:var(--accent);border-color:transparent}
+.stat.hero .label,.stat.hero .small,.stat.hero .value{color:var(--accent-ink)!important}
+.stat.hero .ico{background:rgba(255,255,255,.18);border-color:transparent;color:var(--accent-ink)}
+/* inputs: soft filled fields */
+input,select,textarea{background:var(--sunk);border:1.5px solid transparent;border-radius:14px;padding:12px 14px}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);background:var(--surface);outline:none}
+.money-in::before{left:14px}
+.money-in input{padding-left:28px}
+input[type="range"]{background:transparent;padding:0;border:0}
+input[type="checkbox"]{border-radius:6px}
+/* buttons and chips: pills */
+.btn{border-radius:999px;padding:13px 20px;min-height:48px}
+.btn.small{padding:8px 14px;min-height:36px}
+.btn.ghost{background:var(--surface);border:1.5px solid var(--line)}
+.iconbtn{border-radius:50%}
+.chip{border:0;background:var(--sunk);padding:8px 14px}
+.chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.choice{border-radius:18px;border:1.5px solid var(--line);background:var(--surface)}
+.choice[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+/* notices and pills */
+.notice{border-radius:16px;border:0}
+.live{border-radius:16px}
+.pill{padding:4px 10px;font-weight:700}
+.part{letter-spacing:.04em}
+.item{border-color:var(--line)}
+.progress{height:8px;border-radius:999px}
+.progress i{border-radius:999px}
+nav.tabs:empty{display:none}
 </style>
 
 <header class="top">
@@ -3460,8 +3534,8 @@ function priceCard(c,plan){ const s=state.setup, r=profitHourOf(s), hrs=Math.rou
   return `<section class="card"><h3>Your prices and target</h3>
     <p class="small muted">Slide to set what you earn for each hour with a ${W().cust}, or type what you want to take home each month. The two move together. All the way left just covers your costs.</p>
     <label class="field"><span id="sl-val" style="font-weight:700">${slideLabel(r)}</span><input id="sl-profit" type="range" min="0" max="${slideMax(r)}" step="1" value="${esc(Math.round(r))}" data-slide="1" style="accent-color:var(--accent);width:100%" aria-label="What you earn each hour on top of your costs"></label>
-    <div class="grid2"><div class="stat"><span class="label">Each hour with a ${W().cust}</span><span class="value" id="sl-hour">${gbp0(c.overheadRate+r)}</span><span class="small muted" id="sl-hour-sub">${gbp0(c.overheadRate)} for running costs, ${gbp0(r)} for you</span></div>
-      <div class="stat"><span class="label">Take home a month</span><span class="value" id="sl-home">${gbp0(takeHomeAt(r,c))}</span><span class="small muted">working about ${hrs} hours with ${W().cust}s a month</span></div></div>
+    <div class="grid2"><div class="stat hero"><span class="label">${icoTile('clock')}Each hour with a ${W().cust}</span><span class="value" id="sl-hour">${gbp0(c.overheadRate+r)}</span><span class="small muted" id="sl-hour-sub">${gbp0(c.overheadRate)} for running costs, ${gbp0(r)} for you</span></div>
+      <div class="stat"><span class="label">${icoTile('wallet')}Take home a month</span><span class="value" id="sl-home">${gbp0(takeHomeAt(r,c))}</span><span class="small muted">working about ${hrs} hours with ${W().cust}s a month</span></div></div>
     ${moneyField('tg-takeHome','Or type what you want to take home each month','',Math.round(+s.takeHome||0),'data-set="takeHome"')}
     ${targetBoxes(c)}
     <h3 style="font-size:1rem;margin-top:6px">Your prices at this rate</h3>
@@ -3736,7 +3810,7 @@ function dueReminders(){ const tm=addDays(todayStr(),1); return state.bookings.f
 function remindersBlock(){ const due=dueReminders(); if(!due.length) return '';
   return `<span class="small" style="font-weight:600">Reminders to send for tomorrow</span><div class="list">${due.map(b=>{ const cl=clientById(b.clientId), msg=encodeURIComponent(reminderText(b)), wa=cl?waNumber(cl.phone):'', ph=cl&&cl.phone?String(cl.phone).replace(/\s/g,''):'';
     return `<div class="item" style="flex-wrap:wrap"><div class="grow"><p style="white-space:normal"><b>${fmtT(b.time)}</b> ${esc(cl?cl.name:'No name')}</p><p class="small muted">${esc(bookingLabel(b))}</p></div>
-      ${wa?`<a class="btn small" style="text-decoration:none" href="https://wa.me/${wa}?text=${msg}" target="_blank" rel="noopener noreferrer" data-act="rem-sent" data-id="${b.id}">WhatsApp</a><a class="btn small ghost" style="text-decoration:none" href="sms:${esc(ph)}?&body=${msg}" data-act="rem-sent" data-id="${b.id}">Text</a>`:`<span class="small muted">Add their mobile number under ${W().cust==='client'?'Clients':'Customers'}</span>`}</div>`; }).join('')}</div>`; }
+      ${wa?`<a class="btn small" style="text-decoration:none" href="https://wa.me/${wa}?text=${msg}" target="_blank" rel="noopener noreferrer" data-act="rem-sent" data-id="${b.id}">WhatsApp</a><a class="btn small ghost" style="text-decoration:none" href="sms:${esc(ph)}?&body=${msg}" data-act="rem-sent" data-id="${b.id}">Text</a>`:`<span class="small muted" style="flex-basis:100%">Add their mobile number under ${W().cust==='client'?'Clients':'Customers'}</span>`}</div>`; }).join('')}</div>`; }
 const todayCardBeforeRem=todayCard;
 todayCard=function(){ const h=todayCardBeforeRem(), r=remindersBlock(); if(!r) return h; const i=h.lastIndexOf('</article>'); return h.slice(0,i)+r+h.slice(i); };
 
@@ -3765,7 +3839,7 @@ document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.close
 function hoursNeeded(c,p){ const team=(state.setup.staff||[]).reduce((a,m)=>a+(+m.hours||0),0), open=openMinutesWeek()/60+team;
   const mix=c.treatments.filter(t=>(+t.perWeek||0)>0), list=mix.length?mix:c.treatments.filter(t=>!t.addon), w=t=>mix.length?(+t.perWeek||0):1;
   const tot=list.reduce((a,t)=>a+w(t),0)||1, avgH=list.reduce((a,t)=>a+w(t)*t.mins,0)/tot/60; return {need:p.perWeek*avgH, open, team}; }
-const statBox=(label,value,sub,cls,id)=>`<div class="stat${cls?' '+cls:''}"${id?` id="${id}"`:''}><span class="label">${label}</span><span class="value">${value}</span>${sub?`<span class="small muted">${sub}</span>`:''}</div>`;
+const statBox=(label,value,sub,cls,id,ico)=>`<div class="stat${cls?' '+cls:''}"${id?` id="${id}"`:''}><span class="label">${ico?icoTile(ico):''}${label}</span><span class="value">${value}</span>${sub?`<span class="small muted">${sub}</span>`:''}</div>`;
 // the set rates, so the percentage makes sense: they only apply to profit over the tax-free amount
 function taxRates(profitMonth){ const R=RULES, yr=Math.max(0,profitMonth*12), sco=state.setup.region==='sco';
   const it=sco?'Scottish income tax (19% to 48%)':yr>R.higherStart?`${pc0(R.basic)} then ${pc0(R.higher)} income tax`:`${pc0(R.basic)} income tax`;
@@ -3773,18 +3847,28 @@ function taxRates(profitMonth){ const R=RULES, yr=Math.max(0,profitMonth*12), sc
   return `${it} and ${ni} on profit over ${gbp0(R.pa)}`; }
 const pc0=v=>`${Math.round(v*100)}%`;
 function taxBox(profitMonth){ const a=setAside(profitMonth);
-  return statBox('Put aside for tax',a.all>0?pctTxt(a.all):'Nothing',a.all>0?`of all your profit, about ${gbp0(a.month)} a month. That is ${taxRates(profitMonth)}${a.loan>0?`, plus ${pctTxt(a.loan)} student loan`:''}.`:`Your profit is under the ${gbp0(RULES.pa)} tax-free amount at this level`,'','sl-tax'); }
+  return statBox('Put aside for tax',a.all>0?pctTxt(a.all):'Nothing',a.all>0?`of all your profit, about ${gbp0(a.month)} a month. That is ${taxRates(profitMonth)}${a.loan>0?`, plus ${pctTxt(a.loan)} student loan`:''}.`:`Your profit is under the ${gbp0(RULES.pa)} tax-free amount at this level`,'','sl-tax','tax'); }
 function targetBoxes(c){ const s=state.setup, T=W().many, anyPrice=c.treatments.some(t=>+t.price>0), p=anyPrice?c.planNow:c.planSug, tax=taxBox(profitHourOf(s)*fullHours(c));
   if(!(+s.takeHome>0)||!p) return `<div class="grid2">${tax}</div><p class="small muted">${!(+s.takeHome>0)?`Type what you want to take home to see how many ${T} you need to do.`:`Add your prices to see how many ${T} you need to do.`}</p>`;
   const tg=Math.ceil(p.target), h=hoursNeeded(c,p), over=h.open>0&&h.need>h.open, now=Math.round(c.bookingsMonth), more=tg-now;
   return `<div class="grid2">
-    ${statBox(`${T[0].toUpperCase()+T.slice(1)} a month`,tg,`about ${Math.ceil(p.perWeek)} a week, ${Math.ceil(p.perDay)} a day`)}
-    ${h.open>0?statBox('Hours a week',Math.round(h.need),over?`more than the ${nf(Math.round(h.open))} hours ${h.team>0?'you and your team work':'you are open'}`:`of the ${nf(Math.round(h.open))} hours ${h.team>0?'you and your team work':'you are open'}`,over?'warn':''):''}
-    ${c.bookingsMonth>0?statBox('You do now',`${now} a month`,more>0?`about ${more} more needed`:'that is enough',more>0?'':'ok'):''}
+    ${statBox(`${T[0].toUpperCase()+T.slice(1)} a month`,tg,`about ${Math.ceil(p.perWeek)} a week, ${Math.ceil(p.perDay)} a day`,'','','cal')}
+    ${h.open>0?statBox('Hours a week',Math.round(h.need),over?`more than the ${nf(Math.round(h.open))} hours ${h.team>0?'you and your team work':'you are open'}`:`of the ${nf(Math.round(h.open))} hours ${h.team>0?'you and your team work':'you are open'}`,over?'warn':'','','hours'):''}
+    ${c.bookingsMonth>0?statBox('You do now',`${now} a month`,more>0?`about ${more} more needed`:'that is enough',more>0?'':'ok','','chart'):''}
     ${tax}</div>
     ${over?`<div class="notice warn">That is more hours than you work. To get there you would need higher prices, longer hours or lower costs.</div>`:''}`; }
 if(typeof document!=='undefined'&&document.head&&document.head.insertAdjacentHTML) document.head.insertAdjacentHTML('beforeend','<style>.stat.warn{background:var(--warn-soft)}.stat.warn .value{color:var(--warn)}.stat.ok .value{color:var(--ok)}</style>');
 UNDOABLE.add('sl-sug');
+
+// ===================== the look: greeting header and icon tiles =====================
+const ICO={clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',wallet:'<rect x="3" y="6" width="18" height="13" rx="3"/><path d="M16 12.5h2M3 9h18"/>',cal:'<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  chart:'<path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/>',tax:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',hours:'<path d="M5 3h14M5 21h14M7 3c0 5 10 5 10 9s-10 4-10 9M17 3c0 5-10 5-10 9"/>'};
+const icoTile=k=>ICO[k]?`<span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24">${ICO[k]}</svg></span>`:'';
+const greet=()=>{ const h=new Date().getHours(); return h<12?'Good morning':h<18?'Good afternoon':'Good evening'; };
+const applyBrandBeforeHello=applyBrand;
+applyBrand=function(){ applyBrandBeforeHello(); const h=typeof document!=='undefined'&&document.getElementById('brandhead'); if(!h) return;
+  const b=state.setup.brand||{}, nm=b.businessName||'Know Your Worth', ini=nm.split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+  h.innerHTML=`<div class="hello"><span class="avatar">${b.logo?`<img src="${b.logo}" alt="">`:b.businessName?esc(ini):"£"}</span><div><small>${b.businessName?greet():"Welcome to"}</small><b>${esc(nm)}</b></div></div>`; };
 
 render();
 </script>
