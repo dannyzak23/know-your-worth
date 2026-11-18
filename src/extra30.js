@@ -192,3 +192,12 @@ console.log('own price tests: fails',fails,'render errs',errs); }
 { fails=0; state=exampleState(); ok(/Light or dark/.test(brandEditor())&&/Match my phone/.test(brandEditor()),'branding offers light, dark or match my phone');
 state.setup.theme='dark'; applyTheme(); ok(!document.documentElement.dataset||document.documentElement.dataset.theme==='dark','dark mode sets the page to dark'); state.setup.theme='auto'; applyTheme(); ok(!document.documentElement.dataset||!document.documentElement.dataset.theme,'match my phone clears it');
 console.log('theme tests: fails',fails,'render errs',errs); }
+// ---- AI helper ----
+{ fails=0; state=exampleState(); const T=n=>AI_TOOLS.find(t=>t.name===n);
+const sm=T('app_summary').execute(); ok(sm.treatments.length===state.treatments.length&&typeof sm.profit==='number','summary gives the AI her figures');
+const t0=state.treatments[0]; const r=T('add_booking').execute({date:addDays(todayStr(),3),time:'14:00',treatment:t0.name.toLowerCase(),client:'Rosa New'}); ok(state.bookings.some(b=>b.notes==='Added by the AI helper'&&b.time==='14:00')&&state.clients.some(c=>c.name==='Rosa New'),'AI can add a booking and a new client: '+r.added);
+let thrown=false; try{ T('add_booking').execute({date:todayStr(),time:'10:00',treatment:'zzz'}); }catch(_){ thrown=true; } ok(thrown,'unknown treatment is refused');
+const n0=state.expenses.length; T('add_money_out').execute({who:'BT',amount:-40,category:'Phone, software and office'}).then?0:0; ok(state.expenses.length===n0+1&&state.expenses[state.expenses.length-1].amount===40,'AI can add money out, always positive');
+T('set_price').execute({treatment:t0.name,price:42}); ok(t0.price===42,'AI can change a price');
+ok(T('list_bookings').execute({from:todayStr(),to:addDays(todayStr(),7)}).some(b=>b.client==='Rosa New'),'AI can read bookings');
+console.log('AI tests: fails',fails,'render errs',errs); }

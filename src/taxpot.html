@@ -3889,5 +3889,78 @@ brandEditor=function(){ const h=brandEditorBeforeTheme(), a='<label class="field
 document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.closest('[data-act="theme-toggle"]'); if(!el) return; state.setup.theme=isDark()?'light':'dark'; save(); applyBrand(); render(); });
 document.addEventListener('change',e=>{ const el=e.target; if(!el.dataset||!el.dataset.themesel) return; state.setup.theme=el.value; save(); applyBrand(); render(); });
 
+// ===================== AI helper: a chat that can read and add to her records, with photos and files =====================
+// It uses Claude through the page's 'sample' ability when opened as the Claude artifact. On the public web address
+// there is no AI service yet, so the screen says so. shortcut: no AI on the web link, upgrade when the shared backend exists (phase 6).
+let ai={open:false,msgs:[],files:[],busy:false,engine:undefined,undo:null};
+async function aiEngine(){ if(ai.engine!==undefined) return ai.engine;
+  try{ ai.engine=(typeof window!=='undefined'&&window.claude&&typeof window.claude.use==='function')?await window.claude.use('sample'):null; }catch(_){ ai.engine=null; } return ai.engine; }
+const findTreat=n=>{ const q=String(n||'').toLowerCase().trim(); return state.treatments.find(t=>t.name.toLowerCase()===q)||state.treatments.find(t=>t.name.toLowerCase().includes(q)||q.includes(t.name.toLowerCase())); };
+const findClient=n=>{ const q=String(n||'').toLowerCase().trim(); return q?state.clients.find(c=>c.name.toLowerCase()===q)||state.clients.find(c=>c.name.toLowerCase().includes(q)):null; };
+const isoDate=d=>/^\d{4}-\d{2}-\d{2}$/.test(String(d||''))?d:todayStr();
+// what the AI can do in the app; each returns a short result it reads back
+const AI_TOOLS=[
+ {name:'app_summary',description:'Get the business overview: treatments with price, suggested price, minutes; running costs a month; hourly target; take-home target; this tax year money in, money out and profit; tax to put aside.',
+  execute:()=>{ const c=compute(state), s=state.setup, ty=taxYearOf(todayStr()), sm=taxYearSummary(state,ty);
+    return {business:(s.brand||{}).businessName||'', treatments:c.treatments.map(t=>({name:t.name,price:+t.price||null,suggested:t.suggested,breakEven:+t.minimum.toFixed(2),minutes:t.mins})), runningCostsMonth:Math.round(c.overheads), earnPerHourOnTop:c.profitRate, takeHomeTargetMonth:+s.takeHome||0,
+      taxYear:tyLabel(ty), moneyIn:sm.income, moneyOut:sm.expenses, profit:sm.profit, estimatedTaxAndNI:Math.round(sm.tax), clients:state.clients.length}; }},
+ {name:'list_bookings',description:'List bookings between two dates (YYYY-MM-DD).',inputSchema:{type:'object',properties:{from:{type:'string'},to:{type:'string'}}},
+  execute:i=>state.bookings.filter(b=>b.date>=(i.from||todayStr())&&b.date<=(i.to||addDays(todayStr(),7))).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(b=>({date:b.date,time:b.time,treatment:bookingLabel(b),client:(clientById(b.clientId)||{}).name||'',price:+b.price,status:b.status}))},
+ {name:'add_booking',description:'Add a booking. Treatment must be one of hers. Creates the client if new.',inputSchema:{type:'object',properties:{date:{type:'string'},time:{type:'string',description:'HH:MM 24-hour'},treatment:{type:'string'},client:{type:'string'}},required:['date','time','treatment']},
+  execute:i=>{ const t=findTreat(i.treatment); if(!t) throw Error('No treatment called '+i.treatment); let cl=findClient(i.client); if(!cl&&i.client){ cl={id:uid(),name:String(i.client).trim(),patchTests:[]}; state.clients.push(cl); }
+    const d={date:isoDate(i.date),time:/^\d{1,2}:\d{2}$/.test(i.time)?i.time.padStart(5,'0'):'10:00',staffId:'me',serviceId:t.id,addons:[]}; const b={id:uid(),...d,clientId:cl?cl.id:'',mins:bkMins(d),price:bkAutoPrice(d),deposit:0,notes:'Added by the AI helper',status:'booked'};
+    const w=bkWarnings({...d,clientId:b.clientId}); state.bookings.push(b); return {added:`${t.name} on ${b.date} at ${b.time}${cl?' for '+cl.name:''}`,warnings:w}; }},
+ {name:'add_money_out',description:'Record a business expense. If she attached a receipt photo, give its number (1 for the first attachment) as photo.',inputSchema:{type:'object',properties:{date:{type:'string'},who:{type:'string'},amount:{type:'number'},category:{type:'string',enum:CATEGORIES},photo:{type:'number'}},required:['amount','who']},
+  execute:async i=>{ const e={id:uid(),date:isoDate(i.date),supplier:String(i.who||'').slice(0,80),amount:Math.abs(+i.amount||0),category:CATEGORIES.includes(i.category)?i.category:'Training and other costs',receiptId:null};
+    const f=ai.files[(+i.photo||0)-1]; if(f&&/^image\//.test(f.type)){ try{ e.receiptId=uid(); await putReceipt(e.receiptId,await shrink(f.blob)); }catch(_){ e.receiptId=null; } }
+    state.expenses.push(e); return {added:`${gbp(e.amount)} to ${e.supplier} on ${e.date} (${e.category})${e.receiptId?', with the photo':''}`}; }},
+ {name:'add_money_in',description:'Record money coming in.',inputSchema:{type:'object',properties:{date:{type:'string'},amount:{type:'number'},what:{type:'string'},method:{type:'string',enum:['Card','Cash','Bank transfer','App payout']}},required:['amount']},
+  execute:i=>{ const x={id:uid(),date:isoDate(i.date),desc:String(i.what||'Takings').slice(0,80),amount:Math.abs(+i.amount||0),method:i.method||'Card'}; state.income.push(x); return {added:`${gbp(x.amount)} in on ${x.date}`}; }},
+ {name:'set_price',description:'Change what she charges for a treatment.',inputSchema:{type:'object',properties:{treatment:{type:'string'},price:{type:'number'}},required:['treatment','price']},
+  execute:i=>{ const t=findTreat(i.treatment); if(!t) throw Error('No treatment called '+i.treatment); t.price=Math.max(0,+i.price||0); return {changed:`${t.name} is now ${gbp(t.price)}`}; }},
+ {name:'remember_for_client',description:'Save a note to remember for a client next time, shown on their bookings.',inputSchema:{type:'object',properties:{client:{type:'string'},note:{type:'string'}},required:['client','note']},
+  execute:i=>{ const c=findClient(i.client); if(!c) throw Error('No client called '+i.client); addReminder(c.id,i.note); return {saved:`For ${c.name}: ${i.note}`}; }}];
+const AI_BRIEF=()=>`You are the helper inside Know Your Worth, a UK phone app for a self-employed beauty, hair or massage business. Today is ${todayStr()}. Use the tools to look things up and to make changes she asks for; do not invent figures. Before adding or changing anything she did not clearly ask for, ask first. Money is in pounds. Write in plain British English, short sentences, no jargon. Tax figures are estimates, not tax advice.`;
+const aiFmt=t=>esc(t).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>');
+function renderAi(){ const o=document.getElementById('overlay'); if(!ai.open){ if(o.dataset.ai){ o.hidden=true; delete o.dataset.ai; } return; } o.dataset.ai='1';
+  const none=ai.engine===null, sugg=['How am I doing this tax year?','Add a £40 phone bill for today','What should I charge for my most popular treatment?','Read this receipt and add it'];
+  o.innerHTML=`<div class="card aichat" style="max-width:560px;width:100%;height:min(92vh,760px);padding:0;gap:0;overflow:hidden">
+    <div class="treat-head" style="padding:14px 16px;border-bottom:1px solid var(--line)"><div class="hello"><span class="avatar" style="width:36px;height:36px;font-size:.9rem">AI</span><div><b>Ask AI</b><small>Reads and adds to your records</small></div></div><button type="button" class="iconbtn" aria-label="Close" data-act="ai-close">✕</button></div>
+    <div id="ai-msgs" style="flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:10px">
+      ${none?`<div class="notice info"><b>The AI helper is not switched on here yet.</b> It works in the Claude version of the app now. On this web address it needs Know Your Worth's own AI service, which is coming in a later update.</div>`:''}
+      ${!ai.msgs.length&&!none?`<p class="small muted">Ask about your prices, money or bookings, or ask it to add something. You can attach photos of receipts and invoices, or a spreadsheet.</p><div class="chips">${sugg.map(s=>`<button type="button" class="chip" data-act="ai-sugg" data-v="${esc(s)}">${esc(s)}</button>`).join('')}</div>`:''}
+      ${ai.msgs.map(m=>`<div class="aimsg ${m.role}">${m.files&&m.files.length?`<div class="small" style="opacity:.8">📎 ${m.files.map(esc).join(', ')}</div>`:''}${m.role==='assistant'?aiFmt(m.text||'…'):esc(m.text)}${m.err?`<div class="small" style="color:var(--bad)">${esc(m.err)}</div>`:''}</div>`).join('')}
+      ${ai.undo&&!ai.busy?`<button type="button" class="btn small ghost" style="align-self:flex-start" data-act="ai-undo">Undo what the AI changed</button>`:''}</div>
+    <div style="border-top:1px solid var(--line);padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+      ${ai.files.length?`<div class="chips">${ai.files.map((f,i)=>`<span class="chip" style="display:flex;gap:6px;align-items:center">${i+1}. ${esc(f.name.slice(0,24))}<button type="button" class="linkish" aria-label="Remove ${esc(f.name)}" data-act="ai-unfile" data-i="${i}">✕</button></span>`).join('')}</div>`:''}
+      <div class="row" style="flex-wrap:nowrap;gap:8px;align-items:flex-end"><label class="themebtn" style="cursor:pointer" aria-label="Attach a photo or file"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.5l-8.5 8.5a5 5 0 0 1-7-7L14 5.5a3.5 3.5 0 0 1 5 5L10.5 19a2 2 0 0 1-3-3L15 8.5"/></svg><input type="file" multiple accept="image/*,.txt,.csv,.md,text/plain,text/csv" data-aifile="1" hidden ${none?'disabled':''}></label>
+        <textarea id="ai-input" rows="1" placeholder="${none?'Not available here yet':'Ask or tell it something'}" style="flex:1;resize:none;max-height:120px" ${none?'disabled':''}></textarea>
+        <button type="button" class="btn" style="min-height:40px;padding:8px 16px" data-act="ai-send" ${none||ai.busy?'disabled':''}>${ai.busy?'…':'Send'}</button></div></div></div>`;
+  o.hidden=false; const m=document.getElementById('ai-msgs'); if(m) m.scrollTop=m.scrollHeight; }
+async function aiSend(text){ text=String(text||'').trim(); if(!text||ai.busy) return; const eng=await aiEngine(); if(!eng){ renderAi(); return; }
+  const files=ai.files.splice(0), imgs=files.filter(f=>/^image\//.test(f.type)), texts=files.filter(f=>!/^image\//.test(f.type));
+  ai.files=files; // tools may attach these photos to an expense during this reply
+  let content=text; texts.forEach(f=>{ content+=`\n\nAttached file "${f.name}":\n${f.text.slice(0,20000)}`; }); if(imgs.length) content+=`\n\n(${imgs.length} photo${imgs.length>1?'s':''} attached, numbered ${imgs.map((f,i)=>files.indexOf(f)+1).join(', ')}.)`;
+  ai.msgs.push({role:'user',text,files:files.map(f=>f.name)}); const reply={role:'assistant',text:''}; ai.msgs.push(reply); ai.busy=true; const before=JSON.stringify(state); renderAi();
+  const hist=ai.msgs.slice(0,-1).slice(-12).map((m,i,a)=>({role:m.role,content:i===a.length-1?content:(m.text||'…')})); while(hist.length>1&&hist[0].role!=='user') hist.shift(); hist[0]={...hist[0],content:AI_BRIEF()+'\n\n'+hist[0].content};
+  try{ let images=[]; try{ const lim=eng.limits?await eng.limits():null; if(lim&&lim.images) images=imgs.map(f=>f.blob); }catch(_){}
+    const r=await eng(hist,{cache:false,images,tools:AI_TOOLS,onText:({text:t})=>{ reply.text=t; const el=document.querySelector('#ai-msgs .aimsg.assistant:last-of-type'); if(el) el.innerHTML=aiFmt(t); }});
+    reply.text=(r&&r.text)||reply.text||'Done.'; }
+  catch(e){ reply.err=e&&e.code==='not_granted'?'The AI helper was not allowed. You can switch it on in this page\'s permissions.':e&&e.code==='rate_limited'?'Too many questions just now. Try again in a minute.':'Something went wrong. Try again.'; if(e&&e.text) reply.text=e.text; }
+  ai.files=[]; ai.busy=false; if(JSON.stringify(state)!==before){ ai.undo=before; save(); render(); } renderAi(); }
+document.addEventListener('click',async e=>{ const el=e.target.closest&&e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act;
+  if(a==='ai-open'){ ai.open=true; renderAi(); await aiEngine(); renderAi(); const i=document.getElementById('ai-input'); if(i&&!i.disabled) i.focus(); }
+  else if(a==='ai-close'){ ai.open=false; renderAi(); }
+  else if(a==='ai-sugg'){ const i=document.getElementById('ai-input'); if(i){ i.value=el.dataset.v; i.focus(); } }
+  else if(a==='ai-send'){ const i=document.getElementById('ai-input'); aiSend(i&&i.value); }
+  else if(a==='ai-unfile'){ ai.files.splice(+el.dataset.i,1); renderAi(); }
+  else if(a==='ai-undo'&&ai.undo){ state=JSON.parse(ai.undo); ai.undo=null; save(); render(); renderAi(); toast('Put back'); } });
+document.addEventListener('keydown',e=>{ if(e.target&&e.target.id==='ai-input'&&e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); aiSend(e.target.value); } });
+document.addEventListener('change',async e=>{ const el=e.target; if(!el.dataset||!el.dataset.aifile||!el.files) return;
+  for(const f of el.files){ if(ai.files.length>=6) break; if(/^image\//.test(f.type)) ai.files.push({name:f.name,type:f.type,blob:f}); else if(f.size<500000) ai.files.push({name:f.name,type:f.type||'text/plain',text:await f.text()}); else toast(f.name+' is too big'); }
+  renderAi(); });
+try{ const hr=document.getElementById('hdr-right'); if(hr&&!document.getElementById('aibtn')){ hr.insertAdjacentHTML('afterbegin','<button type="button" id="aibtn" class="themebtn" data-act="ai-open" aria-label="Ask AI"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></button>'); }
+  document.head.insertAdjacentHTML('beforeend','<style>.aichat{display:flex;flex-direction:column}.aimsg{max-width:85%;padding:10px 14px;border-radius:18px;line-height:1.45;word-wrap:break-word}.aimsg.user{align-self:flex-end;background:var(--accent);color:var(--accent-ink);border-bottom-right-radius:6px}.aimsg.assistant{align-self:flex-start;background:var(--sunk);border-bottom-left-radius:6px}#brandhead{flex:1;min-width:0}.hello>div{min-width:0}.hello small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#exflag{white-space:nowrap}@media (max-width:420px){#exflag{font-size:.72rem;padding:4px 8px}}</style>'); }catch(_){}
+
 render();
 </script>
