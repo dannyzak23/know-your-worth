@@ -8,6 +8,7 @@ It works out what to charge from what things really cost you, and keeps your bus
 - a diary, client records, consultation forms and reminders
 - money in and out, receipts and bills
 - a rough guide to what to put aside for tax
+- a tax pack for each tax year: a PDF of your Self Assessment figures, spreadsheets of every entry and all your receipt photos, to send to an accountant or a tax app
 - a price list picture for Instagram or your wall
 - a booking link for clients
 
@@ -23,7 +24,14 @@ The tax figures are estimates using 2026/27 UK rates. Check them with HMRC, an a
 
 ## How it is built
 
-The whole app is one HTML file, `index.html`, with no build step and no outside code libraries (only the Google Fonts lettering). Open it in a browser and it runs.
+The whole app is one HTML file, `index.html`, with no build step. Open it in a browser and it runs. The lettering comes from Google Fonts.
+
+Two open-source libraries are built into the file, unchanged, to make the tax pack (they only start when you make one):
+
+- [jsPDF](https://github.com/parallax/jsPDF) 4.2.1, MIT licence, (c) James Hall and yWorks GmbH: makes the PDF summary.
+- [JSZip](https://github.com/Stuk/jszip) 3.10.2, MIT licence (dual MIT or GPLv3), (c) Stuart Knightley and contributors: bundles the pack into one zip file.
+
+Their licence notices are kept at the top of each library inside `index.html`.
 
 ## Licence
 
