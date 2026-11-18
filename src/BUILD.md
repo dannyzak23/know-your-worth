@@ -20,7 +20,7 @@ node --check all.js
 node test30.js
 ```
 
-Every group should end `fails 0 render errs 0`. Then copy the finished page up a level:
+Every group should end `fails 0 render errs 0`. The test run also writes `how-to.md`, the in-app help guide as plain text. Then copy the finished page up a level:
 
 ```
 copy wrapped.html ..\index.html
