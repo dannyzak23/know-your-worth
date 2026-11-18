@@ -428,10 +428,11 @@ function priceCard(c,plan){ const s=state.setup, r=profitHourOf(s), hrs=Math.rou
     <div class="grid2"><div class="stat"><span class="label">Each hour with a ${W().cust}</span><span class="value" id="sl-hour">${gbp0(c.overheadRate+r)}</span><span class="small muted" id="sl-hour-sub">${gbp0(c.overheadRate)} for running costs, ${gbp0(r)} for you</span></div>
       <div class="stat"><span class="label">Take home a month</span><span class="value" id="sl-home">${gbp0(takeHomeAt(r,c))}</span><span class="small muted">working about ${hrs} hours with ${W().cust}s a month</span></div></div>
     ${moneyField('tg-takeHome','Or type what you want to take home each month','',Math.round(+s.takeHome||0),'data-set="takeHome"')}
-    ${plan}
+    ${targetBoxes(c)}
     <h3 style="font-size:1rem;margin-top:6px">Your prices at this rate</h3>
     <div class="list" id="sl-list">${slideRows(r)}</div>
-    <button class="btn" data-act="sl-use">Use these prices</button>
+    <p class="small muted" style="margin:0">Type your own price in any box. 'Use these prices' keeps yours and uses the suggested price for any left empty.</p>
+    <div class="row"><button class="btn" data-act="sl-use">Use these prices</button><button class="btn small ghost" data-act="sl-sug">Set all to suggested</button></div>
     <p class="small muted">The typical UK guide is a rough figure for the whole country, not prices near you.</p></section>`; }
 document.addEventListener('input',e=>{ const el=e.target; if(el.dataset&&el.dataset.slide) slideLive(+el.value); });
 document.addEventListener('change',e=>{ const el=e.target, s=state.setup;
@@ -447,7 +448,10 @@ vPrices=function(){ const s0=state.setup; if(state.treatments.length){ const hom
   const f=tgt.indexOf('</label>',tgt.indexOf('id="tg-takeHome"')), plan=f<0?'':tgt.slice(f+8,tgt.length-10);
   return h.slice(0,a)+priceCard(c,plan)+h.slice(b); };
 document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act;
-  if(a==='sl-use'){ compute(state).treatments.forEach(c=>{ const t=state.treatments.find(x=>x.id===c.id); if(t) t.price=c.suggested; }); save(); render(); toast('Prices updated'); }
+  // 'Use these prices' keeps any price she typed (read from the box too, in case it has not saved yet) and fills empty ones with the suggested price
+  if(a==='sl-use'||a==='sl-sug'){ const sug=a==='sl-sug'; compute(state).treatments.forEach(c=>{ const t=state.treatments.find(x=>x.id===c.id); if(!t) return;
+      const box=document.getElementById('sl-pr-'+c.id), typed=box&&box.value!==''?+box.value:0; t.price=sug?c.suggested:typed>0?typed:+t.price>0?+t.price:c.suggested; });
+    save(); render(); toast(sug?'All prices set to the suggested ones':'Your prices are saved'); }
   else if(a==='undo-ok'){ document.getElementById('undobar').hidden=true; undoSnap=null; clearTimeout(undoTimer); } });
 UNDOABLE.add('sl-use');
 
@@ -573,10 +577,8 @@ quickStep=function(st){ const r=quickStepBeforePersonal(st); if(st.type!=='costq
 const vPricesBeforePersonal=vPrices;
 vPrices=function(){ let h=vPricesBeforePersonal(); const a='<p class="live" id="pn-live">', i=h.indexOf(a);
   if(i>=0) h=h.slice(0,i)+`<details class="fold" data-sec="p-own" ${isOpen('p-own')?'open':''}><summary><span class="grow">Your own outgoings and savings<small>${persMonth(state.setup)>0?`${gbp0(persMonth(state.setup))} a month · tap to change`:'Sets what you need to take home · tap to add'}</small></span></summary><div class="stack">${personalSection()}</div></details>`+h.slice(i);
-  const b='<h3 style="font-size:1rem;margin-top:6px">Your prices at this rate</h3>', j=h.indexOf(b), c=compute(state);
-  if(j>=0) h=h.slice(0,j)+asideLine(profitHourOf(state.setup)*fullHours(c))+h.slice(j);
   return h; };
-document.addEventListener('input',e=>{ const el=e.target; if(!el.dataset||!el.dataset.slide) return; const n=document.getElementById('sl-tax'); if(n) n.outerHTML=asideLine(+el.value*fullHours(compute(state))); });
+document.addEventListener('input',e=>{ const el=e.target; if(!el.dataset||!el.dataset.slide) return; const n=document.getElementById('sl-tax'); if(n) n.outerHTML=taxBox(+el.value*fullHours(compute(state))); });
 
 // ===================== what is left of her wage after her own outgoings and savings =====================
 function leftLine(need,c){ const home=takeHomeAt(profitHourOf(state.setup),c), left=Math.round(home-need);
@@ -723,3 +725,22 @@ document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.close
   else if(a==='wiz-mode'){ s.quickMode=el.dataset.v==='quick'; save(); render(); }
   else if(a==='open-costs'){ openSecs.add('p-costs'); render(); const n=document.querySelector('[data-sec="p-costs"]'); if(n) n.scrollIntoView({block:'start'}); }
   else if(a==='rem-sent'){ const b=state.bookings.find(x=>x.id===el.dataset.id); if(b){ b.reminded=true; save(); setTimeout(render,400); } } });
+
+// ===================== the target as boxes, easy to take in at a glance =====================
+function hoursNeeded(c,p){ const team=(state.setup.staff||[]).reduce((a,m)=>a+(+m.hours||0),0), open=openMinutesWeek()/60+team;
+  const mix=c.treatments.filter(t=>(+t.perWeek||0)>0), list=mix.length?mix:c.treatments.filter(t=>!t.addon), w=t=>mix.length?(+t.perWeek||0):1;
+  const tot=list.reduce((a,t)=>a+w(t),0)||1, avgH=list.reduce((a,t)=>a+w(t)*t.mins,0)/tot/60; return {need:p.perWeek*avgH, open, team}; }
+const statBox=(label,value,sub,cls,id)=>`<div class="stat${cls?' '+cls:''}"${id?` id="${id}"`:''}><span class="label">${label}</span><span class="value">${value}</span>${sub?`<span class="small muted">${sub}</span>`:''}</div>`;
+function taxBox(profitMonth){ const a=setAside(profitMonth);
+  return statBox('Put aside for tax',a.all>0?pctTxt(a.all):'Nothing',a.all>0?`about ${gbp0(a.month)} a month: income tax ${pctTxt(a.tax)}, National Insurance ${pctTxt(a.ni)}${a.loan>0?`, student loan ${pctTxt(a.loan)}`:''}`:'under the tax-free amounts at this level','','sl-tax'); }
+function targetBoxes(c){ const s=state.setup, T=W().many, anyPrice=c.treatments.some(t=>+t.price>0), p=anyPrice?c.planNow:c.planSug, tax=taxBox(profitHourOf(s)*fullHours(c));
+  if(!(+s.takeHome>0)||!p) return `<div class="grid2">${tax}</div><p class="small muted">${!(+s.takeHome>0)?`Type what you want to take home to see how many ${T} you need to do.`:`Add your prices to see how many ${T} you need to do.`}</p>`;
+  const tg=Math.ceil(p.target), h=hoursNeeded(c,p), over=h.open>0&&h.need>h.open, now=Math.round(c.bookingsMonth), more=tg-now;
+  return `<div class="grid2">
+    ${statBox(`${T[0].toUpperCase()+T.slice(1)} a month`,tg,`about ${Math.ceil(p.perWeek)} a week, ${Math.ceil(p.perDay)} a day`)}
+    ${h.open>0?statBox('Hours a week',Math.round(h.need),over?`more than the ${nf(Math.round(h.open))} hours ${h.team>0?'you and your team work':'you are open'}`:`of the ${nf(Math.round(h.open))} hours ${h.team>0?'you and your team work':'you are open'}`,over?'warn':''):''}
+    ${c.bookingsMonth>0?statBox('You do now',`${now} a month`,more>0?`about ${more} more needed`:'that is enough',more>0?'':'ok'):''}
+    ${tax}</div>
+    ${over?`<div class="notice warn">That is more hours than you work. To get there you would need higher prices, longer hours or lower costs.</div>`:''}`; }
+if(typeof document!=='undefined'&&document.head&&document.head.insertAdjacentHTML) document.head.insertAdjacentHTML('beforeend','<style>.stat.warn{background:var(--warn-soft)}.stat.warn .value{color:var(--warn)}.stat.ok .value{color:var(--ok)}</style>');
+UNDOABLE.add('sl-sug');

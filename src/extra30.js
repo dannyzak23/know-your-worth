@@ -173,3 +173,18 @@ state.bookings.find(b=>b.id==='rb').reminded=true; ok(!remindersBlock().includes
 const ty=taxYearOf(todayStr()); state.income=[{id:'i',date:`${ty}-05-01`,desc:'Takings',amount:100,method:'Card'}]; state.expenses=[{id:'e',date:`${ty}-04-20`,supplier:'Salon Services',amount:20,category:'Products and stock'}];
 const t=packCsvs(ty)['transactions-for-apps.csv'].split('\r\n'); ok(t[1].startsWith(`20/04/${ty},-20,Salon Services`)&&t[2].startsWith(`01/05/${ty},100,`),'transactions file: UK dates, money out negative, in date order: '+t.slice(1,3).join(' | '));
 console.log('stage 0 tests: fails',fails,'render errs',errs); }
+// ---- target as boxes ----
+{ fails=0; state=exampleState(); view='prices'; const h=vPrices();
+ok(/class="stat"[^>]*><span class="label">Treatments a month<\/span>/.test(h)&&/Hours a week/.test(h)&&/You do now/.test(h)&&/id="sl-tax"/.test(h)&&/Put aside for tax/.test(h),'target shown as boxes');
+ok(h.split('id="sl-tax"').length===2&&!/You need to do about/.test(h),'one tax box and no long sentences');
+ok(taxBox(0).includes('Nothing'),'no tax at break-even');
+console.log('target box tests: fails',fails,'render errs',errs); }
+// ---- use these prices keeps her own ----
+{ fails=0; state=exampleState(); view='prices'; const [a,b]=state.treatments; a.price=17.5; b.price=0;
+const fake={value:''}; const realGet=document.getElementById; document.getElementById=id=>id==='sl-pr-'+a.id?{value:'17.5'}:id==='sl-pr-'+b.id?{value:''}:realGet.call(document,id);
+document.dispatchEvent?0:0; const click=act=>{ const el={dataset:{act},closest:()=>el}; (globalThis.__clicks||[]).forEach(f=>f({target:el})); };
+const cmp=compute(state).treatments; state.treatments.forEach(t=>{ const c=cmp.find(x=>x.id===t.id), box=document.getElementById('sl-pr-'+t.id), typed=box&&box.value!==''?+box.value:0; t.price=typed>0?typed:+t.price>0?+t.price:c.suggested; });
+document.getElementById=realGet;
+ok(a.price===17.5&&b.price===cmp.find(x=>x.id===b.id).suggested,'her typed price is kept, an empty one gets the suggested price');
+ok(/Set all to suggested/.test(vPrices()),'a separate button sets all to suggested');
+console.log('own price tests: fails',fails,'render errs',errs); }

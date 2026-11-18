@@ -2551,7 +2551,7 @@ ok(c1.team.hours>0 && Math.abs(c1.billable-(c1.hoursBooked+c1.team.hours))<1e-9 
 ok(c1.atCurrent.takings>c0.atCurrent.takings,'team takings are counted');
 console.log('example gel manicure suggested, alone then with Kelly:',c0.treatments[0].suggested,c1.treatments[0].suggested,'| a month before tax',Math.round(c0.atCurrent.profit),Math.round(c1.atCurrent.profit));
 view='prices'; const hp=chk('vPrices',vPrices); ok(/clients who do not turn up/.test(hp)&&/about 2.5% for no-shows/.test(hp),'no-show allowance is explained');
-ok(/yours and your team's/.test(hp)&&/You and your team do about/.test(hp),'prices screen counts the team');
+ok(/yours and your team's/.test(hp)&&/you and your team work/.test(hp),'prices screen counts the team');
 state.setup.staff[0].pay='self'; ok(/team's share/.test(chk('vPrices',vPrices)),'self-employed share is named');
 state.treatments.forEach(t=>t.price=0); view='money'; const hm=chk('vMoney',vMoney); ok(!/\$\{/.test(hm)&&/Add prices on the \w+ tab/.test(hm),'no raw code on the money screen');
 ok(!/Pressure washer|Stand mixer|Power tools|Van finance/.test(JSON.stringify(OVERHEAD_GROUPS))&&/Spray tan machine/.test(JSON.stringify(OVERHEAD_GROUPS)),'only beauty choices in running costs');
@@ -2652,7 +2652,7 @@ ok(/id="st-off-k1"[^>]*value="24"[^>]*data-f="daysOff"/.test(staffEditor())&&/Da
 k.daysOff=12; syncHours(); ok(k.weeksOff===3,'12 days off a four-day week is 3 weeks: '+k.weeksOff);
 const mon3=weekStart(todayStr()); state.holidays=[{id:'h1',staffId:'k1',from:mon3,to:addDays(mon3,6),note:''},{id:'h2',staffId:'me',from:mon3,to:addDays(mon3,6),note:''}]; view='diary'; const hd3=chk('vDiary',vDiary);
 ok(/Kelly<\/b><\/p><p class="small muted">4 days off booked/.test(hd3)&&/You<\/b><\/p><p class="small muted">5 days off booked/.test(hd3),'a week off counts her working days only: Kelly 4, owner 5');
-state=exampleState(); const t9=state.treatments; view='prices'; const hp9=vPrices(), m9=hp9.match(/need to do about <b class="num">(\d+)<\/b>/), d9=hp9.match(/do about (\d+) a month now(?:, so you need about (\d+) more)?/);
+state=exampleState(); const t9=state.treatments; view='prices'; const hp9=vPrices(), m9=hp9.match(/a month<\/span><span class="value">(\d+)<\/span>/), d9=hp9.match(/You do now<\/span><span class="value">(\d+) a month<\/span><span class="small muted">(?:about (\d+) more needed|that is enough)/);
 ok(m9&&d9&&(d9[2]?+d9[2]===+m9[1]-+d9[1]:+d9[1]>=+m9[1]),'the "more" figure is the difference of the two numbers shown: need '+(m9&&m9[1])+', do '+(d9&&d9[1])+', more '+(d9&&d9[2]));
 ok(!/Next you go through each/.test(all_src=require('fs').readFileSync(__filename,'utf8').split('// ---- faults that were already known')[0]),'set-up no longer promises a products step');
 ok(/id="bk-newclient"[^>]*required/.test(all_src),'a new booking needs a name');
