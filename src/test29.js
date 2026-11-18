@@ -2697,7 +2697,7 @@ state=exampleState(); view='more'; let hmo=vMore(); ok(/What you pay regularly/.
 ok(!/id="m-vat"/.test(hmo)&&/What you earn and card fees/.test(hmo)&&/Your target and where you live/.test(hmo)&&/Save a backup file/.test(hmo)&&/Restore from a file/.test(hmo),'More: no VAT tick, plainer names, file backup');
 state.setup.vat=true; ok(/id="m-vat"/.test(vMore()),'someone already VAT registered can still untick it'); state.setup.vat=false;
 openSecs.add('hours'); openSecs.add('brand'); hmo=vMore(); ok(/data-sec="hours" open/.test(hmo)&&/data-sec="brand" open/.test(hmo),'two open sections both stay open'); openSecs.clear();
-const keys=[...vMore().matchAll(/data-sec="([\w-]+)"/g)].map(x=>x[1]), views=['prices','treatments','stock','diary','money','taxyear','clients','more'];
+const keys=[...vMore().matchAll(/data-sec="([\w-]+)"/g)].map(x=>x[1]), views=['prices','treatments','stock','diary','money','taxyear','clients','more','marketing'];
 const badGo=GUIDE.flatMap(([g,qs])=>qs.map(q=>q[2])).filter(Boolean).filter(go=>{ const [v,k]=go.split(':'); return !views.includes(v)||(k&&!keys.includes(k)); }); ok(!badGo.length,'every Take me there goes somewhere real: '+badGo.join(','));
 ok(/data-act="guide-go"/.test(guideCard()),'guide answers have a Take me there button');
 state.setup.staff=[]; ok(!/National Insurance is 15%/.test(staffEditor()),'no employer footnote with nobody added');

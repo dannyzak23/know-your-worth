@@ -201,3 +201,14 @@ const n0=state.expenses.length; T('add_money_out').execute({who:'BT',amount:-40,
 T('set_price').execute({treatment:t0.name,price:42}); ok(t0.price===42,'AI can change a price');
 ok(T('list_bookings').execute({from:todayStr(),to:addDays(todayStr(),7)}).some(b=>b.client==='Rosa New'),'AI can read bookings');
 console.log('AI tests: fails',fails,'render errs',errs); }
+
+// ---- marketing ----
+{ fails=0; state=exampleState(); state.posts=[]; state.setup.mkt={days:[0,2,4]}; const n=planWeeks(2);
+ok(n>=5&&n<=7&&posts().every(p=>[0,2,4].includes(dayIdx(p.date))),'plans posts on her chosen days only: '+n);
+ok(planWeeks(2)===0,'planning again does not double up');
+ok(posts().every(p=>p.idea&&p.caption.includes('#')&&/link in my bio/.test(p.caption)),'each post has an idea, a caption and hashtags');
+ok(new Set(posts().map(p=>p.type)).size>=3,'a mix of post types'); ok(posts().filter(p=>p.type==='Seasonal').length===new Set(posts().filter(p=>p.type==='Seasonal').map(p=>p.idea)).size,'each seasonal idea only once');
+view='marketing'; let e0=errs; try{ let h=vMarketing(); mkOpen=posts()[0].id; h=vMarketing(); if(!/Share to Instagram/.test(h)||!/Mark as posted/.test(h)) throw Error('editor missing'); }catch(x){ errs++; console.log(x.message); } ok(errs===e0,'marketing page and post editor show');
+ok(navGroups().find(g=>g.key==='clients').views.some(v=>v[0]==='marketing'),'Marketing tab sits with Clients');
+posts()[0].date=todayStr(); ok(/Post today/.test(todayCard()),'the Diary reminds her on the day');
+console.log('marketing tests: fails',fails,'render errs',errs); }

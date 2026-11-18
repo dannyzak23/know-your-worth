@@ -72,6 +72,8 @@ Names in 'single quotes' are the words on the buttons.
 
 **Work out what you need to take home.** Tap Prices, then 'Your own outgoings and savings'. Type what you pay at home and what you want to save each month. The app works out what you need to take home and what to charge an hour.
 
+**Plan your social media posts.** Tap Clients, then Marketing at the top. Tick the days you want to post and tap 'Plan my next 2 weeks'. Open a post, add a photo or tap 'Use my price list', check the caption, then tap 'Share to Instagram, Facebook…' on the day. The Diary reminds you.
+
 **Let clients book online.** At the bottom of Diary, under 'Let clients book online', type your mobile number and tap 'Share my booking link'. Send it to clients or put it in your Instagram bio. They pick a treatment and a free time and send you a request. Tap the link in their message to add it to your diary.
 
 **Send a reminder.** Tap Reminder on the booking, then 'Copy message'. Paste it into a text, WhatsApp or email. The app does not send it for you.

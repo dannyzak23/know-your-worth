@@ -1887,7 +1887,7 @@ document.addEventListener('visibilitychange',()=>{ if(document.hidden) hiddenAt=
 // ---------- receipt photos nothing points to any more (kept until now so Undo can bring an expense back) ----------
 async function cleanReceipts(){ if(!state.setup.done) return;
   try{ const d=await db(); const keys=await new Promise((res,rej)=>{ const r=d.transaction('receipts').objectStore('receipts').getAllKeys(); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
-    const used=new Set(state.expenses.map(e=>e.receiptId).filter(Boolean)); keys.forEach(k=>{ if(!used.has(k)) delReceipt(k); }); }catch(e){} }
+    const used=new Set([...state.expenses.map(e=>e.receiptId),...(state.posts||[]).map(p=>p.photo)].filter(Boolean)); /* post photos share the store */ keys.forEach(k=>{ if(!used.has(k)) delReceipt(k); }); }catch(e){} }
 
 // ---------- undo ----------
 const UNDOABLE=new Set(['del-income','del-expense','bk-del','bk-done','bk-noshow','bk-cancel','del-treat','del-product','del-recipe','wiz-rm-prod','hol-del','cl-del','pt-del','trip-del','oh-del','st-del']);
@@ -2842,6 +2842,7 @@ const GUIDE=[
   ['Save a bill or invoice',"Tap Money. Under 'Bills each month', tap the month and pick the photo of the bill. It is saved in Money out, dated in that month. You can also tap 'Add an invoice' beside any running cost.",'money'],
   ['Set your prices with the slider',"On Prices, under 'Your prices and target', slide right to earn more each hour on top of your costs, or type what you want to take home each month. The two move together. All the way left just covers your costs. Tap 'Use these prices' to use them.",'prices'],
   ['Work out what you need to take home',"Tap Prices, then 'Your own outgoings and savings'. Type what you pay at home and what you want to save each month. The app works out what you need to take home and what to charge an hour.",'prices'],
+  ['Plan your social media posts',"Tap Clients, then Marketing at the top. Tick the days you want to post and tap 'Plan my next 2 weeks'. Open a post, add a photo or tap 'Use my price list', check the caption, then tap 'Share to Instagram, Facebook…' on the day. The Diary reminds you.",'marketing'],
   ['Let clients book online',"At the bottom of Diary, under 'Let clients book online', type your mobile number and tap 'Share my booking link'. Send it to clients or put it in your Instagram bio. They pick a treatment and a free time and send you a request. Tap the link in their message to add it to your diary.",'diary'],
   ['Send a reminder',"Tap Reminder on the booking, then 'Copy message'. Paste it into a text, WhatsApp or email. The app does not send it for you.",'diary'],
   ['Record a deposit',"Type it in 'Deposit taken' when you make the booking.",'diary'],
@@ -3961,6 +3962,85 @@ document.addEventListener('change',async e=>{ const el=e.target; if(!el.dataset|
   renderAi(); });
 try{ const hr=document.getElementById('hdr-right'); if(hr&&!document.getElementById('aibtn')){ hr.insertAdjacentHTML('afterbegin','<button type="button" id="aibtn" class="themebtn" data-act="ai-open" aria-label="Ask AI"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></button>'); }
   document.head.insertAdjacentHTML('beforeend','<style>.aichat{display:flex;flex-direction:column}.aimsg{max-width:85%;padding:10px 14px;border-radius:18px;line-height:1.45;word-wrap:break-word}.aimsg.user{align-self:flex-end;background:var(--accent);color:var(--accent-ink);border-bottom-right-radius:6px}.aimsg.assistant{align-self:flex-start;background:var(--sunk);border-bottom-left-radius:6px}#brandhead{flex:1;min-width:0}.hello>div{min-width:0}.hello small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#exflag{white-space:nowrap}@media (max-width:420px){#exflag{font-size:.72rem;padding:4px 8px}}</style>'); }catch(_){}
+
+// ===================== marketing: plan posts, write them, share in one tap =====================
+const posts=()=>state.posts||(state.posts=[]);
+const mktSet=()=>({perWeek:3,days:[1,3,5],...(state.setup.mkt||{})}); // days: 0 Monday .. 6 Sunday
+let mkOpen=null;
+const TAGS={beauty:'#beauty #beautysalon #selfcare #nails #lashes',therapy:'#beautytherapist #facials #skincare #selfcare',hair:'#hair #hairstylist #hairsalon #balayage',barber:'#barber #barbershop #fade #mensgrooming',laser:'#laserhairremoval #smoothskin #beautyclinic',massage:'#massage #massagetherapy #relax #wellbeing'};
+const mkTags=t=>{ const inds=(typeof selInds==='function'?selInds():[]).filter(k=>TAGS[k]); const own=t?'#'+t.name.toLowerCase().replace(/[^a-z0-9]/g,''):''; return [own,...inds.map(k=>TAGS[k])].filter(Boolean).join(' ').split(' ').filter((x,i,a)=>a.indexOf(x)===i).slice(0,9).join(' '); };
+const bizName=()=>(state.setup.brand||{}).businessName||'';
+const price=t=>money(+t.price||compute(state).treatments.find(x=>x.id===t.id).suggested);
+// the quietest open day in the next week, for 'gaps' posts
+function quietDay(from){ let best=null; for(let i=1;i<=7;i++){ const x=addDays(from,i), free=(typeof freeTimes==='function'?freeTimes(x):[]).reduce((a,[s,e])=>a+(e-s),0); if(free>0&&(!best||free>best.free)) best={x,free}; } return best&&best.x; }
+const SEASONS=[[2,14,"Valentine's Day",'Treat yourself or someone special this Valentine\'s'],[3,0,"Mother's Day",'Gift vouchers for Mother\'s Day'],[10,31,'Halloween','Spooky season looks'],[11,28,'Black Friday','Black Friday treat'],[12,25,'Christmas','Get party ready for Christmas'],[6,21,'Summer','Get summer ready']];
+function seasonFor(date){ const m=+date.slice(5,7), d=+date.slice(8,10); return SEASONS.find(([sm,sd])=>sm===m&&(sd===0||d<=sd&&sd-d<=12)); }
+const TYPES=['Show your work','Price list','Quiet day gaps','Tip','Behind the scenes','Ask for reviews','Meet me'];
+function mkIdea(type,date,k){ const ts=state.treatments.filter(t=>!t.addon), t=ts.length?ts[k%ts.length]:null, b=bizName(), qd=quietDay(date), cust=W().cust, many=W().many;
+  const end=`\n\nBook via the link in my bio${b?` · ${b}`:''}`;
+  const C={
+    'Show your work':[t?`Show off a ${t.name}`:'Show off your work', t?`Loving how this ${t.name} turned out ✨ ${price(t)}, about ${t.clientMin} minutes.${end}`:`A little of what I've been up to this week ✨${end}`, t],
+    'Price list':['Share your price list',`Here's my price list for ${new Date(date).toLocaleDateString('en-GB',{month:'long'})}. Prices include everything, no surprises.${end}`,null],
+    'Quiet day gaps':[qd?`Fill your gaps on ${fmtDay(qd)}`:'Last-minute slots',qd?`I've got space on ${fmtDay(qd)}! Message me or book online to grab a slot 💫${end}`:`I've got a few last-minute slots this week. Message me to grab one 💫${end}`,t],
+    'Tip':[t?`Care tip: ${t.name}`:'A care tip',t?`Top tip: how to make your ${t.name} last longer. Keep it simple, gentle and book your next one before it grows out.${end}`:`Top tip for looking after yourself between ${many}.${end}`,t],
+    'Behind the scenes':['Behind the scenes',`A peek behind the scenes. Everything is cleaned and set up fresh for every ${cust} 🧼${end}`,null],
+    'Ask for reviews':['Ask for reviews',`If you've been to see me, I'd love a quick review. It really helps a small business like mine 💕${end}`,null],
+    'Meet me':['Introduce yourself',`Hello! I'm ${b||'the face behind the work'}. Here's a little about me and why I love what I do.${end}`,null]};
+  const s=seasonFor(date); if(s&&!posts().some(p=>p.idea===s[2]&&p.date.slice(0,4)===date.slice(0,4))) return {type:'Seasonal',idea:s[2],caption:`${s[3]} 🎁${t?` ${t.name} ${price(t)}.`:''}${end}\n\n${mkTags(t)}`,treat:t?t.id:''};
+  const [idea,cap,tt]=C[type]; return {type,idea,caption:cap+'\n\n'+mkTags(tt),treat:tt?tt.id:''}; }
+// fill the next two weeks with posts on her chosen days, without doubling up on days already planned
+function planWeeks(n){ const ms=mktSet(), have=new Set(posts().map(p=>p.date)); let k=posts().length, added=0;
+  for(let i=0;i<7*(n||2);i++){ const x=addDays(todayStr(),i); if(!ms.days.includes(dayIdx(x))||have.has(x)) continue; const type=TYPES[k%TYPES.length];
+    posts().push({id:uid(),date:x,...mkIdea(type,x,k),photo:'',done:false}); k++; added++; } return added; }
+const postsToday=()=>posts().filter(p=>!p.done&&p.date<=todayStr());
+function postCard(p){ const open=mkOpen===p.id, past=p.date<todayStr()&&!p.done;
+  if(!open) return `<button class="rowbtn" data-act="mk-open" data-id="${p.id}"><span class="grow"><b>${esc(p.idea)}</b><small>${fmtDay(p.date)}${p.date===todayStr()?' · Today':''} · ${esc(p.type)}</small></span>${p.done?'<span class="pill ok">Posted</span>':past?'<span class="pill warn">Not posted</span>':p.photo?'<span class="pill info">Photo added</span>':''}</button>`;
+  return `<article class="card"><div class="treat-head"><div><h3>${esc(p.idea)}</h3><p class="small muted">${fmtDay(p.date)} · ${esc(p.type)}</p></div><button class="iconbtn" aria-label="Close" data-act="mk-open" data-id="">✕</button></div>
+    <div class="row" style="align-items:flex-start;flex-wrap:nowrap;gap:12px">${p.photo?`<img class="thumb" alt="Post picture" data-receipt="${p.photo}" style="width:96px;height:96px;border-radius:14px;object-fit:cover">`:''}
+      <div class="stack" style="gap:8px;flex:1"><label class="btn small ghost" style="cursor:pointer;text-align:center">${p.photo?'Change photo':'Add a photo'}<input type="file" accept="image/*" hidden data-mkphoto="${p.id}"></label><button class="btn small ghost" data-act="mk-pl" data-id="${p.id}">Use my price list</button></div></div>
+    <label class="field">Caption<textarea id="mk-cap-${p.id}" rows="7" data-mkcap="${p.id}">${esc(p.caption)}</textarea></label>
+    ${ai.engine?`<button class="btn small ghost" data-act="mk-ai" data-id="${p.id}">Write it for me with AI</button>`:''}
+    <div class="row"><button class="btn" data-act="mk-share" data-id="${p.id}">Share to Instagram, Facebook…</button><button class="btn small ghost" data-act="mk-done" data-id="${p.id}">${p.done?'Not posted yet':'Mark as posted'}</button></div>
+    <button class="btn small ghost" style="align-self:flex-start" data-act="mk-del" data-id="${p.id}">Delete this post</button></article>`; }
+function vMarketing(){ const ms=mktSet(), up=posts().filter(p=>!p.done||p.date>=todayStr()).sort((a,b)=>a.date.localeCompare(b.date)), done=posts().filter(p=>p.done).length;
+  return `<section class="stack"><div><h2>Marketing</h2><p class="muted">Plan your posts, get them written, and share in one tap.</p></div>
+    <article class="card"><h3>Your plan</h3>
+      <span class="small" style="font-weight:600">Post on</span><div class="chips">${DAYS3.map((d,i)=>`<button class="chip" data-act="mk-day" data-v="${i}" aria-pressed="${ms.days.includes(i)}">${d}</button>`).join('')}</div>
+      <button class="btn" data-act="mk-plan">Plan my next 2 weeks</button>
+      <p class="small muted">Each post gets an idea and a caption with your prices. Add a photo, then share it when the day comes. The Diary reminds you on the day.</p></article>
+    ${up.length?`<div class="stack" style="gap:8px">${up.map(postCard).join('')}</div>`:'<p class="small muted">No posts planned yet.</p>'}
+    ${done?`<p class="small muted">${done} posted so far.</p>`:''}</section>`; }
+async function mkShare(p){ const cap=p.caption||''; try{ await navigator.clipboard.writeText(cap); }catch(_){}
+  let blob=null; if(p.photo){ try{ blob=await getReceipt(p.photo); }catch(_){} }
+  if(blob){ const f=new File([blob],'post.jpg',{type:blob.type||'image/jpeg'}); try{ if(navigator.canShare&&navigator.canShare({files:[f]})){ await navigator.share({files:[f],text:cap}); toast('Caption copied too: paste it in if it is missing'); return; } }catch(e){ if(e&&e.name==='AbortError') return; } await saveFile('post.jpg',blob); toast('Photo saved and caption copied. Post it from Instagram or Facebook'); return; }
+  try{ if(navigator.share){ await navigator.share({text:cap}); return; } }catch(e){ if(e&&e.name==='AbortError') return; } toast('Caption copied. Paste it into your post'); }
+async function mkAi(p){ const eng=await aiEngine(); if(!eng) return; const t=state.treatments.find(x=>x.id===p.treat), b=bizName();
+  const prompt=`Write an Instagram and Facebook caption for ${b||'a small business'}, a self-employed ${(typeof selInds==='function'?selInds():[]).join(', ')||'beauty'} business in the UK. Post idea: ${p.idea} (${p.type}). ${t?`Treatment: ${t.name}, ${price(t)}, about ${t.clientMin} minutes. `:''}Prices: ${state.treatments.filter(x=>!x.addon).slice(0,8).map(x=>x.name+' '+price(x)).join(', ')}. Under 80 words, warm and natural, British English, at most two emojis, end by saying to book via the link in the bio, then 5 to 8 relevant hashtags on a new line. Reply with the caption only. Current draft:\n${p.caption}`;
+  const box=document.getElementById('mk-cap-'+p.id); if(box) box.value='Writing…';
+  try{ const r=await eng(prompt,{cache:false,onText:({text})=>{ const b2=document.getElementById('mk-cap-'+p.id); if(b2) b2.value=text; }}); p.caption=(r&&r.text||p.caption).trim(); save(); render(); }catch(e){ toast(e&&e.code==='not_granted'?'The AI helper was not allowed':'Could not write it just now'); render(); } }
+document.addEventListener('click',async e=>{ const el=e.target.closest&&e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act, p=posts().find(x=>x.id===el.dataset.id);
+  if(a==='mk-open'){ mkOpen=el.dataset.id||null; if(mkOpen) await aiEngine(); render(); }
+  else if(a==='mk-day'){ const ms=mktSet(), i=+el.dataset.v; state.setup.mkt={...ms,days:ms.days.includes(i)?ms.days.filter(x=>x!==i):[...ms.days,i].sort()}; save(); render(); }
+  else if(a==='mk-plan'){ const n=planWeeks(2); save(); render(); toast(n?`${n} posts planned`:'Your next 2 weeks are already planned'); }
+  else if(a==='mk-done'&&p){ p.done=!p.done; save(); render(); }
+  else if(a==='mk-del'&&p){ state.posts=posts().filter(x=>x!==p); mkOpen=null; save(); render(); }
+  else if(a==='mk-share'&&p){ mkShare(p); }
+  else if(a==='mk-ai'&&p){ mkAi(p); }
+  else if(a==='mk-pl'&&p){ try{ const cv=plCanvases()[0]; const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',.9)); const id=uid(); await putReceipt(id,blob); p.photo=id; save(); render(); toast('Price list picture added'); }catch(_){ toast('Could not make the price list picture'); } }
+  else if(a==='mk-goto'){ view='marketing'; mkOpen=el.dataset.id||null; render(); window.scrollTo(0,0); } });
+document.addEventListener('change',async e=>{ const el=e.target, d=el.dataset||{};
+  if(d.mkcap){ const p=posts().find(x=>x.id===d.mkcap); if(p){ p.caption=el.value; save(); } }
+  else if(d.mkphoto&&el.files&&el.files[0]){ const p=posts().find(x=>x.id===d.mkphoto); if(!p) return; try{ const id=uid(); await putReceipt(id,await shrink(el.files[0])); p.photo=id; save(); render(); }catch(_){ toast('Could not save the photo on this phone'); } } });
+UNDOABLE.add('mk-del'); UNDOABLE.add('mk-plan');
+// Clients and Marketing share the bottom button
+const navGroupsBeforeMkt=navGroups;
+navGroups=function(){ return navGroupsBeforeMkt().map(g=>g.key==='clients'?{...g,views:[...g.views,['marketing','Marketing']]}:g); };
+const renderBeforeMkt=render;
+render=function(){ if(view==='marketing'){ renderTabs(); document.getElementById('main').innerHTML=vMarketing(); hydrateThumbs(); afterRender(); return; } return renderBeforeMkt(); };
+// the Diary's Today card says when a post is due
+const todayCardBeforeMkt=todayCard;
+todayCard=function(){ const h=todayCardBeforeMkt(), due=postsToday(); if(!due.length) return h; const i=h.lastIndexOf('</article>');
+  return h.slice(0,i)+`<span class="small" style="font-weight:600">Post today</span><div class="list">${due.map(p=>`<div class="item"><div class="grow"><p><b>${esc(p.idea)}</b></p><p class="small muted">${p.date<todayStr()?'Was due '+fmtDay(p.date):'Today'}</p></div><button class="btn small" data-act="mk-goto" data-id="${p.id}">Open</button></div>`).join('')}</div>`+h.slice(i); };
 
 render();
 </script>
