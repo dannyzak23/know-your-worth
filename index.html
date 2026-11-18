@@ -228,7 +228,7 @@ function teamCosts(s, R){
 }
 function overheadsMonth(s){
   if(Array.isArray(s.overheads)) return s.overheads.reduce((a,o)=>a+(o.group==='weekly' ? (+o.amount||0)*52/12 : o.group==='monthly' ? (+o.amount||0)
-    : o.group==='yearly' ? (+o.amount||0)/12 : (+o.amount||0)/(Math.max(1,+o.years||3)*12)),0);
+    : o.group==='yearly' ? (+o.amount||0)/12 : (+o.amount||0)/(Math.max(0.5,+o.years||3)*12)),0);
   return (+s.rent||0) + (+s.insuranceYear||0)/12 + (+s.otherMonthly||0) + (+s.otherYearly||0)/12
        + ((+s.equipment||0) / (Math.max(1,+s.equipmentYears||3)*12));
 }
@@ -436,7 +436,7 @@ function parsePack(str){ // turns old text like "15 ml bottle" or "pack of 500" 
 function packLabel(p){ const n=+p.size||0; const u=(n===1 && SINGULAR[p.unit])||p.unit||''; return `${nf(n)} ${u}`.trim(); }
 const OVERHEAD_GROUPS=[
   {key:'monthly',title:'Monthly costs',add:'Add a monthly cost',per:'a month',
-   options:['Room, chair or desk rent','Booking app subscription','Phone and internet','Marketing and ads','Design and admin apps','Laundry','Card machine rental','Electricity and heating','Business rates','Loan interest']},
+   options:['Room, chair or desk rent','Booking app subscription','Phone and internet','Marketing and ads','Design and admin apps','Utilities (electric, gas, water)','Laundry','Card machine rental','Electricity and heating','Business rates','Loan interest']},
   {key:'yearly',title:'Yearly costs',add:'Add a yearly cost',per:'a year',
    options:['Insurance','Accountant','Training and courses','Council licence','Professional membership','Website and domain']},
   {key:'equipment',title:'Equipment you have bought',add:'Add equipment',per:'',
@@ -1029,7 +1029,7 @@ document.addEventListener('change', e=>{
     save(); render(); return; }
   if(el.dataset.oh){ s._ohEdited=true; const o=(s.overheads||[]).find(x=>x.id===el.dataset.oh); if(!o) return; const f=el.dataset.f;
     if(f==='sel'){ if(el.value==='__other'){ o.custom=true; o.name=''; } else { o.custom=false; o.name=el.value; } }
-    else if(f==='name') o.name=el.value; else o[f]=+el.value||0;
+    else if(f==='name'||f==='bought') o[f]=el.value; else o[f]=+el.value||0;
     save(); render(); return; }
   if(el.dataset.set){ const scale=+(el.dataset.scale||1); s[el.dataset.set]=(+el.value||0)/scale; save(); if(view!=='wizard') render(); return; }
   if(el.dataset.tf){ const t=state.treatments.find(x=>x.id===el.dataset.tf); if(!t) return; const f=el.dataset.f; t[f]= (f==='name'||f==='unitLabel')?el.value : (f==='patch'||f==='addon')?el.checked : (+el.value||0)*(+(el.dataset.mul||1)); save(); render(); return; }
@@ -1787,7 +1787,10 @@ Object.assign(SUPPLIERS,{
 const COMBOS=[['Nails, lashes and brows + waxing and facials',['beauty','therapy']],['Hair + nails and beauty',['hair','beauty']],['Hair + barber',['hair','barber']],
   ['Hair + make-up (weddings)',['hair','makeup']],['Builder + decorating',['build','paint']],['Builder + plastering and tiling',['build','plaster']],
   ['Builder + carpentry',['build','joiner']],['Plumbing + tiling (bathrooms)',['plumb','plaster']],['Gardening + cleaning',['garden','clean']],['Cleaning + car valeting',['clean','valet']]];
-function overheadsForAll(keys){ const out=[]; keys.forEach(k=>overheadsFor(k).forEach(o=>{ if(!out.some(x=>x.group===o.group && x.name===o.name)) out.push(o); })); return out; }
+function overheadsForAll(keys){ const out=[]; keys.forEach(k=>overheadsFor(k).forEach(o=>{ if(!out.some(x=>x.group===o.group && x.name===o.name)) out.push(o); }));
+  if(!out.some(o=>/electric|utilit|gas/i.test(o.name))) out.push({id:uid(),group:'monthly',name:'Utilities (electric, gas, water)',amount:50,years:3});
+  if(!out.some(o=>/design|admin/i.test(o.name))) out.push({id:uid(),group:'monthly',name:'Design and admin apps',amount:11,years:3});
+  return out; }
 // ---------- running costs to start from, by kind of work ----------
 function overheadsFor(ind){
   const g={beauty:'salon',therapy:'therapy',makeup:'mobile',hair:'salon',barber:'salon',dog:'dog',build:'van',paint:'van',plaster:'van',electric:'van',plumb:'van',joiner:'van',garden:'van',clean:'clean',valet:'valet',cake:'cake',other:'mobile'}[ind]||'salon';
@@ -1841,9 +1844,9 @@ function quickStep(st){
         <div class="q3">
           <label class="field">Your price<span class="money-in"><input id="ql-p-${t.id}" type="number" inputmode="decimal" min="0" step="0.5" value="${t.price?esc(t.price):''}" placeholder="${t.exPrice?'e.g. '+nf(t.exPrice):''}" data-tf="${t.id}" data-f="price"></span></label>
           <label class="field">${h?'Hours':'Minutes'}<input id="ql-m-${t.id}" type="number" inputmode="decimal" min="0" step="${h?0.5:5}" value="${esc(h?nf((+t.clientMin||0)/60):t.clientMin)}" data-tf="${t.id}" data-f="clientMin" data-mul="${h?60:1}"></label>
-          <label class="field">A week<input id="ql-w-${t.id}" type="number" inputmode="decimal" min="0" step="0.5" value="${t.perWeek?esc(t.perWeek):''}" placeholder="${t.exPerWeek?'e.g. '+nf(t.exPerWeek):''}" data-tf="${t.id}" data-f="perWeek"></label>
+          <label class="field">A month<input id="ql-w-${t.id}" type="number" inputmode="decimal" min="0" step="1" value="${t.perWeek?esc(Math.round(t.perWeek*52/12)):''}" placeholder="${t.exPerWeek?'e.g. '+nf(Math.round(t.exPerWeek*52/12)):''}" data-tf="${t.id}" data-f="perWeek" data-mul="${12/52}"></label>
         </div></article>`; }).join('');
-    return {q:'Your prices now', why:`For each one: what you charge, how long it takes, and roughly how many you do in a week. The times are typical ones, so change any that are wrong. We add a few minutes to each for setting up and cleaning down. Leave a price empty if you have not set one.`, body:`<div class="stack">${rows}</div>`};
+    return {q:'Your prices now', why:`For each one: what you charge, how long it takes, and roughly how many you do in a month. The times are examples, so change any that are wrong. We add a few minutes to each for setting up and cleaning down. Leave a price empty if you have not set one.`, body:`<div class="stack">${rows}</div>`};
   }
   if(st.type==='pay') return {q:'How much do you want in your pocket each month, after tax?', why:'From this work only. Include anything you want to save.',
     body:`<label class="field">Amount each month<span class="money-in"><input id="wiz-takeHome" type="number" inputmode="decimal" min="0" step="50" value="${esc(s.takeHome)}" data-set="takeHome"></span></label>
@@ -2143,7 +2146,7 @@ quickStep=function(st){
   }
   if(st.type==='app') return {q:'How do clients mostly pay you?', why:'Card fees come off every payment, so they are part of what a treatment costs you.',
     body:`<div class="choices">${Object.entries(APPS).map(([k,a])=>`<button class="choice" data-act="wiz-app" data-k="${k}" aria-pressed="${s.app===k}">${a.label}<small>${a.note}</small></button>`).join('')}</div>
-      ${s.app==='other'?`<div class="fields"><label class="field">Card fee (%)<span class="hint">It is on your card reader's price list</span><input id="wiz-cardPct" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(Math.round((+s.cardPct||0)*10000)/100)}" data-set="cardPct" data-scale="100"></label>
+      ${s.app?`<div class="fields"><label class="field">Card fee (%)<span class="hint">${s.app==='other'?'It is on your card reader\'s price list':'Filled in from their price list. Change it if yours is different'}</span><input id="wiz-cardPct" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(Math.round((+s.cardPct||0)*10000)/100)}" data-set="cardPct" data-scale="100"></label>
         <label class="field">Plus pence per payment<span class="hint">0 if there is none</span><input id="wiz-cardFixed" type="number" inputmode="decimal" min="0" step="1" value="${esc(Math.round((+s.cardFixed||0)*100))}" data-set="cardFixed" data-scale="100"></label></div>`:''}`};
   if(st.type==='targetq') return {q:'What would you like to take home each month?', why:'We use this to work out how many treatments you need to do. It does not change your prices: those come from your costs and what you want to earn an hour.',
     body:`<label class="field">Amount each month, after tax<span class="money-in"><input id="wiz-takeHome" type="number" inputmode="decimal" min="0" step="50" value="${esc(s.takeHome)}" data-set="takeHome"></span></label>
@@ -2262,17 +2265,19 @@ document.addEventListener('toggle', e=>{ const d=e.target; if(d&&d.dataset&&d.da
 
 // ---- running costs as a plain list (set-up, the Prices screen and More all show this one list) ----
 const PERIOD=[['weekly','a week'],['monthly','a month'],['yearly','a year']];
+const REPLACE=[[0.5,'6 months'],[1,'12 months'],[2,'2 years'],[3,'3 years'],[5,'5 years'],[10,'10 years']];
+const addMonths=(x,n)=>{ const d=new Date(+x.slice(0,4),+x.slice(5,7)-1+n,+x.slice(8,10)); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
 function costRow(o){ const one=o.group==='equipment';
   return `<div class="item" style="flex-wrap:wrap;gap:6px 8px">
     ${o.custom?`<input id="oh-name-${o.id}" aria-label="What is it?" placeholder="What is it?" value="${esc(o.name)}" data-oh="${o.id}" data-f="name" style="flex:1 1 60%">`:`<label for="oh-amt-${o.id}" style="flex:1 1 60%;font-weight:600">${esc(o.name)}</label>`}
     <button class="iconbtn" aria-label="I do not pay for ${esc(o.name||'this')}. Remove it" data-act="oh-del" data-id="${o.id}">✕</button>
     <span class="money-in" style="flex:0 0 120px"><input id="oh-amt-${o.id}" type="number" inputmode="decimal" min="0" step="1" value="${esc(o.amount)}" aria-label="${esc(o.name||'Cost')}, amount" data-oh="${o.id}" data-f="amount"></span>
-    ${one?`<span class="small muted">to buy</span>`:`<select aria-label="How often you pay for ${esc(o.name||'this')}" data-ohp="${o.id}" style="flex:0 0 120px">${PERIOD.map(([k,l])=>`<option value="${k}" ${o.group===k?'selected':''}>${l}</option>`).join('')}</select>`}
+    ${one?`<span class="small muted">to buy</span><div class="fields" style="flex-basis:100%"><label class="field">Date bought<input id="oh-bought-${o.id}" type="date" value="${esc(o.bought||'')}" data-oh="${o.id}" data-f="bought"></label><label class="field">Replace it every<select id="oh-yrs-${o.id}" data-oh="${o.id}" data-f="years">${REPLACE.map(([v,l])=>`<option value="${v}" ${+o.years===v?'selected':''}>${l}</option>`).join('')}${REPLACE.some(([v])=>v===+o.years)?'':`<option value="${esc(o.years)}" selected>${nf(+o.years)} years</option>`}</select></label></div>${+o.amount>0?`<span class="small muted" style="flex-basis:100%">That is ${gbp(+o.amount/(Math.max(0.5,+o.years||3)*12))} a month${o.bought?`. Replace by ${fmtDay(addMonths(o.bought,Math.round((+o.years||3)*12)))} ${addMonths(o.bought,Math.round((+o.years||3)*12)).slice(0,4)}`:''}</span>`:''}`:`<select aria-label="How often you pay for ${esc(o.name||'this')}" data-ohp="${o.id}" style="flex:0 0 120px">${PERIOD.map(([k,l])=>`<option value="${k}" ${o.group===k?'selected':''}>${l}</option>`).join('')}</select>`}
   </div>`; }
 // how the monthly figure is made up, in words
 function costWorking(s){ const sum=g=>(s.overheads||[]).filter(o=>o.group===g).reduce((a,o)=>a+(+o.amount||0),0), w=sum('weekly'), m=sum('monthly'), y=sum('yearly'), e=sum('equipment');
   const parts=[w?`${gbp0(w)} a week`:'', m?`${gbp0(m)} a month`:'', y?`${gbp0(y)} a year`:''].filter(Boolean), reg=parts.join(', ').replace(/, ([^,]*)$/,' and $1');
-  return reg||e ? `That is ${reg||'nothing regular'}${e?`, plus ${gbp0(e)} of one-offs spread over the years they last`:''}.` : 'Nothing added yet.'; }
+  return reg||e ? `That is ${reg||'nothing regular'}${e?`, plus ${gbp0(e)} of one-offs divided over how long they last`:''}.` : 'Nothing added yet.'; }
 function costList(){ const s=state.setup, list=s.overheads||[];
   return `<div class="stack" style="gap:6px"><h3 style="font-size:1rem">What you pay regularly</h3>
       <div class="list">${list.filter(o=>o.group!=='equipment').map(costRow).join('')}</div>
@@ -2351,7 +2356,7 @@ const GUIDE=[
   ['Change your running costs',"On Prices, under 'Your numbers', tap 'Running costs'. Type over any figure, choose whether you pay it by the week, month or year, and tap the cross on anything you do not pay. The same list is under More.",'prices'],
   ['Change what you earn an hour',"On Prices, under 'Your numbers', type a new amount. Your suggested prices change to match.",'prices'],
   ['Set a monthly target',"On Prices, under 'Your target', type what you want to take home each month. It tells you how many treatments that takes. It does not change your prices.",'prices'],
-  ['Make a price list picture',"On Prices, tap 'Make my price list'. Pick a design and a shape (Square or Portrait for an Instagram post, Story for a story). Add a logo or photo, change the wording and colours, and untick anything you do not want on it. A long list is split over two or more pictures to post together. Then tap 'Save or share'.",'prices'],
+  ['Make a price list picture',"On Prices, tap 'Make my price list'. Pick a design and a shape (Square or Portrait for an Instagram post). Add a logo or photo, change the wording and colours, and untick anything you do not want on it. A long list is split over two or more pictures to post together. Then tap 'Save or share'.",'prices'],
   ['See how the prices are worked out',"Near the bottom of Prices, tap 'How we worked this out'.",'prices']]],
 ['Diary',[
   ['Add a booking',"Tap Diary, then '+ Booking' on the day. Pick the treatment, the time and the client, then tap 'Save booking'. For someone new, leave Client on 'New client (type below)' and type their name.",'diary'],
@@ -2533,7 +2538,7 @@ vDiary=function(){ const h=vDiaryMonthWeek(); if(diaryMode==='month') return h; 
 const PL_TPL={ band:{name:'Band',page:'bg',band:true}, clean:{name:'Clean',page:'white',centre:true,rule:true},
                bold:{name:'Bold',page:'accent'}, frame:{name:'Framed',page:'bg',centre:true,frame:true} };
 // top/bot on Story keep clear of the parts Instagram covers with its own buttons
-const PL_FMT={ square:{name:'Square 1:1',h:1080}, portrait:{name:'Portrait 4:5',h:1350}, story:{name:'Story 9:16',h:1920,top:220,bot:250}, long:{name:'Long',h:0} };
+const PL_FMT={ square:{name:'Square 1:1',h:1080}, portrait:{name:'Portrait 4:5',h:1350}, long:{name:'Long',h:0} };
 function plOptions(){ const s=state.setup, b=s.brand||{}, pal=PALETTES[b.palette]||PALETTES.berry, p=s.priceList||{};
   return {tpl:PL_TPL[p.tpl]?p.tpl:'band', fmt:PL_FMT[p.fmt]?p.fmt:'portrait', title:p.title??'Price list', name:p.name??(b.businessName||''), footer:p.footer||'', hours:p.hours!==false,
           hide:p.hide||[], accent:p.accent||pal.accent, bg:p.bg||pal.soft, kind:p.kind==='suggested'?'suggested':'current', photo:p.photo??(b.logo||'')}; }
@@ -2598,7 +2603,7 @@ function plOpen(){ const o=document.getElementById('overlay'), op=plOptions();
     <h3>Make it yours</h3>
     <div class="field">Design<div class="chips">${Object.entries(PL_TPL).map(([k,t])=>chip('tpl',k,t.name)).join('')}</div></div>
     <div class="field">Shape<div class="chips">${Object.entries(PL_FMT).map(([k,t])=>chip('fmt',k,t.name)).join('')}</div>
-      <p class="small muted">Square and Portrait suit Instagram posts. Story suits stories. A long list is split over two or more pictures. Long puts everything on one tall picture, for printing.</p></div>
+      <p class="small muted">Square and Portrait suit Instagram posts. A long list is split over two or more pictures. Long puts everything on one tall picture, for printing.</p></div>
     <div class="field">Logo or photo<p class="small muted">Shows as a circle in the top corner.</p><div class="row">
       <label class="btn small ghost" style="cursor:pointer">${op.photo?'Change the picture':'Choose a picture'}<input type="file" accept="image/*" data-plphoto="1" hidden></label>
       ${op.photo?`<button class="btn small ghost" data-act="pl-photo-del">Remove it</button>`:''}</div></div>
