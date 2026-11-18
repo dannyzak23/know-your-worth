@@ -1029,7 +1029,7 @@ document.addEventListener('change', e=>{
     save(); render(); return; }
   if(el.dataset.oh){ s._ohEdited=true; const o=(s.overheads||[]).find(x=>x.id===el.dataset.oh); if(!o) return; const f=el.dataset.f;
     if(f==='sel'){ if(el.value==='__other'){ o.custom=true; o.name=''; } else { o.custom=false; o.name=el.value; } }
-    else if(f==='name'||f==='bought') o[f]=el.value; else o[f]=+el.value||0;
+    else if(/^(name|bought|title|pay|start|end)$/.test(f)) o[f]=el.value; else o[f]=+el.value||0;
     save(); render(); return; }
   if(el.dataset.set){ const scale=+(el.dataset.scale||1); s[el.dataset.set]=(+el.value||0)/scale; save(); if(view!=='wizard') render(); return; }
   if(el.dataset.tf){ const t=state.treatments.find(x=>x.id===el.dataset.tf); if(!t) return; const f=el.dataset.f; t[f]= (f==='name'||f==='unitLabel')?el.value : (f==='patch'||f==='addon')?el.checked : (+el.value||0)*(+(el.dataset.mul||1)); save(); render(); return; }
@@ -3030,14 +3030,14 @@ wizSteps=function(){ return wizFull?wizStepsBeforeTarget():wizStepsBeforeTarget(
 // ---- bills and invoices: a photo saved as money out, for any month ----
 const billCat=o=>o.group==='equipment'?'Equipment (lamps, drills, furniture)':/rent|rates|utilit|electric|gas|water|heat|insur/i.test(o.name)?'Rent, rates, power and insurance':/phone|internet|broadband|app|software|design|admin|website/i.test(o.name)?'Phone, software and office':/market|advert|ads/i.test(o.name)?'Advertising and marketing':/account|licen|registr|member|professional/i.test(o.name)?'Accountant and professional fees':/card|booking|bank/i.test(o.name)?'Bank, card and booking app fees':/fuel|van|car|mot/i.test(o.name)?'Car, van and travel':/repair|sharpen|servic/i.test(o.name)?'Repairs and maintenance':'Training and other costs';
 const billsFor=(o,m)=>state.expenses.filter(e=>e.ohId===o.id&&(!m||(e.date||'').slice(0,7)===m));
-function addBill(o,date,receiptId){ const e={id:uid(),date,supplier:o.name||'Running cost',amount:+o.amount||0,category:billCat(o),receiptId:receiptId||null,ohId:o.id}; state.expenses.push(e); return e; }
+function addBill(o,date,receiptId){ const e={id:uid(),date,supplier:o.title||o.name||'Running cost',amount:+o.amount||0,category:billCat(o),receiptId:receiptId||null,ohId:o.id}; state.expenses.push(e); return e; }
 const billBtn=(o,month,label)=>`<label class="btn small ghost" style="cursor:pointer">${label}<input type="file" accept="image/*" hidden data-ohinv="${o.id}" ${month?`data-month="${month}"`:''}></label>`;
 function billLine(o){ if(!o.name&&!+o.amount) return ''; const n=billsFor(o).length;
   return `<div class="row" style="flex-basis:100%;gap:8px">${billBtn(o,'',o.group==='equipment'?'Add the receipt':'Add an invoice')}${n?`<span class="small muted">${n} saved in Money out</span>`:''}</div>`; }
 function billsCard(ty){ const list=(state.setup.overheads||[]).filter(o=>o.group!=='equipment'&&(o.name||+o.amount)); if(!list.length) return '';
   const months=[...Array(12)].map((_,i)=>{ const d=new Date(ty,3+i,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }), now=todayStr().slice(0,7);
   return `<article class="card"><h3>Bills each month</h3><p class="small muted">Tap a month to add that month's invoice or bill. It goes into Money out with the date of that month. A tick means it is saved.</p>
-    <div class="list">${list.map(o=>`<div class="item" style="flex-wrap:wrap"><div class="grow"><p><b>${esc(o.name||'Running cost')}</b></p><p class="small muted">${gbp(+o.amount)} ${(PERIOD.find(p=>p[0]===o.group)||['',''])[1]}</p></div>
+    <div class="list">${list.map(o=>`<div class="item" style="flex-wrap:wrap"><div class="grow"><p><b>${esc(o.title||o.name||'Running cost')}</b></p><p class="small muted">${gbp(+o.amount)} ${(PERIOD.find(p=>p[0]===o.group)||['',''])[1]}</p></div>
       <div class="chips" style="flex-basis:100%">${months.filter(m=>m<=now).map(m=>{ const lab=dt(m+'-01').toLocaleDateString('en-GB',{month:'short'}); return billsFor(o,m).length?`<span class="chip" aria-pressed="true">✓ ${lab}</span>`:`<label class="chip" style="cursor:pointer">${lab}<input type="file" accept="image/*" hidden data-ohinv="${o.id}" data-month="${m}"></label>`; }).join('')}</div></div>`).join('')}</div>
     <p class="small muted">No photo? Add it under Money out on the Money tab instead.</p></article>`; }
 document.addEventListener('change',async e=>{ const el=e.target, d=(el&&el.dataset)||{};
@@ -3105,6 +3105,48 @@ showAdd=function(A){ showAddBeforeQ(A); if(!A.q) return; const o=document.getEle
 const bookCardBeforeQ=bookCard;
 bookCard=function(){ const h=bookCardBeforeQ(), a='<div class="row"><button class="btn" data-act="bp-share">', i=h.indexOf(a); if(i<0) return h;
   return h.slice(0,i)+`<label class="row small" style="flex-wrap:nowrap;align-items:flex-start"><input type="checkbox" data-bpc="1" ${bookPage().consult!==false?'checked':''} style="flex:none"><span>Ask your consultation (health) questions when they book</span></label>`+h.slice(i); };
+
+// ===================== running costs grouped: items under each kind of cost, with dates and invoices =====================
+const ordinal=n=>n+(n%100>10&&n%100<14?'th':['th','st','nd','rd'][n%10]||'th');
+function payDesc(o){ const p=o.pay, bits=[];
+  if(p){ const d=dt(p); bits.push(o.group==='weekly'?`Comes out every ${d.toLocaleDateString('en-GB',{weekday:'long'})}`:o.group==='yearly'?`Comes out each ${d.getDate()} ${d.toLocaleDateString('en-GB',{month:'long'})}`:`Comes out on the ${ordinal(d.getDate())} of each month`); }
+  if(o.end) bits.push(`${o.end<todayStr()?'contract ended':'contract ends'} ${fmtDay(o.end)} ${o.end.slice(0,4)}`);
+  const n=billsFor(o).length; if(n) bits.push(`${n} invoice${n>1?'s':''} saved`);
+  return bits.join(' · ')||'Optional'; }
+function costItem(o){
+  return `<div class="item" style="flex-wrap:wrap;gap:6px 8px">
+    <input id="oh-title-${o.id}" aria-label="Who you pay or what it is, for ${esc(o.name||'this cost')}" placeholder="Name it, e.g. BT Internet" value="${esc(o.title||'')}" data-oh="${o.id}" data-f="title" style="flex:1 1 55%;min-width:0">
+    <button class="iconbtn" aria-label="Remove ${esc(o.title||o.name||'this')}" data-act="oh-del" data-id="${o.id}">✕</button>
+    <span class="money-in" style="flex:0 0 120px"><input id="oh-amt-${o.id}" type="number" inputmode="decimal" min="0" step="1" value="${esc(o.amount)}" aria-label="${esc(o.title||o.name||'Cost')}, amount" data-oh="${o.id}" data-f="amount"></span>
+    <select aria-label="How often you pay for ${esc(o.title||o.name||'this')}" data-ohp="${o.id}" style="flex:0 0 120px">${PERIOD.map(([k,l])=>`<option value="${k}" ${o.group===k?'selected':''}>${l}</option>`).join('')}</select>
+    <details class="fold" data-sec="oh-${o.id}" ${isOpen('oh-'+o.id)?'open':''} style="flex-basis:100%"><summary><span class="grow">Dates and invoice<small>${esc(payDesc(o))}</small></span></summary>
+      <div class="stack" style="gap:8px"><div class="fields">
+        <label class="field">Date it comes out<span class="hint">Any payment date</span><input id="oh-pay-${o.id}" type="date" value="${esc(o.pay||'')}" data-oh="${o.id}" data-f="pay"></label>
+        <label class="field">Contract starts<span class="hint">Optional</span><input id="oh-start-${o.id}" type="date" value="${esc(o.start||'')}" data-oh="${o.id}" data-f="start"></label>
+        <label class="field">Contract ends<span class="hint">Optional</span><input id="oh-end-${o.id}" type="date" value="${esc(o.end||'')}" data-oh="${o.id}" data-f="end"></label></div>
+        ${billLine(o)}</div></details>
+  </div>`; }
+function costGroups(list){ const out=[]; list.forEach(o=>{ const k=o.custom&&!o.name?'#'+o.id:o.name; let g=out.find(x=>x.k===k); if(!g) out.push(g={k,items:[]}); g.items.push(o); }); return out; }
+costList=function(){ const s=state.setup, list=s.overheads||[];
+  const groups=costGroups(list.filter(o=>o.group!=='equipment')).map(({items})=>{ const o=items[0];
+    return `<div class="stack" style="gap:4px;padding:8px 0;border-bottom:1px solid var(--line)">
+      ${o.custom?`<input id="oh-name-${o.id}" aria-label="What kind of cost is it?" placeholder="What kind of cost? e.g. Software" value="${esc(o.name)}" data-ohname="${o.id}" style="font-weight:600">`:`<b>${esc(o.name)}</b>`}
+      <div class="list">${items.map(costItem).join('')}</div>
+      <button class="btn small ghost" style="align-self:flex-start" data-act="oh-more" data-id="${o.id}">+ Add another under ${esc(o.name||'this')}</button></div>`; }).join('');
+  return `<div class="stack" style="gap:6px"><h3 style="font-size:1rem">What you pay regularly</h3><p class="small muted">Add each one you pay under its kind, like BT Internet under Phone and internet.</p>
+      ${groups}
+      <button class="btn small ghost" data-act="costq-add" data-g="monthly">+ Add a new kind of cost</button></div>
+    <div class="stack" style="gap:6px"><h3 style="font-size:1rem">One-offs</h3><p class="small muted">Things you buy once and keep using, like a lamp, a couch or a trolley.</p>
+      <div class="list">${list.filter(o=>o.group==='equipment').map(costRow).join('')}</div>
+      <button class="btn small ghost" data-act="costq-add" data-g="equipment">+ Add a one-off</button></div>
+    <p class="live" data-live="costs">That comes to about <span class="num">${gbp0(overheadsMonth(s))}</span> a month.</p>
+    <p class="small muted" data-live="costwork">${costWorking(s)}</p>`; };
+document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.closest('[data-act="oh-more"]'); if(!el) return; const s=state.setup, src=(s.overheads||[]).find(x=>x.id===el.dataset.id); if(!src) return;
+  const o={id:uid(),group:src.group,name:src.name,custom:!!src.custom,amount:0,years:3}, last=s.overheads.map(x=>x.name).lastIndexOf(src.name);
+  s.overheads.splice(last+1,0,o); s._ohEdited=true; save(); render(); const n=document.getElementById('oh-title-'+o.id); if(n) n.focus(); });
+// renaming a kind of cost renames every item under it
+document.addEventListener('change',e=>{ const el=e.target, id=el.dataset&&el.dataset.ohname; if(!id) return; const s=state.setup, o=(s.overheads||[]).find(x=>x.id===id); if(!o) return;
+  const old=o.name; s.overheads.forEach(x=>{ if(x===o||(old&&x.custom&&x.name===old)) x.name=el.value.trim(); }); s._ohEdited=true; save(); render(); });
 
 render();
 </script>
