@@ -177,7 +177,7 @@ console.log('stage 0 tests: fails',fails,'render errs',errs); }
 { fails=0; state=exampleState(); view='prices'; const h=vPrices();
 ok(/class="stat"[^>]*><span class="label">Treatments a month<\/span>/.test(h)&&/Hours a week/.test(h)&&/You do now/.test(h)&&/id="sl-tax"/.test(h)&&/Put aside for tax/.test(h),'target shown as boxes');
 ok(h.split('id="sl-tax"').length===2&&!/You need to do about/.test(h),'one tax box and no long sentences');
-ok(taxBox(0).includes('Nothing'),'no tax at break-even');
+ok(taxBox(0).includes('Nothing'),'no tax at break-even'); state.setup.region='ruk'; ok(/20% income tax and 6% National Insurance on profit over £12,570/.test(taxBox(1250))&&/of all your profit/.test(taxBox(1250)),'box shows the set rates: '+taxBox(1250).replace(/<[^>]+>/g,' ')); ok(/20% then 40% income tax and 6% then 2% National Insurance/.test(taxBox(6000)),'higher rates named when profit is over £50,270');
 console.log('target box tests: fails',fails,'render errs',errs); }
 // ---- use these prices keeps her own ----
 { fails=0; state=exampleState(); view='prices'; const [a,b]=state.treatments; a.price=17.5; b.price=0;

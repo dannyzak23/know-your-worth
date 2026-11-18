@@ -731,8 +731,14 @@ function hoursNeeded(c,p){ const team=(state.setup.staff||[]).reduce((a,m)=>a+(+
   const mix=c.treatments.filter(t=>(+t.perWeek||0)>0), list=mix.length?mix:c.treatments.filter(t=>!t.addon), w=t=>mix.length?(+t.perWeek||0):1;
   const tot=list.reduce((a,t)=>a+w(t),0)||1, avgH=list.reduce((a,t)=>a+w(t)*t.mins,0)/tot/60; return {need:p.perWeek*avgH, open, team}; }
 const statBox=(label,value,sub,cls,id)=>`<div class="stat${cls?' '+cls:''}"${id?` id="${id}"`:''}><span class="label">${label}</span><span class="value">${value}</span>${sub?`<span class="small muted">${sub}</span>`:''}</div>`;
+// the set rates, so the percentage makes sense: they only apply to profit over the tax-free amount
+function taxRates(profitMonth){ const R=RULES, yr=Math.max(0,profitMonth*12), sco=state.setup.region==='sco';
+  const it=sco?'Scottish income tax (19% to 48%)':yr>R.higherStart?`${pc0(R.basic)} then ${pc0(R.higher)} income tax`:`${pc0(R.basic)} income tax`;
+  const ni=yr>R.ni4UPL?`${pc0(R.ni4Main)} then ${pc0(R.ni4Upper)} National Insurance`:`${pc0(R.ni4Main)} National Insurance`;
+  return `${it} and ${ni} on profit over ${gbp0(R.pa)}`; }
+const pc0=v=>`${Math.round(v*100)}%`;
 function taxBox(profitMonth){ const a=setAside(profitMonth);
-  return statBox('Put aside for tax',a.all>0?pctTxt(a.all):'Nothing',a.all>0?`about ${gbp0(a.month)} a month: income tax ${pctTxt(a.tax)}, National Insurance ${pctTxt(a.ni)}${a.loan>0?`, student loan ${pctTxt(a.loan)}`:''}`:'under the tax-free amounts at this level','','sl-tax'); }
+  return statBox('Put aside for tax',a.all>0?pctTxt(a.all):'Nothing',a.all>0?`of all your profit, about ${gbp0(a.month)} a month. That is ${taxRates(profitMonth)}${a.loan>0?`, plus ${pctTxt(a.loan)} student loan`:''}.`:`Your profit is under the ${gbp0(RULES.pa)} tax-free amount at this level`,'','sl-tax'); }
 function targetBoxes(c){ const s=state.setup, T=W().many, anyPrice=c.treatments.some(t=>+t.price>0), p=anyPrice?c.planNow:c.planSug, tax=taxBox(profitHourOf(s)*fullHours(c));
   if(!(+s.takeHome>0)||!p) return `<div class="grid2">${tax}</div><p class="small muted">${!(+s.takeHome>0)?`Type what you want to take home to see how many ${T} you need to do.`:`Add your prices to see how many ${T} you need to do.`}</p>`;
   const tg=Math.ceil(p.target), h=hoursNeeded(c,p), over=h.open>0&&h.need>h.open, now=Math.round(c.bookingsMonth), more=tg-now;
