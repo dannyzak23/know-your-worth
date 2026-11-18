@@ -2375,7 +2375,7 @@ const GUIDE=[
   ['Remember something about a client',"Open the client and type it under 'For next time', for example 'wants green hair dye next time'. It shows on their bookings in the diary until you tick it off. You can also add it in the end of day check-in.",'clients'],
   ['Get told when to reorder',"Anything at its reorder level, or that you finished or ran out of, shows under 'Time to reorder' at the top of the Diary, with an Order button if it has a link. Tap 'Got it' once you have bought more.",'stock'],
   ['Save a bill or invoice',"Tap Money, then Tax. Under 'Bills each month', tap the month and pick the photo of the bill. It is saved in Money out, dated in that month. You can also tap 'Add an invoice' beside any running cost.",'taxyear'],
-  ['Set your prices with the slider',"On Prices, under 'Set your prices', slide right to earn more each hour on top of your costs. All the way left just covers your costs. Tap 'Use these prices' to use them.",'prices'],
+  ['Set your prices with the slider',"On Prices, under 'Your prices and target', slide right to earn more each hour on top of your costs, or type what you want to take home each month. The two move together. All the way left just covers your costs. Tap 'Use these prices' to use them.",'prices'],
   ['Let clients book online',"At the bottom of Diary, under 'Let clients book online', type your mobile number and tap 'Share my booking link'. Send it to clients or put it in your Instagram bio. They pick a treatment and a free time and send you a request. Tap the link in their message to add it to your diary.",'diary'],
   ['Send a reminder',"Tap Reminder on the booking, then 'Copy message'. Paste it into a text, WhatsApp or email. The app does not send it for you.",'diary'],
   ['Record a deposit',"Type it in 'Deposit taken' when you make the booking.",'diary'],
@@ -3056,29 +3056,42 @@ const typicalUK=t=>+((ALLCAT.find(c=>c.id===t.id)||{}).price)||0;
 function pricesAt(rate){ const s=state.setup, keep=s.profitHour; s.profitHour=rate; const c=compute(state); s.profitHour=keep; return c.treatments; }
 function slideRows(rate){ return pricesAt(rate).map(t=>{ const uk=typicalUK(t); return `<div class="item"><div class="grow"><p style="white-space:normal"><b>${esc(t.name)}</b></p><p class="small muted" style="white-space:normal">Break even ${money(t.minimum)}${uk?` · typical UK guide ${money(uk)}`:''}${+t.price>0?` · you charge ${money(+t.price)}`:''}</p></div><b class="num" style="color:var(--accent)">${money(t.suggested)}</b></div>`; }).join(''); }
 const slideLabel=r=>+r>0?`${gbp0(+r)} an hour on top of your costs`:'Break even: just cover your costs';
-function slideCard(){ const r=profitHourOf(state.setup);
-  return `<section class="card"><h3>Set your prices</h3><p class="small muted">At the far left your prices just cover your costs. Slide right to earn more for each hour with a ${W().cust}.</p>
-    <label class="field"><span id="sl-val" style="font-weight:700">${slideLabel(r)}</span><input id="sl-profit" type="range" min="0" max="60" step="1" value="${esc(r)}" data-slide="1" style="accent-color:var(--accent);width:100%" aria-label="What you earn each hour on top of your costs"></label>
+// the hourly amount and the monthly take-home are tied through her realistic hours with clients in a month
+const fullHours=c=>c.capacity>0?c.capacity:c.billable;
+const regionOf=s=>s.region==='sco'?'sco':'ruk';
+function takeHomeAt(rate,c){ const s=state.setup, yr=Math.max(0,rate*fullHours(c)*12); return (yr-taxOnProfit(yr,regionOf(s),RULES,taxOpts(s)))/12; }
+function rateFor(takeHome,c){ const s=state.setup, h=fullHours(c); return h>0&&takeHome>0?profitNeeded(takeHome*12,regionOf(s),RULES,taxOpts(s))/12/h:0; }
+const slideMax=r=>Math.max(60,Math.ceil((+r+10)/10)*10);
+function slideLive(r){ const c=compute(state), set=(id,v)=>{ const n=document.getElementById(id); if(n) n.textContent=v; };
+  set('sl-val',slideLabel(r)); set('sl-hour',gbp0(c.overheadRate+r)); set('sl-hour-sub',`${gbp0(c.overheadRate)} for running costs, ${gbp0(r)} for you`); set('sl-home',gbp0(takeHomeAt(r,c)));
+  const t=document.getElementById('tg-takeHome'); if(t) t.value=Math.round(takeHomeAt(r,c)); const l=document.getElementById('sl-list'); if(l) l.innerHTML=slideRows(r); }
+function priceCard(c,plan){ const s=state.setup, r=profitHourOf(s), hrs=Math.round(fullHours(c));
+  return `<section class="card"><h3>Your prices and target</h3>
+    <p class="small muted">Slide to set what you earn for each hour with a ${W().cust}, or type what you want to take home each month. The two move together. All the way left just covers your costs.</p>
+    <label class="field"><span id="sl-val" style="font-weight:700">${slideLabel(r)}</span><input id="sl-profit" type="range" min="0" max="${slideMax(r)}" step="1" value="${esc(Math.round(r))}" data-slide="1" style="accent-color:var(--accent);width:100%" aria-label="What you earn each hour on top of your costs"></label>
+    <div class="grid2"><div class="stat"><span class="label">Each hour with a ${W().cust}</span><span class="value" id="sl-hour">${gbp0(c.overheadRate+r)}</span><span class="small muted" id="sl-hour-sub">${gbp0(c.overheadRate)} for running costs, ${gbp0(r)} for you</span></div>
+      <div class="stat"><span class="label">Take home a month</span><span class="value" id="sl-home">${gbp0(takeHomeAt(r,c))}</span><span class="small muted">working about ${hrs} hours with ${W().cust}s a month</span></div></div>
+    ${moneyField('tg-takeHome','Or type what you want to take home each month','',Math.round(+s.takeHome||0),'data-set="takeHome"')}
+    ${plan}
+    <h3 style="font-size:1rem;margin-top:6px">Your prices at this rate</h3>
     <div class="list" id="sl-list">${slideRows(r)}</div>
     <button class="btn" data-act="sl-use">Use these prices</button>
-    <p class="small muted">The typical UK guide is a rough figure for the whole country, not prices near you.</p></section>`; }
-document.addEventListener('input',e=>{ const el=e.target; if(!el.dataset||!el.dataset.slide) return; const r=+el.value; const v=document.getElementById('sl-val'), l=document.getElementById('sl-list'); if(v) v.textContent=slideLabel(r); if(l) l.innerHTML=slideRows(r); });
-document.addEventListener('change',e=>{ const el=e.target; if(!el.dataset||!el.dataset.slide) return; state.setup.profitHour=+el.value; save(); render(); });
-function targetBody(){ const s=state.setup, c=compute(state);
-  return `<p>You want to earn <b>${gbp0(c.profitRate)}</b> an hour on top of your costs. Change it with the slider in 'Set your prices'.</p>
-    ${c.bookingsMonth>0?`<p class="small muted">At your prices and how many you do now, that makes about <b>${gbp0(Math.max(0,c.atCurrent.profit))}</b> a month.</p>`:`<p class="small muted">Add how many of each you do to see what that makes in a month.</p>`}`; }
+    <p class="small muted">Take home is what is left once tax and National Insurance are paid, if you fill those hours. The typical UK guide is a rough figure for the whole country, not prices near you.</p></section>`; }
+document.addEventListener('input',e=>{ const el=e.target; if(el.dataset&&el.dataset.slide) slideLive(+el.value); });
+document.addEventListener('change',e=>{ const el=e.target, s=state.setup;
+  if(el.dataset&&el.dataset.slide){ s.profitHour=+el.value; s.takeHome=Math.round(takeHomeAt(s.profitHour,compute(state))); save(); render(); }
+  else if(el.id==='tg-takeHome'){ s.profitHour=Math.round(rateFor(+el.value||0,compute(state))*100)/100; save(); render(); } });
 const vPricesBeforeSlide=vPrices;
-vPrices=function(){ let h=vPricesBeforeSlide(); if(!state.treatments.length) return h; const s=state.setup, mode=s.targetMode==='hour'?'hour':'month';
-  h=h.replace(/<label class="field">[^<]*(?:<span class="hint">[^<]*<\/span>)?<span class="money-in"><input id="pn-profitHour"[^>]*><\/span><\/label>/,'').replace(/<label class="field">(?:(?!<\/label>)[\s\S])*?id="pn-profitHour"[\s\S]*?<\/label>/,'')
-    .replace('Your suggested prices come from these two. Change them here.','Your suggested prices come from your running costs and the slider above.')
-    .replace('What you want to take home each month, after tax','What you want to take home each month').replace(/About £[\d,]+ of that is yours to take home after tax\. /,'');
-  const a=h.indexOf('<section class="card"><h3>Your target</h3>'); if(a<0) return h; const b=h.indexOf('</section>',a)+10;
-  const toggle=`<div class="chips" role="group" aria-label="Set your target"><button class="chip" data-act="tg-mode" data-v="month" aria-pressed="${mode==='month'}">Each month</button><button class="chip" data-act="tg-mode" data-v="hour" aria-pressed="${mode==='hour'}">An hourly rate</button></div>`;
-  let tgt=h.slice(a,b); tgt=mode==='hour'?`<section class="card"><h3>Your target</h3>${toggle}${targetBody()}</section>`:tgt.replace('<h3>Your target</h3>','<h3>Your target</h3>'+toggle);
-  return h.slice(0,a)+slideCard()+tgt+h.slice(b); };
+vPrices=function(){ const s0=state.setup; if(state.treatments.length){ const home=Math.round(takeHomeAt(profitHourOf(s0),compute(state))); if(Math.abs((+s0.takeHome||0)-home)>1){ s0.takeHome=home; save(); } } // the hourly amount leads, so the two always agree
+  let h=vPricesBeforeSlide(); if(!state.treatments.length) return h; const c=compute(state);
+  h=h.replace(/<label class="field">[^<]*(?:<span class="hint">[^<]*<\/span>)?<span class="money-in"><input id="pn-profitHour"[^>]*><\/span><\/label>/,'')
+    .replace('Your suggested prices come from these two. Change them here.','Your suggested prices come from your running costs and what you earn each hour, set above.')
+    .replace(/About £[\d,]+ of that is yours to take home after tax\. /,'').replace(' Changing the target does not change your prices.',' Changing the target changes what you earn each hour, and so your prices.');
+  const a=h.indexOf('<section class="card"><h3>Your target</h3>'); if(a<0) return h; const b=h.indexOf('</section>',a)+10, tgt=h.slice(a,b);
+  const f=tgt.indexOf('</label>',tgt.indexOf('id="tg-takeHome"')), plan=f<0?'':tgt.slice(f+8,tgt.length-10);
+  return h.slice(0,a)+priceCard(c,plan)+h.slice(b); };
 document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act;
-  if(a==='tg-mode'){ state.setup.targetMode=el.dataset.v; save(); render(); }
-  else if(a==='sl-use'){ compute(state).treatments.forEach(c=>{ const t=state.treatments.find(x=>x.id===c.id); if(t) t.price=c.suggested; }); save(); render(); toast('Prices updated'); }
+  if(a==='sl-use'){ compute(state).treatments.forEach(c=>{ const t=state.treatments.find(x=>x.id===c.id); if(t) t.price=c.suggested; }); save(); render(); toast('Prices updated'); }
   else if(a==='undo-ok'){ document.getElementById('undobar').hidden=true; undoSnap=null; clearTimeout(undoTimer); } });
 UNDOABLE.add('sl-use');
 
