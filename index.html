@@ -831,7 +831,7 @@ function vMoney(){
   const sumI=inc.reduce((a,x)=>a+(+x.amount||0),0), sumE=exp.reduce((a,x)=>a+(+x.amount||0),0);
   return `<section class="stack"><div><h2>Money in and out</h2><p class="muted">Tax year ${ty}/${String((ty+1)%100).padStart(2,'0')} (6 April to 5 April). Snap receipts as you go.</p></div>
   <div class="grid2"><div class="stat"><span class="label">Money in</span><span class="value">${gbp(sumI)}</span></div><div class="stat"><span class="label">Money out</span><span class="value">${gbp(sumE)}</span></div></div>
-  ${tripMiles>0?`<p class="small muted">Plus ${gbp(mileageClaim(tripMiles))} for the ${nf(tripMiles)} miles you have driven for work. The Tax tab counts that as money out too.</p>`:''}
+  ${tripMiles>0?`<p class="small muted">Plus ${gbp(mileageClaim(tripMiles))} for the ${nf(tripMiles)} miles you have driven for work.</p>`:''}
   <article class="card"><h3>Quick add ${an(W().one)} ${W().one} you did today</h3>
     <div class="chips">${state.treatments.filter(t=>+t.price>0&&!t.addon).map(t=>`<button class="chip" data-act="quick-income" data-id="${t.id}">${esc(t.name)} · ${gbp(+t.price)}</button>`).join('') || `<span class="muted small">Add prices on the ${W().Many} tab to get one-tap buttons.</span>`}</div>
   </article>
@@ -1845,7 +1845,7 @@ function quickStep(st){
         <div class="q3">
           <label class="field">Your price<span class="money-in"><input id="ql-p-${t.id}" type="number" inputmode="decimal" min="0" step="0.5" value="${t.price?esc(t.price):''}" placeholder="${t.exPrice?'e.g. '+nf(t.exPrice):''}" data-tf="${t.id}" data-f="price"></span></label>
           <label class="field">${h?'Hours':'Minutes'}<input id="ql-m-${t.id}" type="number" inputmode="decimal" min="0" step="${h?0.5:5}" value="${esc(h?nf((+t.clientMin||0)/60):t.clientMin)}" data-tf="${t.id}" data-f="clientMin" data-mul="${h?60:1}"></label>
-          <label class="field">A month<input id="ql-w-${t.id}" type="number" inputmode="decimal" min="0" step="1" value="${t.perWeek?esc(Math.round(t.perWeek*52/12)):''}" placeholder="${t.exPerWeek?'e.g. '+nf(Math.round(t.exPerWeek*52/12)):''}" data-tf="${t.id}" data-f="perWeek" data-mul="${12/52}"></label>
+          ${cntField(t)}
         </div></article>`; }).join('');
     return {q:'Your prices now', why:`For each one: what you charge, how long it takes, and roughly how many you do in a month. The times are examples, so change any that are wrong. We add a few minutes to each for setting up and cleaning down. Leave a price empty if you have not set one.`, body:`<div class="stack">${rows}</div>`};
   }
@@ -2375,8 +2375,9 @@ const GUIDE=[
   ['Do your end of day check-in',"Tap Diary, then 'End of day check-in' in the Today card. Mark who paid or did not come, add anyone who was not in the diary, tap + for each pack or bottle you finished, and add anything to remember. Tap 'Save my day'.",'diary'],
   ['Remember something about a client',"Open the client and type it under 'For next time', for example 'wants green hair dye next time'. It shows on their bookings in the diary until you tick it off. You can also add it in the end of day check-in.",'clients'],
   ['Get told when to reorder',"Anything at its reorder level, or that you finished or ran out of, shows under 'Time to reorder' at the top of the Diary, with an Order button if it has a link. Tap 'Got it' once you have bought more.",'stock'],
-  ['Save a bill or invoice',"Tap Money, then Tax. Under 'Bills each month', tap the month and pick the photo of the bill. It is saved in Money out, dated in that month. You can also tap 'Add an invoice' beside any running cost.",'taxyear'],
+  ['Save a bill or invoice',"Tap Money. Under 'Bills each month', tap the month and pick the photo of the bill. It is saved in Money out, dated in that month. You can also tap 'Add an invoice' beside any running cost.",'money'],
   ['Set your prices with the slider',"On Prices, under 'Your prices and target', slide right to earn more each hour on top of your costs, or type what you want to take home each month. The two move together. All the way left just covers your costs. Tap 'Use these prices' to use them.",'prices'],
+  ['Work out what you need to take home',"Tap Prices, then 'Your own outgoings and savings'. Type what you pay at home and what you want to save each month. The app works out what you need to take home and what to charge an hour.",'prices'],
   ['Let clients book online',"At the bottom of Diary, under 'Let clients book online', type your mobile number and tap 'Share my booking link'. Send it to clients or put it in your Instagram bio. They pick a treatment and a free time and send you a request. Tap the link in their message to add it to your diary.",'diary'],
   ['Send a reminder',"Tap Reminder on the booking, then 'Copy message'. Paste it into a text, WhatsApp or email. The app does not send it for you.",'diary'],
   ['Record a deposit',"Type it in 'Deposit taken' when you make the booking.",'diary'],
@@ -2386,8 +2387,8 @@ const GUIDE=[
   ['Record something you paid for',"Tap Money and open 'Add money out'. Fill in the date, the amount, what it was for and what kind of cost. Add a receipt photo if you have one.",'money'],
   ['Record a business trip in your car',"Tap Money and open 'Car trips'. Type the date, the miles there and back and where you went, then tap 'Add trip'.",'money'],
   ['Fix or delete an entry',"Find it in the list on Money and tap Change. To delete it, tap 'Delete this entry' on that sheet, then tap it again.",'money'],
-  ['See how much to put aside for tax',"Tap Money, then Tax at the top. 'Your tax pot' shows the bill for the year and how much to put aside each month. Type what you have saved in 'Money you have put aside so far'.",'taxyear'],
-  ['Get your figures for a tax return or an accountant',"Tap Money, then Tax. Under 'For your tax return (Self Assessment)', tap 'Copy summary' and paste it into a message or email. 'Copy this list' on the Money lists copies every entry.",'taxyear']]],
+  ['See how much to put aside for tax',"Tap Prices. Under the slider it says what share of your profit to put aside for tax, National Insurance and any student loan. Add a job or student loan under 'Your own outgoings and savings'.",'prices'],
+  ['Get your figures for a tax return or an accountant',"Tap Money. 'Copy this list' on Money in and Money out copies every entry to paste into a message or email.",'money']]],
 ['Clients',[
   ['Add a client',"Tap Clients, type their name in the box at the top and tap Add. Booking someone new in the diary adds them too.",'clients'],
   ['See or change the details of a client',"Tap Clients, then Open beside their name. Phone, email and notes are under Details, and their visits are just below.",'clients'],
@@ -3129,7 +3130,7 @@ function payDesc(o){ const p=o.pay, bits=[];
   return bits.join(' · ')||'Optional'; }
 function costItem(o){
   return `<div class="item" style="flex-wrap:wrap;gap:6px 8px">
-    <input id="oh-title-${o.id}" aria-label="Who you pay or what it is, for ${esc(o.name||'this cost')}" placeholder="Name it, e.g. BT Internet" value="${esc(o.title||'')}" data-oh="${o.id}" data-f="title" style="flex:1 1 55%;min-width:0">
+    <input id="oh-title-${o.id}" aria-label="Who you pay or what it is, for ${esc(o.name||'this cost')}" placeholder="Name it (optional)" value="${esc(o.title||'')}" data-oh="${o.id}" data-f="title" style="flex:1 1 55%;min-width:0">
     <button class="iconbtn" aria-label="Remove ${esc(o.title||o.name||'this')}" data-act="oh-del" data-id="${o.id}">✕</button>
     <span class="money-in" style="flex:0 0 120px"><input id="oh-amt-${o.id}" type="number" inputmode="decimal" min="0" step="1" value="${esc(o.amount)}" aria-label="${esc(o.title||o.name||'Cost')}, amount" data-oh="${o.id}" data-f="amount"></span>
     <select aria-label="How often you pay for ${esc(o.title||o.name||'this')}" data-ohp="${o.id}" style="flex:0 0 120px">${PERIOD.map(([k,l])=>`<option value="${k}" ${o.group===k?'selected':''}>${l}</option>`).join('')}</select>
@@ -3147,7 +3148,7 @@ costList=function(){ const s=state.setup, list=s.overheads||[];
       ${o.custom?`<input id="oh-name-${o.id}" aria-label="What kind of cost is it?" placeholder="What kind of cost? e.g. Software" value="${esc(o.name)}" data-ohname="${o.id}" style="font-weight:600">`:`<b>${esc(o.name)}</b>`}
       <div class="list">${items.map(costItem).join('')}</div>
       <button class="btn small ghost" style="align-self:flex-start" data-act="oh-more" data-id="${o.id}">+ Add another under ${esc(o.name||'this')}</button></div>`; }).join('');
-  return `<div class="stack" style="gap:6px"><h3 style="font-size:1rem">What you pay regularly</h3><p class="small muted">Add each one you pay under its kind, like BT Internet under Phone and internet.</p>
+  return `<div class="stack" style="gap:6px"><h3 style="font-size:1rem">What you pay regularly</h3><p class="small muted">Add each one you pay under its kind. Naming it is optional.</p>
       ${groups}
       <button class="btn small ghost" data-act="costq-add" data-g="monthly">+ Add a new kind of cost</button></div>
     <div class="stack" style="gap:6px"><h3 style="font-size:1rem">One-offs</h3><p class="small muted">Things you buy once and keep using, like a lamp, a couch or a trolley.</p>
@@ -3161,6 +3162,66 @@ document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.close
 // renaming a kind of cost renames every item under it
 document.addEventListener('change',e=>{ const el=e.target, id=el.dataset&&el.dataset.ohname; if(!id) return; const s=state.setup, o=(s.overheads||[]).find(x=>x.id===id); if(!o) return;
   const old=o.name; s.overheads.forEach(x=>{ if(x===o||(old&&x.custom&&x.name===old)) x.name=el.value.trim(); }); s._ohEdited=true; save(); render(); });
+
+// ===================== how many a week or a month; personal outgoings and savings set the take home; what to put aside for tax =====================
+// ---- set-up step 4: count by the week or the month ----
+const perMonth=()=>state.setup.countPer!=='week', WK=52/12;
+function cntField(t){ const m=perMonth(), sh=v=>m?Math.round(v*WK):v;
+  return `<label class="field">${m?'A month':'A week'}<input id="ql-w-${t.id}" type="number" inputmode="decimal" min="0" step="${m?1:0.5}" value="${t.perWeek?esc(sh(+t.perWeek)):''}" placeholder="${t.exPerWeek?'e.g. '+nf(sh(+t.exPerWeek)):''}" data-tf="${t.id}" data-f="perWeek" data-mul="${m?1/WK:1}"></label>`; }
+const quickStepBeforeCount=quickStep;
+quickStep=function(st){ const r=quickStepBeforeCount(st); if(st.type!=='quicklist'||!r) return r; const m=perMonth();
+  return {...r, why:r.why.replace(/how many you do in a (week|month)/,`how many you do in a ${m?'month':'week'}`),
+    body:`<div class="row" style="gap:8px;align-items:center"><span class="small" style="font-weight:600">Count how many you do</span><div class="chips"><button class="chip" data-act="cnt-per" data-v="week" aria-pressed="${!m}">A week</button><button class="chip" data-act="cnt-per" data-v="month" aria-pressed="${m}">A month</button></div></div>`+r.body}; };
+
+// ---- the Tax page is put away for now; its bills list moves to Money ----
+const navGroupsBeforeTax=navGroups;
+navGroups=function(){ return navGroupsBeforeTax().map(g=>g.key==='money'?{...g,views:g.views.filter(v=>v[0]!=='taxyear')}:g); };
+const vMoneyBeforeBills=vMoney;
+vMoney=function(){ const h=vMoneyBeforeBills(), i=h.lastIndexOf('</section>'); return i<0?h:h.slice(0,i)+billsCard(moneyYear ?? taxYearOf(todayStr()))+h.slice(i); };
+
+// ---- her own outgoings and savings: what she needs to take home ----
+const PERSONAL=['Rent or mortgage','Council tax','Gas and electric','Water','Food and shopping','Phone and broadband','Car or travel','Childcare','Loans and credit cards','Subscriptions','Clothes, gifts and going out'];
+const pers=()=>{ const s=state.setup; if(!s.personal) s.personal=PERSONAL.map(n=>({id:uid(),name:n,amount:0,group:'monthly'})); return s.personal; };
+const persMonth=s=>(s.personal||[]).reduce((a,o)=>a+(+o.amount||0)*(o.group==='weekly'?WK:1),0)+(+s.savings||0);
+// what share of profit goes on tax, National Insurance and student loan
+function setAside(profitMonth){ const s=state.setup, yr=Math.max(0,profitMonth*12), p=taxParts(yr,regionOf(s),RULES,taxOpts(s));
+  const pc=v=>yr>0?v/yr:0; return {all:pc(p.total),tax:pc(p.tax),ni:pc(p.ni),loan:pc(p.loan),month:p.total/12}; }
+const pctTxt=v=>`${Math.round(v*1000)/10}%`;
+function asideLine(profitMonth){ const a=setAside(profitMonth); if(!(a.all>0)) return `<p class="small muted" id="sl-tax">At this level there is no tax or National Insurance to put aside.</p>`;
+  return `<p class="small" id="sl-tax">Put aside about <b>${pctTxt(a.all)}</b> of your profit, about <b>${gbp0(a.month)}</b> a month: income tax ${pctTxt(a.tax)}, National Insurance ${pctTxt(a.ni)}${a.loan>0?`, student loan ${pctTxt(a.loan)}`:''}.</p>`; }
+function personalSection(){ const s=state.setup, list=pers(), need=persMonth(s), c=compute(state), rate=need>0?rateFor(need,c):null;
+  const row=o=>`<div class="item" style="flex-wrap:wrap;gap:6px 8px"><input id="pe-n-${o.id}" aria-label="What it is" placeholder="What is it?" value="${esc(o.name)}" data-pe="${o.id}" data-f="name" style="flex:1 1 55%;min-width:0"><button class="iconbtn" aria-label="Remove ${esc(o.name||'this')}" data-act="pe-del" data-id="${o.id}">✕</button>
+    <span class="money-in" style="flex:0 0 120px"><input id="pe-a-${o.id}" type="number" inputmode="decimal" min="0" step="1" value="${+o.amount?esc(o.amount):''}" placeholder="0" aria-label="${esc(o.name||'Amount')}, amount" data-pe="${o.id}" data-f="amount"></span>
+    <select aria-label="How often" data-pe="${o.id}" data-f="group" style="flex:0 0 120px">${PERIOD.filter(p=>p[0]!=='yearly').map(([k,l])=>`<option value="${k}" ${o.group===k?'selected':''}>${l}</option>`).join('')}</select></div>`;
+  return `<div class="stack" style="gap:6px"><h3 style="font-size:1rem">Your own outgoings</h3><p class="small muted">What you pay at home each month. Leave any that do not apply. This sets what you need to take home.</p>
+      <div class="list">${list.map(row).join('')}</div><button class="btn small ghost" data-act="pe-add">+ Add another</button></div>
+    <div class="stack" style="gap:6px"><h3 style="font-size:1rem">Savings</h3>${moneyField('pe-sav','What you want to save each month','Comes out of your wage, on top of your outgoings',+s.savings||'','data-pesav="1"')}</div>
+    <details class="fold" data-sec="pe-loan" ${isOpen('pe-loan')?'open':''}><summary><span class="grow">A job or student loan<small>Changes how much to put aside</small></span></summary>${taxExtraEditor()}</details>
+    ${need>0?`<div class="notice ok"><b>You need to take home ${gbp0(need)} a month.</b> ${rate!=null&&fullHours(c)>0?`That means ${gbp0(rate)} an hour on top of your costs, so about ${gbp0(c.overheadRate+rate)} for each hour with a ${W().cust}.`:''}</div>${asideLine(profitNeeded(need*12,regionOf(s),RULES,taxOpts(s))/12)}`:'<p class="small muted">Type in your outgoings to see what you need to take home.</p>'}`; }
+// her outgoings and savings lead: they set the take home, and so the hourly amount
+function applyPersonal(){ const s=state.setup, need=persMonth(s); if(need>0){ s.takeHome=Math.round(need); s.profitHour=Math.round(rateFor(need,compute(state))*100)/100; } }
+document.addEventListener('change',e=>{ const el=e.target, d=(el&&el.dataset)||{}, s=state.setup;
+  if(d.pe){ const o=pers().find(x=>x.id===d.pe); if(!o) return; o[d.f]=d.f==='amount'?Math.max(0,+el.value||0):el.value; applyPersonal(); save(); render(); }
+  else if(d.pesav){ s.savings=Math.max(0,+el.value||0); applyPersonal(); save(); render(); }
+  else if(d.sl||el.id==='tx-job'){ setTimeout(()=>{ applyPersonal(); save(); render(); },0); } });
+document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act, s=state.setup;
+  if(a==='cnt-per'){ s.countPer=el.dataset.v; save(); render(); }
+  else if(a==='pe-add'){ const o={id:uid(),name:'',amount:0,group:'monthly'}; pers().push(o); save(); render(); const n=document.getElementById('pe-n-'+o.id); if(n) n.focus(); }
+  else if(a==='pe-del'){ s.personal=pers().filter(x=>x.id!==el.dataset.id); applyPersonal(); save(); render(); }
+  else if(a==='pg-toggle'){ setTimeout(()=>{ applyPersonal(); save(); render(); },0); } });
+UNDOABLE.add('pe-del');
+// set-up: her own outgoings come straight after the business ones
+const quickStepBeforePersonal=quickStep;
+quickStep=function(st){ const r=quickStepBeforePersonal(st); if(st.type!=='costq'||!r) return r;
+  return {...r, q:'What goes out each month?', why:r.why+' Then what you pay at home and want to save, so we know what you need to take home.', body:r.body+`<div class="stack" style="gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">${personalSection()}</div>`}; };
+// Prices: the same section under Your numbers, and what to put aside under the slider
+const vPricesBeforePersonal=vPrices;
+vPrices=function(){ let h=vPricesBeforePersonal(); const a='<p class="live" id="pn-live">', i=h.indexOf(a);
+  if(i>=0) h=h.slice(0,i)+`<details class="fold" data-sec="p-own" ${isOpen('p-own')?'open':''}><summary><span class="grow">Your own outgoings and savings<small>${persMonth(state.setup)>0?`${gbp0(persMonth(state.setup))} a month · tap to change`:'Sets what you need to take home · tap to add'}</small></span></summary><div class="stack">${personalSection()}</div></details>`+h.slice(i);
+  const b='<h3 style="font-size:1rem;margin-top:6px">Your prices at this rate</h3>', j=h.indexOf(b), c=compute(state);
+  if(j>=0) h=h.slice(0,j)+asideLine(profitHourOf(state.setup)*fullHours(c))+h.slice(j);
+  return h; };
+document.addEventListener('input',e=>{ const el=e.target; if(!el.dataset||!el.dataset.slide) return; const n=document.getElementById('sl-tax'); if(n) n.outerHTML=asideLine(+el.value*fullHours(compute(state))); });
 
 render();
 </script>
