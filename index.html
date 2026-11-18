@@ -244,7 +244,7 @@ function productCosts(state){
     const factor= rawPPW>0 ? packsPerWeek/rawPPW : 1;
     const lost= 1-1/factor;
     const weeksLeft= packsPerWeek>0 ? (+p.inStock||0)/packsPerWeek : null;
-    const reorder=(+p.reorderAt||0)>0 && (+p.inStock||0) <= (+p.reorderAt||0); // no reorder level set means no nagging
+    const reorder=((+p.reorderAt||0)>0 && (+p.inStock||0) <= (+p.reorderAt||0)) || !!p.toBuy; // no reorder level set means no nagging, unless she ran out
     return {...p, packsPerWeek, factor, lost, weeksLeft, reorder};
   });
 }
@@ -1130,7 +1130,7 @@ function vDiary(){
       ${offs.length?`<div class="chips">${offs.map(p=>`<span class="pill warn">${p.id==='me'?'You are off':esc(p.name)+' is off'}</span>`).join('')}</div>`:''}
       ${bks.length?`<div class="list">${bks.map(b=>{ const [cls,lab]=STATUS[b.status]||STATUS.booked; const cl=clientById(b.clientId);
         return `<div class="item" style="align-items:flex-start;flex-wrap:wrap"><div class="num" style="min-width:64px">${fmtT(b.time)}</div>
-          <div class="grow"><p style="white-space:normal"><b>${esc(bookingLabel(b))}</b>${classTag(b)}</p><p class="small muted" style="white-space:normal">${esc(cl?cl.name:'No name')} · ${esc(personName(b.staffId))} · ${gbp(+b.price)}${+b.deposit?` · deposit ${gbp(+b.deposit)}`:''}</p>
+          <div class="grow"><p style="white-space:normal"><b>${esc(bookingLabel(b))}</b>${classTag(b)}</p><p class="small muted" style="white-space:normal">${esc(cl?cl.name:'No name')} · ${esc(personName(b.staffId))} · ${gbp(+b.price)}${+b.deposit?` · deposit ${gbp(+b.deposit)}`:''}</p>${remLine(b)}
             </div>
           <span class="pill ${cls}">${lab}</span>
           ${b.status==='booked'?`<div class="row" style="flex-basis:100%;gap:6px"><span class="small muted">Paid by</span><button class="btn small" data-act="bk-done" data-id="${b.id}" data-m="Card" aria-label="Paid by card">Card</button><button class="btn small ghost" data-act="bk-done" data-id="${b.id}" data-m="Cash" aria-label="Paid by cash">Cash</button><button class="btn small ghost" data-act="bk-done" data-id="${b.id}" data-m="Bank transfer" aria-label="Paid by bank transfer">Transfer</button></div>
@@ -1174,6 +1174,7 @@ function renderBkForm(){
       <label class="field">Deposit taken<span class="money-in"><input id="bk-dep" type="number" min="0" step="0.01" value="${esc(d.deposit||0)}" data-bkf="deposit"></span></label></div>
     <label class="field">Notes<input id="bk-notes" value="${esc(d.notes||'')}" data-bkf="notes"></label>
     <p class="small muted">Takes about ${fmtTime(bkMins(d),svc(d.serviceId))}${d.time?`, finishing around ${fmtT(fromMin(toMin(d.time)+bkMins(d)))}`:''}.</p>
+    ${remsFor(d.clientId).map(r=>`<div class="notice info"><b>Remember:</b> ${esc(r.text)}</div>`).join('')}
     ${warns.map(x=>`<div class="notice warn">${esc(x)}</div>`).join('')}
     <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="bk-close">Cancel</button><button class="btn" type="submit">${warns.length&&d._ack?'Save anyway':'Save booking'}</button></div>
     ${d.id?`<button type="button" class="btn small ghost" data-act="${delArmed?'bk-del':'bk-del-ask'}" data-id="${d.id}">${delArmed?'Tap again to delete':'Delete this booking'}</button>`:''}
@@ -2364,6 +2365,9 @@ const GUIDE=[
   ['Say how many uses you get from a product',"Tap Prices, then Treatments, then the treatment. Under each product, change 'How many uses do you get from' it, then tap Done. The cost of each treatment updates straight away. You can also do this in the set-up questions.",'treatments'],
   ['Reorder a product quickly',"Tap Prices, then Products, then the product. Paste the web page you buy it from into 'Link to order it'. An Order button then shows next to it, so you can reorder in one tap.",'stock'],
   ['Run a group class',"Tap Prices, then the treatment. Type how many places it has, how many usually come, and when it runs each week. The price is for each person. Book each person into the same time in the Diary, and clients can join it online until it is full.",'treatments'],
+  ['Do your end of day check-in',"Tap Diary, then 'End of day check-in' in the Today card. Mark who paid or did not come, add anyone who was not in the diary, tap + for each pack or bottle you finished, and add anything to remember. Tap 'Save my day'.",'diary'],
+  ['Remember something about a client',"Open the client and type it under 'For next time', for example 'wants green hair dye next time'. It shows on their bookings in the diary until you tick it off. You can also add it in the end of day check-in.",'clients'],
+  ['Get told when to reorder',"Anything at its reorder level, or that you finished or ran out of, shows under 'Time to reorder' at the top of the Diary, with an Order button if it has a link. Tap 'Got it' once you have bought more.",'stock'],
   ['Let clients book online',"At the bottom of Diary, under 'Let clients book online', type your mobile number and tap 'Share my booking link'. Send it to clients or put it in your Instagram bio. They pick a treatment and a free time and send you a request. Tap the link in their message to add it to your diary.",'diary'],
   ['Send a reminder',"Tap Reminder on the booking, then 'Copy message'. Paste it into a text, WhatsApp or email. The app does not send it for you.",'diary'],
   ['Record a deposit',"Type it in 'Deposit taken' when you make the booking.",'diary'],
@@ -2876,6 +2880,111 @@ bookFace=function(){ const B=BK, live=B.d.filter(([x])=>x>todayStr()), tr=B.t.fi
 document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.closest('[data-act="bf-m"],[data-act="bf-reset"],[data-act="bf-retime"]'); if(!el||el.disabled) return; const a=el.dataset.act;
   if(a==='bf-m') bfMonth={t:bf.t,m:el.dataset.v}; else if(a==='bf-reset'){ bf.t=null; bf.d=null; bf.time=null; bfMonth=null; } else bf.time=null;
   render(); if(a!=='bf-m'&&window.scrollTo) window.scrollTo(0,0); });
+
+
+
+// ===================== end of day check-in, reminders for clients, and a nudge to reorder =====================
+const rems=()=>state.reminders||(state.reminders=[]);
+const remsFor=cid=>cid?rems().filter(r=>r.clientId===cid):[];
+function addReminder(cid,text){ text=String(text||'').trim(); if(!text) return null; const r={id:uid(),clientId:cid||'',text,date:todayStr()}; rems().push(r); return r; }
+// what to buy: counted stock at its reorder level, or anything she said she finished (or ran out of)
+const toBuyList=()=>compute(state).products.filter(p=>state.setup.trackStock?p.reorder:p.toBuy);
+function reorderNudge(was){ const fresh=toBuyList().filter(p=>!was.has(p.id)); if(fresh.length) setTimeout(()=>{ const t=document.getElementById('toast'), pre=t&&!t.hidden&&t.textContent?t.textContent.replace(/\.?$/,'. '):''; toast(`${pre}Running low: ${fresh.map(p=>p.name).join(', ')}. Time to reorder.`); },0); }
+const buyIds=()=>new Set(toBuyList().map(p=>p.id));
+
+// paid bookings take stock off; running out puts it on the list even with no reorder level set
+const useStockBeforeNudge=useStock;
+useStock=function(b,sign){ const was=buyIds(), before=new Map(state.products.map(p=>[p.id,+p.inStock||0]));
+  useStockBeforeNudge(b,sign);
+  if(sign>0&&state.setup.trackStock){ state.products.forEach(p=>{ if(before.get(p.id)>0&&(+p.inStock||0)<=0) p.toBuy=true; }); reorderNudge(was); } };
+// shortcut: assumes the open pack is the one that ran out, so the part-used bit goes; two finished in one day takes one more. Upgrade if counts drift.
+function finishPack(p,n){ n=+n||0; if(n<=0) return;
+  if(!state.setup.trackStock){ p.toBuy=true; return; }
+  p.inStock=Math.max(0,Math.floor((+p.inStock||0)+0.001)-(n-1)); if(p.inStock<=0) p.toBuy=true; }
+
+function payBooking(b,m){ b.status='done'; b.method=m; const cl=clientById(b.clientId);
+  state.income.push({id:uid(),date:b.date,desc:`${bookingLabel(b)}${cl?' · '+cl.name:''}`,amount:+b.price||0,method:m,bookingId:b.id}); useStock(b,1); }
+function noShowBooking(b){ b.status='noshow'; if(+b.deposit>0) state.income.push({id:uid(),date:b.date,desc:'Deposit kept (no-show)',amount:+b.deposit,method:payDefault(),bookingId:b.id}); }
+
+// ---- the check-in ----
+let eod=null;
+const PAYS=[['Card','Card'],['Cash','Cash'],['Bank transfer','Transfer']];
+function eodTotals(e){ const bks=state.bookings.filter(b=>b.date===e.date);
+  let n=0, money=0; bks.forEach(b=>{ const m=b.status==='booked'?e.marks[b.id]:b.status; if(m==='done'||PAYS.some(([v])=>v===m)){ n++; money+=+b.price||0; } });
+  e.extra.forEach(x=>{ const t=svc(x.svc), q=Math.max(0,Math.round(+x.qty||0)); n+=q; money+=q*unitPrice(t); }); return {n,money}; }
+function applyEod(e){ const was=buyIds();
+  state.bookings.filter(b=>b.date===e.date&&b.status==='booked').forEach(b=>{ const m=e.marks[b.id]; if(m==='noshow') noShowBooking(b); else if(PAYS.some(([v])=>v===m)) payBooking(b,m); });
+  const tm=new Date().toTimeString().slice(0,5);
+  e.extra.forEach(x=>{ const t=svc(x.svc); if(!t) return; for(let i=0;i<Math.round(+x.qty||0);i++){ const b={id:uid(),date:e.date,time:tm,staffId:'me',clientId:'',serviceId:t.id,addons:[],mins:+t.clientMin||0,price:unitPrice(t),deposit:0,notes:'Added at the end of the day',status:'booked'}; state.bookings.push(b); payBooking(b,x.m||'Card'); } });
+  Object.entries(e.used).forEach(([id,n])=>{ const p=state.products.find(x=>x.id===id); if(p) finishPack(p,n); });
+  addReminder(e.who,e.text);
+  const tot=eodTotals({...e,marks:{},extra:[]}); reorderNudge(was); return tot; }
+
+function renderEod(){ const o=document.getElementById('overlay'); if(!eod){ o.hidden=true; return; } const e=eod, cust=W().cust;
+  const bks=state.bookings.filter(b=>b.date===e.date&&b.status!=='cancelled').sort((a,b)=>a.time.localeCompare(b.time));
+  const mains=state.treatments.filter(t=>!t.addon), tot=eodTotals(e);
+  const sel=(attrs,opts,v)=>`<select ${attrs}>${opts.map(([k,l])=>`<option value="${esc(k)}" ${k===v?'selected':''}>${esc(l)}</option>`).join('')}</select>`;
+  const who=[...new Set(bks.map(b=>b.clientId).filter(Boolean))].map(clientById).filter(Boolean), others=state.clients.filter(c=>!who.includes(c)).sort((a,b)=>a.name.localeCompare(b.name));
+  o.innerHTML=`<form class="card" id="form-eod" style="max-width:560px;width:100%;max-height:90vh;overflow:auto">
+    <div class="treat-head"><h3>End of day</h3><button type="button" class="iconbtn" aria-label="Close" data-act="eod-close">✕</button></div>
+    <p class="small muted" style="margin-top:-6px">${fmtDay(e.date)}. Answer what applies and tap Save.</p>
+    <h3 style="font-size:1.02rem">Who came in?</h3>
+    ${bks.length?`<div class="list">${bks.map(b=>{ const cl=clientById(b.clientId); return `<div class="item" style="flex-wrap:wrap"><div class="grow"><p style="white-space:normal"><b>${fmtT(b.time)}</b> ${esc(bookingLabel(b))}</p><p class="small muted">${esc(cl?cl.name:'No name')} · ${gbp(+b.price)}</p></div>
+      ${b.status==='booked'?sel(`aria-label="What happened at ${fmtT(b.time)}" data-eodm="${b.id}" style="width:auto"`,[['','Not sorted yet'],...PAYS.map(([v,l])=>[v,'Paid · '+l]),['noshow','Did not come']],e.marks[b.id]||''):`<span class="pill ${(STATUS[b.status]||STATUS.booked)[0]}">${(STATUS[b.status]||STATUS.booked)[1]}</span>`}</div>`; }).join('')}</div>`:`<p class="small muted">Nothing was in the diary today.</p>`}
+    <span class="small" style="font-weight:600">Anyone not in the diary?</span>
+    ${e.extra.map((x,i)=>`<div class="stack" style="gap:6px;padding:8px 0;border-bottom:1px solid var(--line)">${sel(`aria-label="${W().One}" data-eodx="${i}" data-k="svc"`,mains.map(t=>[t.id,t.name]),x.svc)}<div class="row" style="flex-wrap:nowrap;gap:6px"><label class="small" style="display:flex;align-items:center;gap:6px">How many<input type="number" min="1" step="1" inputmode="numeric" value="${esc(x.qty)}" data-eodx="${i}" data-k="qty" style="width:60px"></label>${sel(`aria-label="Paid by" data-eodx="${i}" data-k="m" style="flex:1;min-width:0"`,PAYS.map(([v,l])=>[v,'Paid · '+l]),x.m)}<button type="button" class="iconbtn" aria-label="Remove" data-act="eod-xdel" data-i="${i}">✕</button></div></div>`).join('')}
+    ${mains.length?`<button type="button" class="btn small ghost" data-act="eod-xadd">+ Add ${cust}s not in the diary</button>`:''}
+    <div class="notice ok">That makes <b>${tot.n} ${cust}${tot.n===1?'':'s'}</b> and <b>${gbp(tot.money)}</b> taken today.</div>
+    <h3 style="font-size:1.02rem">Did you finish any ${W().items}?</h3>
+    <p class="small muted" style="margin-top:-6px">A whole pack or bottle used up${state.setup.trackStock?'. Your count goes down and it goes on your list to reorder when low':'. It goes on your list to reorder'}.</p>
+    ${state.products.length?`<div class="list">${state.products.map(p=>{ const n=+e.used[p.id]||0; return `<div class="item"><div class="grow"><p><b>${esc(p.name)}</b></p><p class="small muted">${esc(packLabel(p))}</p></div><button type="button" class="iconbtn" aria-label="One fewer ${esc(p.name)}" data-act="eod-u" data-id="${p.id}" data-d="-1" ${n?'':'disabled'}>−</button><span class="num" style="min-width:24px;text-align:center" aria-label="${n} finished">${n}</span><button type="button" class="iconbtn" aria-label="Finished one ${esc(p.name)}" data-act="eod-u" data-id="${p.id}" data-d="1">+</button></div>`; }).join('')}</div>`:`<p class="small muted">No ${W().items} added yet.</p>`}
+    <h3 style="font-size:1.02rem">Anything to remember?</h3>
+    <label class="field">About<select id="eod-who" data-eodf="who"><option value="">Just a reminder for me</option>${who.length?`<optgroup label="In today">${who.map(c=>`<option value="${c.id}" ${c.id===e.who?'selected':''}>${esc(c.name)}</option>`).join('')}</optgroup>`:''}${others.length?`<optgroup label="Everyone else">${others.map(c=>`<option value="${c.id}" ${c.id===e.who?'selected':''}>${esc(c.name)}</option>`).join('')}</optgroup>`:''}</select></label>
+    <label class="field">Reminder<span class="hint">Shows on their next booking until you tick it off</span><input id="eod-text" placeholder="e.g. wants green hair dye next time" value="${esc(e.text)}" data-eodf="text"></label>
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="eod-close">Cancel</button><button type="button" class="btn" data-act="eod-save">Save my day</button></div></form>`;
+  o.hidden=false; }
+
+document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act;
+  if(a==='eod-open'){ eod={date:todayStr(),marks:{},extra:[],used:{},who:'',text:''}; renderEod(); }
+  else if(!/^(eod-|nt-|buy-got|stock-inc)/.test(a)) return;
+  else if(a==='eod-close'){ eod=null; renderEod(); }
+  else if(a==='eod-xadd'){ const t=state.treatments.find(x=>!x.addon); if(t) eod.extra.push({svc:t.id,qty:1,m:'Card'}); renderEod(); }
+  else if(a==='eod-xdel'){ eod.extra.splice(+el.dataset.i,1); renderEod(); }
+  else if(a==='eod-u'){ const id=el.dataset.id; eod.used[id]=Math.max(0,(+eod.used[id]||0)+(+el.dataset.d)); renderEod(); }
+  else if(a==='eod-save'){ const t=applyEod(eod); eod=null; renderEod(); save(); render(); toast(`Day saved: ${t.n} ${W().cust}${t.n===1?'':'s'}, ${gbp(t.money)} taken`); }
+  else if(a==='nt-done'){ state.reminders=rems().filter(r=>r.id!==el.dataset.id); save(); render(); }
+  else if(a==='nt-add'){ const i=document.getElementById('nt-new-'+el.dataset.id); if(addReminder(el.dataset.id,i&&i.value)){ save(); render(); toast('Saved. It shows on their next booking'); } else toast('Type the reminder first'); }
+  else if(a==='buy-got'){ const p=state.products.find(x=>x.id===el.dataset.id); if(!p) return; p.toBuy=false;
+    if(state.setup.trackStock){ p.inStock=Math.round((+p.inStock||0)+1); toast(`Added 1 ${p.name}. Change the count on Products if you got more`); } save(); render(); }
+  else if(a==='stock-inc'){ const p=state.products.find(x=>x.id===el.dataset.id); if(p&&p.toBuy){ p.toBuy=false; save(); render(); } } });
+document.addEventListener('change',e=>{ const el=e.target, d=el.dataset||{};
+  if(d.f==='inStock'&&d.pf){ const p=state.products.find(x=>x.id===d.pf); if(p&&p.toBuy&&+p.inStock>0){ p.toBuy=false; save(); } return; }
+  if(!eod) return;
+  if(d.eodm){ eod.marks[d.eodm]=el.value; renderEod(); }
+  else if(d.eodx!=null){ const x=eod.extra[+d.eodx]; if(x){ x[d.k]=d.k==='qty'?Math.max(1,Math.round(+el.value||1)):el.value; renderEod(); } }
+  else if(d.eodf) eod[d.eodf]=el.value; });
+document.addEventListener('input',e=>{ const d=(e.target.dataset||{}); if(eod&&d.eodf) eod[d.eodf]=e.target.value; });
+['eod-save','nt-done','buy-got'].forEach(a=>UNDOABLE.add(a));
+
+// ---- where it shows ----
+const remRow=(r,withName)=>{ const c=withName&&r.clientId&&clientById(r.clientId); return `<div class="item"><div class="grow"><p style="white-space:normal">${c?`<b>${esc(c.name)}</b>: `:''}${esc(r.text)}</p><p class="small muted">${fmtDay(r.date)}</p></div><button class="iconbtn" aria-label="Done, remove this reminder" data-act="nt-done" data-id="${r.id}">✓</button></div>`; };
+function remLine(b){ const rs=b.status==='booked'?remsFor(b.clientId):[]; return rs.length?`<p class="small" style="white-space:normal;color:var(--accent);font-weight:600">Remember: ${rs.map(r=>esc(r.text)).join('; ')}</p>`:''; }
+function todayCard(){ const buy=toBuyList(), rs=rems(), ts=!!state.setup.trackStock;
+  return `<article class="card"><div class="treat-head"><h3>Today</h3><button class="btn small" data-act="eod-open">End of day check-in</button></div>
+    ${buy.length?`<span class="small" style="font-weight:600">Time to reorder</span><div class="list">${buy.map(p=>`<div class="item"><div class="grow"><p><b>${esc(p.name)}</b></p><p class="small muted">${ts?`${nf(Math.round((+p.inStock||0)*10)/10)} left`:'You finished one'}${p.supplier?' · '+esc(p.supplier):''}</p></div>${orderBtn(p)}<button class="btn small ghost" data-act="buy-got" data-id="${p.id}">Got it</button></div>`).join('')}</div>`:''}
+    ${rs.length?`<span class="small" style="font-weight:600">Reminders</span><div class="list">${rs.map(r=>remRow(r,true)).join('')}</div>`:''}
+    ${!buy.length&&!rs.length?`<p class="small muted">At the end of the day, tap the button to log who came in, what you used up and anything to remember.</p>`:''}</article>`; }
+const vDiaryBeforeToday=vDiary;
+vDiary=function(){ const h=vDiaryBeforeToday(), i=h.indexOf('<article'); return i<0?h:h.slice(0,i)+todayCard()+h.slice(i); };
+const clientCardBeforeRem=clientCard;
+clientCard=function(c){ const h=clientCardBeforeRem(c), a='<article class="card"><h3>Visits</h3>', i=h.indexOf(a); if(i<0) return h;
+  const rs=remsFor(c.id), card=`<article class="card"><h3>For next time</h3><p class="small muted">Shows on their bookings until you tick it off.</p>
+    ${rs.length?`<div class="list">${rs.map(r=>remRow(r,false)).join('')}</div>`:''}
+    <div class="row" style="flex-wrap:nowrap"><input id="nt-new-${c.id}" aria-label="New reminder for ${esc(c.name)}" placeholder="e.g. wants green hair dye next time" style="flex:1"><button class="btn small" data-act="nt-add" data-id="${c.id}">Add</button></div></article>`;
+  return h.slice(0,i)+card+h.slice(i); };
+const vClientsBeforeRem=vClients;
+vClients=function(){ let h=vClientsBeforeRem(); if(clOpen) return h;
+  state.clients.forEach(c=>{ const n=remsFor(c.id).length; if(!n) return; const a=`<button class="btn small ghost" data-act="cl-open" data-id="${c.id}">`; h=h.replace(a,`<span class="pill info">Remember</span>`+a); }); return h; };
 
 render();
 </script>
