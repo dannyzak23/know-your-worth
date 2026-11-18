@@ -3056,7 +3056,8 @@ vTaxYear=function(){ const h=vTaxYearBeforeBills(), i=h.lastIndexOf('</section>'
 // ---- prices: slide from break-even up, see each price, use them ----
 const typicalUK=t=>+((ALLCAT.find(c=>c.id===t.id)||{}).price)||0;
 function pricesAt(rate){ const s=state.setup, keep=s.profitHour; s.profitHour=rate; const c=compute(state); s.profitHour=keep; return c.treatments; }
-function slideRows(rate){ return pricesAt(rate).map(t=>{ const uk=typicalUK(t); return `<div class="item"><div class="grow"><p style="white-space:normal"><b>${esc(t.name)}</b></p><p class="small muted" style="white-space:normal">Break even ${money(t.minimum)}${uk?` · typical UK guide ${money(uk)}`:''}${+t.price>0?` · you charge ${money(+t.price)}`:''}</p></div><b class="num" style="color:var(--accent)">${money(t.suggested)}</b></div>`; }).join(''); }
+// each price can be typed in here; the suggested one is shown beside it
+function slideRows(rate){ return pricesAt(rate).map(t=>{ const uk=typicalUK(t); return `<div class="item"><div class="grow"><p style="white-space:normal"><b>${esc(t.name)}</b></p><p class="small muted" style="white-space:normal">Suggested <b style="color:var(--accent)">${money(t.suggested)}</b> · break even ${money(t.minimum)}${uk?` · typical UK guide ${money(uk)}`:''}</p></div><span class="money-in" style="flex:0 0 104px"><input id="sl-pr-${t.id}" type="number" inputmode="decimal" min="0" step="0.5" value="${+t.price>0?esc(+t.price):''}" placeholder="${esc(nf(t.suggested))}" aria-label="Your price for ${esc(t.name)}" data-tf="${t.id}" data-f="price"></span></div>`; }).join(''); }
 const slideLabel=r=>+r>0?`${gbp0(+r)} an hour on top of your costs`:'Break even: just cover your costs';
 // the hourly amount and the monthly take-home are tied through her realistic hours with clients in a month
 const fullHours=c=>c.capacity>0?c.capacity:c.billable;
