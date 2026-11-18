@@ -151,6 +151,7 @@ td input,td select{padding:6px 8px;font-size:.92rem;min-width:70px}
 .overlay{position:fixed;inset:0;background:rgba(10,8,14,.75);display:flex;align-items:center;justify-content:center;z-index:20;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
 .overlay img{max-height:85vh;border-radius:10px}
 .toast[hidden]{display:none!important}
+#undobar .btn.ghost{color:var(--bg);border-color:var(--bg)}
 .toast{position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;z-index:30}
 details summary{cursor:pointer;font-weight:700}
 .example-flag{background:var(--warn-soft);color:var(--warn);font-weight:700;font-size:.8rem;padding:4px 10px;border-radius:999px}
@@ -1835,7 +1836,7 @@ function quickStep(st){
   const s=state.setup;
   if(st.type==='welcome') return {q:'Find out what you should be charging', why:'Answer a few questions about your work and get a suggested price for everything you do.',
     body:`<div class="stack">
-      <div class="notice info"><b>About 2 minutes.</b> Nine short questions.</div>
+      <div class="notice info"><b>About 10 minutes.</b> Nine questions.</div>
       <div class="notice info"><b>You get:</b> a price for each thing you do, what to put aside for tax, and whether your prices cover what you want to earn.</div>
       <div class="notice info"><b>Private.</b> Everything you type stays on this phone. We cannot see it.</div></div>`};
   if(st.type==='quicklist'){
@@ -2136,7 +2137,7 @@ quickStep=function(st){
   const s=state.setup;
   if(st.type==='welcome') return {q:'Find out what you should be charging', why:'Answer a few questions about your work and see what each treatment really costs you.',
     body:`<div class="stack">
-      <div class="notice info"><b>About 2 minutes.</b> A few short questions.</div>
+      <div class="notice info"><b>About 10 minutes.</b> It helps to have your price list and your bills to hand.</div>
       <div class="notice info"><b>You get:</b> what each treatment costs you, the price that covers it, and how many you need to do to earn what you want.</div>
       <div class="notice info"><b>Private.</b> Everything you type stays on this phone. We cannot see it.</div></div>`};
   if(st.type==='profitq'){ const v=profitHourOf(s);
@@ -2244,7 +2245,7 @@ vMore=function(){
       <div class="row"><button class="btn" data-act="backup-file">Save a backup file</button><label class="btn ghost" style="cursor:pointer">Restore from a file<input type="file" accept=".json,application/json,text/plain" data-restorefile="1" hidden></label></div>
       <label class="row small"><input type="checkbox" id="bk-photos"> Include receipt photos (makes it much bigger)</label>
       <details class="fold" data-sec="bk-paste" ${isOpen('bk-paste')?'open':''}><summary><span class="grow">Or copy and paste it<small>If saving a file does not work on your phone</small></span></summary><div class="row"><button class="btn ghost" data-act="backup">Copy backup</button><button class="btn ghost" data-act="restore-open">Restore a backup</button></div></details>`)}
-  ${sec('questions','Answer the questions again','Takes about 2 minutes',`<p class="muted">Your money records, diary and ${W().cust}s stay as they are. You can leave the questions at any time.</p><button class="btn ghost" data-act="rerun-quick">Start the questions</button>`)}
+  ${sec('questions','Answer the questions again','Takes about 10 minutes',`<p class="muted">Your money records, diary and ${W().cust}s stay as they are. You can leave the questions at any time.</p><button class="btn ghost" data-act="rerun-quick">Start the questions</button>`)}
   ${sec('privacy','Privacy and feedback','How your data is kept',privacyCard())}
   ${sec('reset','Start again','Delete everything on this phone',`<p class="muted">This deletes everything on this phone, including receipt photos.</p>
       <button class="btn ${resetArmed?'danger':'ghost'}" data-act="reset">${resetArmed?'Tap again to delete everything':'Delete all my data'}</button>`)}
@@ -2343,7 +2344,7 @@ document.addEventListener('keydown', e=>{ const el=e.target; if(e.key!=='Enter'|
 // ---- How to do everything. Names in 'single quotes' are the words on the buttons, so keep them exact. The third item is where 'Take me there' goes. ----
 const GUIDE=[
 ['Getting started',[
-  ['Set the app up',"Answer the short questions when you first open it. It takes about two minutes. To do them again, tap More, then 'Answer the questions again'. You can leave them at any time.",'more:questions'],
+  ['Set the app up',"Answer the short questions when you first open it. It takes about ten minutes. To do them again, tap More, then 'Answer the questions again'. You can leave them at any time.",'more:questions'],
   ['Try it with made-up figures',"On the very first screen, tap 'Try it with example figures'."],
   ['Find your way around',"The five buttons along the bottom are Prices, Diary, Money, Clients and More. Prices and Money have extra tabs along the top."]]],
 ['Prices',[
