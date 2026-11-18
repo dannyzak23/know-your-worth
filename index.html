@@ -178,7 +178,7 @@ details summary{cursor:pointer;font-weight:700}
 <nav id="bottomnav" class="bottomnav" hidden aria-label="Main"></nav>
 <div id="overlay" class="overlay" hidden></div>
 <div id="toast" class="toast" hidden></div>
-<div id="undobar" class="toast" hidden style="bottom:calc(72px + env(safe-area-inset-bottom,0px));display:flex;gap:12px;align-items:center">Done. <button class="btn small" data-act="undo">Undo</button></div>
+<div id="undobar" class="toast" hidden style="bottom:calc(72px + env(safe-area-inset-bottom,0px));display:flex;gap:8px;align-items:center"><button class="btn small ghost" data-act="undo-ok">Done</button><button class="btn small" data-act="undo">Undo</button></div>
 
 <script>
 // ===================== CALC-START (pure maths, tested outside the page) =====================
@@ -2273,6 +2273,7 @@ function costRow(o){ const one=o.group==='equipment';
     <button class="iconbtn" aria-label="I do not pay for ${esc(o.name||'this')}. Remove it" data-act="oh-del" data-id="${o.id}">✕</button>
     <span class="money-in" style="flex:0 0 120px"><input id="oh-amt-${o.id}" type="number" inputmode="decimal" min="0" step="1" value="${esc(o.amount)}" aria-label="${esc(o.name||'Cost')}, amount" data-oh="${o.id}" data-f="amount"></span>
     ${one?`<span class="small muted">to buy</span><div class="fields" style="flex-basis:100%"><label class="field">Date bought<input id="oh-bought-${o.id}" type="date" value="${esc(o.bought||'')}" data-oh="${o.id}" data-f="bought"></label><label class="field">Replace it every<select id="oh-yrs-${o.id}" data-oh="${o.id}" data-f="years">${REPLACE.map(([v,l])=>`<option value="${v}" ${+o.years===v?'selected':''}>${l}</option>`).join('')}${REPLACE.some(([v])=>v===+o.years)?'':`<option value="${esc(o.years)}" selected>${nf(+o.years)} years</option>`}</select></label></div>${+o.amount>0?`<span class="small muted" style="flex-basis:100%">That is ${gbp(+o.amount/(Math.max(0.5,+o.years||3)*12))} a month${o.bought?`. Replace by ${fmtDay(addMonths(o.bought,Math.round((+o.years||3)*12)))} ${addMonths(o.bought,Math.round((+o.years||3)*12)).slice(0,4)}`:''}</span>`:''}`:`<select aria-label="How often you pay for ${esc(o.name||'this')}" data-ohp="${o.id}" style="flex:0 0 120px">${PERIOD.map(([k,l])=>`<option value="${k}" ${o.group===k?'selected':''}>${l}</option>`).join('')}</select>`}
+    ${billLine(o)}
   </div>`; }
 // how the monthly figure is made up, in words
 function costWorking(s){ const sum=g=>(s.overheads||[]).filter(o=>o.group===g).reduce((a,o)=>a+(+o.amount||0),0), w=sum('weekly'), m=sum('monthly'), y=sum('yearly'), e=sum('equipment');
@@ -2373,6 +2374,8 @@ const GUIDE=[
   ['Do your end of day check-in',"Tap Diary, then 'End of day check-in' in the Today card. Mark who paid or did not come, add anyone who was not in the diary, tap + for each pack or bottle you finished, and add anything to remember. Tap 'Save my day'.",'diary'],
   ['Remember something about a client',"Open the client and type it under 'For next time', for example 'wants green hair dye next time'. It shows on their bookings in the diary until you tick it off. You can also add it in the end of day check-in.",'clients'],
   ['Get told when to reorder',"Anything at its reorder level, or that you finished or ran out of, shows under 'Time to reorder' at the top of the Diary, with an Order button if it has a link. Tap 'Got it' once you have bought more.",'stock'],
+  ['Save a bill or invoice',"Tap Money, then Tax. Under 'Bills each month', tap the month and pick the photo of the bill. It is saved in Money out, dated in that month. You can also tap 'Add an invoice' beside any running cost.",'taxyear'],
+  ['Set your prices with the slider',"On Prices, under 'Set your prices', slide right to earn more each hour on top of your costs. All the way left just covers your costs. Tap 'Use these prices' to use them.",'prices'],
   ['Let clients book online',"At the bottom of Diary, under 'Let clients book online', type your mobile number and tap 'Share my booking link'. Send it to clients or put it in your Instagram bio. They pick a treatment and a free time and send you a request. Tap the link in their message to add it to your diary.",'diary'],
   ['Send a reminder',"Tap Reminder on the booking, then 'Copy message'. Paste it into a text, WhatsApp or email. The app does not send it for you.",'diary'],
   ['Record a deposit',"Type it in 'Deposit taken' when you make the booking.",'diary'],
@@ -2464,7 +2467,7 @@ function freeTimes(x){ const h=hoursFor('me')[dayIdx(x)]; if(!(dayMins(h)>0)||on
 const slots=(free,len)=>free.flatMap(([a,b])=>{ const o=[]; for(let t=Math.ceil(a/15)*15;t+len<=b;t+=15) o.push(t); return o; });
 function bookLink(){ const bp=bookPage(), c=compute(state), days=[];
   for(let i=1;i<=bp.days;i++){ const x=addDays(todayStr(),i), f=freeTimes(x); if(f.length) days.push([x,f]); }
-  return APP_URL()+'#book='+b64e({b:(state.setup.brand||{}).businessName||'',t:c.treatments.filter(t=>!t.addon).map(t=>[t.id,t.name,+t.price||t.suggested,+t.clientMin||0,+t.prepMin||0,isClass(t)?+t.places:0]),k:Object.fromEntries(c.treatments.filter(isClass).map(t=>[t.id,classSessions(t,bp.days)])),d:days,w:bp.phone,e:bp.email,m:todayStr()}); }
+  return APP_URL()+'#book='+b64e({b:(state.setup.brand||{}).businessName||'',t:c.treatments.filter(t=>!t.addon).map(t=>[t.id,t.name,+t.price||t.suggested,+t.clientMin||0,+t.prepMin||0,isClass(t)?+t.places:0]),k:Object.fromEntries(c.treatments.filter(isClass).map(t=>[t.id,classSessions(t,bp.days)])),d:days,w:bp.phone,e:bp.email,q:bp.consult===false?0:1,m:todayStr()}); }
 function bookCard(){ const bp=bookPage();
   return `<article class="card"><h3>Let clients book online</h3>
     <p class="small muted">Share a link. Clients pick a treatment and a free time, and it sends you the request by WhatsApp, text or email. Tap the link in their message to add it to your diary.</p>
@@ -3004,6 +3007,103 @@ clientCard=function(c){ const h=clientCardBeforeRem(c), a='<article class="card"
 const vClientsBeforeRem=vClients;
 vClients=function(){ let h=vClientsBeforeRem(); if(clOpen) return h;
   state.clients.forEach(c=>{ const n=remsFor(c.id).length; if(!n) return; const a=`<button class="btn small ghost" data-act="cl-open" data-id="${c.id}">`; h=h.replace(a,`<span class="pill info">Remember</span>`+a); }); return h; };
+
+// ===================== tester round 2: card reader list, bills with invoices, price slider, target by month or hour, health questions online =====================
+// ---- card readers: a list, or her own with no fees filled in ----
+Object.assign(APPS,{ sumup:{label:'SumUp',pct:.0169,fixed:0,note:'In-person card payments 1.69%'}, square:{label:'Square',pct:.0175,fixed:0,note:'In-person card payments 1.75%'}, zettle:{label:'Zettle',pct:.0175,fixed:0,note:'In-person card payments 1.75%'} });
+APPS.other={label:'Add your own card reader',pct:0,fixed:0,note:'Type in its fees'};
+const READERS=['fresha','booksy','timely','sumup','square','zettle','other','none'];
+function cardStep(){ const s=state.setup, a=APPS[s.app];
+  const fee=(id,label,hint,val,key,scale)=>`<label class="field">${label}<span class="hint">${hint}</span><input id="${id}" type="number" inputmode="decimal" min="0" step="0.01" value="${+val?esc(Math.round(val*scale*100)/100):''}" placeholder="0" data-set="${key}" data-scale="${scale}"></label>`;
+  return {q:'How do clients mostly pay you?', why:'Card fees come off every payment, so they are part of what a treatment costs you.',
+    body:`<label class="field">Card reader or booking app<select id="wiz-appsel" data-appsel="1"><option value="" ${a?'':'selected'}>Choose one</option>${READERS.map(k=>`<option value="${k}" ${s.app===k?'selected':''}>${esc(APPS[k].label)}</option>`).join('')}</select></label>
+      ${s.app==='other'?`<label class="field">Its name<span class="hint">Optional</span><input id="wiz-appname" value="${esc(s.appName||'')}" placeholder="e.g. Dojo" data-appname="1"></label>`:''}
+      ${a&&s.app!=='none'?`<div class="fields">${fee('wiz-cardPct','Card fee (%)',s.app==='other'?'It is on your card reader\'s price list':'Filled in from their price list. Change it if yours is different',s.cardPct,'cardPct',100)}${fee('wiz-cardFixed','Plus pence per payment','0 if there is none',s.cardFixed,'cardFixed',100)}</div>`:''}
+      ${a?`<p class="small muted">${esc(a.note)}</p>`:''}`}; }
+const quickStepBeforeCard=quickStep;
+quickStep=function(st){ return st.type==='app'?cardStep():quickStepBeforeCard(st); };
+// the target is set on the Prices screen now, not in set-up
+const wizStepsBeforeTarget=wizSteps;
+wizSteps=function(){ return wizFull?wizStepsBeforeTarget():wizStepsBeforeTarget().filter(x=>x.type!=='targetq'); };
+
+// ---- bills and invoices: a photo saved as money out, for any month ----
+const billCat=o=>o.group==='equipment'?'Equipment (lamps, drills, furniture)':/rent|rates|utilit|electric|gas|water|heat|insur/i.test(o.name)?'Rent, rates, power and insurance':/phone|internet|broadband|app|software|design|admin|website/i.test(o.name)?'Phone, software and office':/market|advert|ads/i.test(o.name)?'Advertising and marketing':/account|licen|registr|member|professional/i.test(o.name)?'Accountant and professional fees':/card|booking|bank/i.test(o.name)?'Bank, card and booking app fees':/fuel|van|car|mot/i.test(o.name)?'Car, van and travel':/repair|sharpen|servic/i.test(o.name)?'Repairs and maintenance':'Training and other costs';
+const billsFor=(o,m)=>state.expenses.filter(e=>e.ohId===o.id&&(!m||(e.date||'').slice(0,7)===m));
+function addBill(o,date,receiptId){ const e={id:uid(),date,supplier:o.name||'Running cost',amount:+o.amount||0,category:billCat(o),receiptId:receiptId||null,ohId:o.id}; state.expenses.push(e); return e; }
+const billBtn=(o,month,label)=>`<label class="btn small ghost" style="cursor:pointer">${label}<input type="file" accept="image/*" hidden data-ohinv="${o.id}" ${month?`data-month="${month}"`:''}></label>`;
+function billLine(o){ if(!o.name&&!+o.amount) return ''; const n=billsFor(o).length;
+  return `<div class="row" style="flex-basis:100%;gap:8px">${billBtn(o,'',o.group==='equipment'?'Add the receipt':'Add an invoice')}${n?`<span class="small muted">${n} saved in Money out</span>`:''}</div>`; }
+function billsCard(ty){ const list=(state.setup.overheads||[]).filter(o=>o.group!=='equipment'&&(o.name||+o.amount)); if(!list.length) return '';
+  const months=[...Array(12)].map((_,i)=>{ const d=new Date(ty,3+i,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }), now=todayStr().slice(0,7);
+  return `<article class="card"><h3>Bills each month</h3><p class="small muted">Tap a month to add that month's invoice or bill. It goes into Money out with the date of that month. A tick means it is saved.</p>
+    <div class="list">${list.map(o=>`<div class="item" style="flex-wrap:wrap"><div class="grow"><p><b>${esc(o.name||'Running cost')}</b></p><p class="small muted">${gbp(+o.amount)} ${(PERIOD.find(p=>p[0]===o.group)||['',''])[1]}</p></div>
+      <div class="chips" style="flex-basis:100%">${months.filter(m=>m<=now).map(m=>{ const lab=dt(m+'-01').toLocaleDateString('en-GB',{month:'short'}); return billsFor(o,m).length?`<span class="chip" aria-pressed="true">✓ ${lab}</span>`:`<label class="chip" style="cursor:pointer">${lab}<input type="file" accept="image/*" hidden data-ohinv="${o.id}" data-month="${m}"></label>`; }).join('')}</div></div>`).join('')}</div>
+    <p class="small muted">No photo? Add it under Money out on the Money tab instead.</p></article>`; }
+document.addEventListener('change',async e=>{ const el=e.target, d=(el&&el.dataset)||{};
+  if(d.appsel){ const a=APPS[el.value]; if(!a) return; state.setup.app=el.value; state.setup.cardPct=a.pct; state.setup.cardFixed=a.fixed; save(); render(); return; }
+  if(d.appname){ state.setup.appName=el.value.trim(); save(); return; }
+  if(d.bpc){ state.setup.bookPage={...bookPage(),consult:el.checked}; save(); return; }
+  if(!d.ohinv||!el.files||!el.files[0]) return; const o=(state.setup.overheads||[]).find(x=>x.id===d.ohinv); if(!o) return;
+  let rid=null; try{ rid=uid(); await putReceipt(rid,await shrink(el.files[0])); }catch(_){ rid=null; toast('Could not save the photo on this device'); return; }
+  const date=d.month?d.month+'-15':(o.group==='equipment'&&o.bought?o.bought:todayStr()); addBill(o,date,rid); save(); render();
+  toast(d.month?`Saved for ${dt(date).toLocaleDateString('en-GB',{month:'long',year:'numeric'})}`:'Saved in Money out. Change its date there if it is for another month'); });
+const vTaxYearBeforeBills=vTaxYear;
+vTaxYear=function(){ const h=vTaxYearBeforeBills(), i=h.lastIndexOf('</section>'); return i<0?h:h.slice(0,i)+billsCard(moneyYear ?? taxYearOf(todayStr()))+h.slice(i); };
+
+// ---- prices: slide from break-even up, see each price, use them ----
+const typicalUK=t=>+((ALLCAT.find(c=>c.id===t.id)||{}).price)||0;
+function pricesAt(rate){ const s=state.setup, keep=s.profitHour; s.profitHour=rate; const c=compute(state); s.profitHour=keep; return c.treatments; }
+function slideRows(rate){ return pricesAt(rate).map(t=>{ const uk=typicalUK(t); return `<div class="item"><div class="grow"><p style="white-space:normal"><b>${esc(t.name)}</b></p><p class="small muted" style="white-space:normal">Break even ${money(t.minimum)}${uk?` · typical UK guide ${money(uk)}`:''}${+t.price>0?` · you charge ${money(+t.price)}`:''}</p></div><b class="num" style="color:var(--accent)">${money(t.suggested)}</b></div>`; }).join(''); }
+const slideLabel=r=>+r>0?`${gbp0(+r)} an hour on top of your costs`:'Break even: just cover your costs';
+function slideCard(){ const r=profitHourOf(state.setup);
+  return `<section class="card"><h3>Set your prices</h3><p class="small muted">At the far left your prices just cover your costs. Slide right to earn more for each hour with a ${W().cust}.</p>
+    <label class="field"><span id="sl-val" style="font-weight:700">${slideLabel(r)}</span><input id="sl-profit" type="range" min="0" max="60" step="1" value="${esc(r)}" data-slide="1" style="accent-color:var(--accent);width:100%" aria-label="What you earn each hour on top of your costs"></label>
+    <div class="list" id="sl-list">${slideRows(r)}</div>
+    <button class="btn" data-act="sl-use">Use these prices</button>
+    <p class="small muted">The typical UK guide is a rough figure for the whole country, not prices near you.</p></section>`; }
+document.addEventListener('input',e=>{ const el=e.target; if(!el.dataset||!el.dataset.slide) return; const r=+el.value; const v=document.getElementById('sl-val'), l=document.getElementById('sl-list'); if(v) v.textContent=slideLabel(r); if(l) l.innerHTML=slideRows(r); });
+document.addEventListener('change',e=>{ const el=e.target; if(!el.dataset||!el.dataset.slide) return; state.setup.profitHour=+el.value; save(); render(); });
+function targetBody(){ const s=state.setup, c=compute(state);
+  return `<p>You want to earn <b>${gbp0(c.profitRate)}</b> an hour on top of your costs. Change it with the slider in 'Set your prices'.</p>
+    ${c.bookingsMonth>0?`<p class="small muted">At your prices and how many you do now, that makes about <b>${gbp0(Math.max(0,c.atCurrent.profit))}</b> a month.</p>`:`<p class="small muted">Add how many of each you do to see what that makes in a month.</p>`}`; }
+const vPricesBeforeSlide=vPrices;
+vPrices=function(){ let h=vPricesBeforeSlide(); if(!state.treatments.length) return h; const s=state.setup, mode=s.targetMode==='hour'?'hour':'month';
+  h=h.replace(/<label class="field">[^<]*(?:<span class="hint">[^<]*<\/span>)?<span class="money-in"><input id="pn-profitHour"[^>]*><\/span><\/label>/,'').replace(/<label class="field">(?:(?!<\/label>)[\s\S])*?id="pn-profitHour"[\s\S]*?<\/label>/,'')
+    .replace('Your suggested prices come from these two. Change them here.','Your suggested prices come from your running costs and the slider above.')
+    .replace('What you want to take home each month, after tax','What you want to take home each month').replace(/About £[\d,]+ of that is yours to take home after tax\. /,'');
+  const a=h.indexOf('<section class="card"><h3>Your target</h3>'); if(a<0) return h; const b=h.indexOf('</section>',a)+10;
+  const toggle=`<div class="chips" role="group" aria-label="Set your target"><button class="chip" data-act="tg-mode" data-v="month" aria-pressed="${mode==='month'}">Each month</button><button class="chip" data-act="tg-mode" data-v="hour" aria-pressed="${mode==='hour'}">An hourly rate</button></div>`;
+  let tgt=h.slice(a,b); tgt=mode==='hour'?`<section class="card"><h3>Your target</h3>${toggle}${targetBody()}</section>`:tgt.replace('<h3>Your target</h3>','<h3>Your target</h3>'+toggle);
+  return h.slice(0,a)+slideCard()+tgt+h.slice(b); };
+document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act;
+  if(a==='tg-mode'){ state.setup.targetMode=el.dataset.v; save(); render(); }
+  else if(a==='sl-use'){ compute(state).treatments.forEach(c=>{ const t=state.treatments.find(x=>x.id===c.id); if(t) t.price=c.suggested; }); save(); render(); toast('Prices updated'); }
+  else if(a==='undo-ok'){ document.getElementById('undobar').hidden=true; undoSnap=null; clearTimeout(undoTimer); } });
+UNDOABLE.add('sl-use');
+
+// ---- health questions on the online booking page ----
+const bookFaceBeforeQ=bookFace;
+bookFace=function(){ let h=bookFaceBeforeQ(); if(!BK||!BK.q||bf.time==null) return h; const i=h.indexOf('data-act="bf-send"'); if(i<0) return h; const j=h.lastIndexOf('<div class="stack">',i); if(j<0) return h; const q=bf.q||(bf.q={});
+  const block=`<div class="stack" style="gap:8px"><h3 style="font-size:1rem;margin-top:6px">A few health questions</h3><p class="small muted" style="margin-top:-6px">So your treatment is safe for you. Leave any that do not apply.</p>
+    ${CONSULT_Q.map(([k,l])=>`<label class="field">${esc(l)}<input id="bfq-${k}" value="${esc(q[k]||'')}" data-bfq="${k}"></label>`).join('')}
+    <label class="row small" style="flex-wrap:nowrap;align-items:flex-start"><input type="checkbox" data-bfq="photos" ${q.photos?'checked':''} style="flex:none"><span>Happy for photos of my treatment to be used on social media</span></label>
+    <label class="row small" style="flex-wrap:nowrap;align-items:flex-start"><input type="checkbox" data-bfq="marketing" ${q.marketing?'checked':''} style="flex:none"><span>Happy to get offers and reminders</span></label></div>`;
+  return h.slice(0,j)+block+h.slice(j); };
+document.addEventListener('input',e=>{ const el=e.target, k=el.dataset&&el.dataset.bfq; if(!k) return; bf.q=bf.q||{}; bf.q[k]=el.type==='checkbox'?el.checked:el.value; });
+document.addEventListener('change',e=>{ const el=e.target, k=el.dataset&&el.dataset.bfq; if(!k||el.type!=='checkbox') return; bf.q=bf.q||{}; bf.q[k]=el.checked; });
+function bfAnswers(){ return BK&&BK.q?Object.fromEntries(Object.entries(bf.q||{}).filter(([,v])=>v!==''&&v!==false&&v!=null).map(([k,v])=>[k,typeof v==='string'?v.trim():v]).filter(([,v])=>v!=='')):{}; }
+bfMessage=function(){ const B=BK, tr=B.t.find(t=>t[0]===bf.t), n=bf.name.trim(), p=bf.phone.trim(), o=bf.note.trim(), q=bfAnswers();
+  const link=location.origin+location.pathname+'#add='+b64e({t:bf.t,n:tr[1],d:bf.d,h:fromMin(bf.time),c:n,p,o,...(Object.keys(q).length?{q}:{})});
+  const qs=CONSULT_Q.filter(([k])=>q[k]).map(([k,l])=>`${l} ${q[k]}`).concat(q.photos?['Happy for photos to be used on social media']:[],q.marketing?['Happy to get offers and reminders']:[]);
+  return `Hi${B.b?' '+B.b:''}, I would like to book ${tr[1]} on ${fmtDay(bf.d)} at ${fmtT(fromMin(bf.time))}.\nName: ${n}${p?`\nPhone: ${p}`:''}${o?`\nNote: ${o}`:''}${qs.length?`\n\nHealth questions:\n${qs.map(x=>'- '+x).join('\n')}`:''}\n\nTo add this to your diary, tap: ${link}`; };
+const addRequestBeforeQ=addRequest;
+addRequest=function(A){ const b=addRequestBeforeQ(A); if(b&&A.q&&b.clientId){ const cl=clientById(b.clientId); if(cl){ const con=cl.consult||{answers:{}}; cl.consult={...con,answers:{...con.answers,...A.q}}; } } return b; };
+const showAddBeforeQ=showAdd;
+showAdd=function(A){ showAddBeforeQ(A); if(!A.q) return; const o=document.getElementById('overlay'), card=o.querySelector('.card'), row=card&&card.querySelector('.row'); if(!row) return;
+  row.insertAdjacentHTML('beforebegin',`<div class="notice info"><b>Health questions answered.</b> They are saved to their consultation form when you add this.</div>`); };
+const bookCardBeforeQ=bookCard;
+bookCard=function(){ const h=bookCardBeforeQ(), a='<div class="row"><button class="btn" data-act="bp-share">', i=h.indexOf(a); if(i<0) return h;
+  return h.slice(0,i)+`<label class="row small" style="flex-wrap:nowrap;align-items:flex-start"><input type="checkbox" data-bpc="1" ${bookPage().consult!==false?'checked':''} style="flex:none"><span>Ask your consultation (health) questions when they book</span></label>`+h.slice(i); };
 
 render();
 </script>
