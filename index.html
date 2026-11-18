@@ -2810,7 +2810,7 @@ function qlAdd(t){ const have=new Set(t.recipe.map(r=>r.productId)), sug=suggest
   const mine=state.products.map(p=>p.id).filter(id=>!have.has(id)&&!sug.includes(id)), lib=tradeProducts().map(p=>p.id).filter(id=>!have.has(id)&&!sug.includes(id)&&!mine.includes(id));
   const opt=id=>{ const p=state.products.find(x=>x.id===id)||LIBRARY.find(x=>x.id===id); return p?`<option value="${p.id}">${esc(p.name)}</option>`:''; };
   const grp=(l,ids)=>ids.length?`<optgroup label="${esc(l)}">${ids.map(opt).join('')}</optgroup>`:'';
-  return `<select id="ql-add-${t.id}" aria-label="Add something you use for ${esc(t.name)}" data-qladd="${t.id}" style="margin-top:4px"><option value="">+ Add what you use for this</option>${grp('Often used for this',sug)}${grp('Already added',mine)}${grp('Others',lib)}<option value="__new">Something else (type it in)</option></select>
+  return `<select id="ql-add-${t.id}" aria-label="Add something you use for ${esc(t.name)}" data-qladd="${t.id}" style="margin-top:4px"><option value="">+ Add a product</option>${sug.length?`<optgroup label="Often used for this">${sug.length>1?`<option value="__all">Add all of these (${sug.length})</option>`:''}${sug.map(opt).join('')}</optgroup>`:''}${grp('Already added',mine)}${grp('Others',lib)}<option value="__new">Something else (type it in)</option></select>
     ${qlNew===t.id?`<div class="row" style="flex-wrap:nowrap"><input id="add-new-${t.id}" placeholder="Name it, e.g. ${esc(IND().newItem)}" style="flex:1"><button type="button" class="btn small" data-act="wiz-new-prod" data-t="${t.id}">Add</button></div>`:''}`; }
 const quickStepBeforeProd=quickStep;
 quickStep=function(st){ const r=quickStepBeforeProd(st); if(st.type!=='quicklist'||!r) return r; let b=r.body;
@@ -2825,8 +2825,9 @@ document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.close
   t._r=1; t.recipe=[]; state.products=state.products.filter(p=>state.treatments.some(x=>x.recipe.some(r=>r.productId===p.id))); save(); });
 document.addEventListener('change',e=>{ const el=e.target, tid=el.dataset&&el.dataset.qladd; if(!tid) return; const t=state.treatments.find(x=>x.id===tid), v=el.value; if(!t||!v) return;
   if(v==='__new'){ qlNew=t.id; render(); setTimeout(()=>{ const i=document.getElementById('add-new-'+t.id); if(i) i.focus(); },0); return; }
-  if(!state.products.some(p=>p.id===v)){ const l=LIBRARY.find(x=>x.id===v); if(!l) return; state.products.push(clone(l)); }
-  const s=suggestFor(t).find(r=>r.productId===v); if(!t.recipe.some(r=>r.productId===v)) t.recipe.push({productId:v,perPack:s?s.perPack:0}); save(); render(); });
+  const add=id=>{ if(!state.products.some(p=>p.id===id)){ const l=LIBRARY.find(x=>x.id===id); if(!l) return; state.products.push(clone(l)); }
+    const s=suggestFor(t).find(r=>r.productId===id); if(!t.recipe.some(r=>r.productId===id)) t.recipe.push({productId:id,perPack:s?s.perPack:0}); };
+  if(v==='__all') suggestFor(t).forEach(r=>add(r.productId)); else add(v); save(); render(); });
 
 const vStockBeforeUrl=vStock;
 vStock=function(){ let h=vStockBeforeUrl();
