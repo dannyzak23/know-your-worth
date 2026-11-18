@@ -3680,8 +3680,11 @@ document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.close
 UNDOABLE.add('pe-del');
 // set-up: her own outgoings come straight after the business ones
 const quickStepBeforePersonal=quickStep;
-quickStep=function(st){ const r=quickStepBeforePersonal(st); if(st.type!=='costq'||!r) return r;
-  return {...r, q:'What goes out each month?', why:r.why+' Then what you pay at home and want to save, so we know what you need to take home.', body:r.body+`<div class="stack" style="gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">${personalSection()}</div>`}; };
+// her own outgoings are a step of their own, straight after the business ones
+quickStep=function(st){ if(st.type==='persq') return {q:'What goes out at home?', why:'What you pay at home and want to save each month. This sets what you need to take home. Leave any that do not apply.', body:`<div class="stack" style="gap:12px">${personalSection().replace(/<h3[^>]*>Your own outgoings<\/h3><p class="small muted">[^<]*<\/p>/,"")}</div>`};
+  return quickStepBeforePersonal(st); };
+const wizStepsBeforePers=wizSteps;
+wizSteps=function(){ const st=wizStepsBeforePers().slice(); if(wizFull||st.some(x=>x.type==='persq')) return st; const i=st.findIndex(x=>x.type==='costq'); if(i>=0) st.splice(i+1,0,{type:'persq'}); return st; };
 // Prices: the same section under Your numbers, and what to put aside under the slider
 const vPricesBeforePersonal=vPrices;
 vPrices=function(){ let h=vPricesBeforePersonal(); const a='<p class="live" id="pn-live">', i=h.indexOf(a);
@@ -3869,6 +3872,22 @@ const applyBrandBeforeHello=applyBrand;
 applyBrand=function(){ applyBrandBeforeHello(); const h=typeof document!=='undefined'&&document.getElementById('brandhead'); if(!h) return;
   const b=state.setup.brand||{}, nm=b.businessName||'Know Your Worth', ini=nm.split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase();
   h.innerHTML=`<div class="hello"><span class="avatar">${b.logo?`<img src="${b.logo}" alt="">`:b.businessName?esc(ini):"£"}</span><div><small>${b.businessName?greet():"Welcome to"}</small><b>${esc(nm)}</b></div></div>`; };
+
+// ===================== light or dark, her choice (or match the phone) =====================
+const SUN='<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>', MOON='<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>';
+function applyTheme(){ if(typeof document==='undefined'||!document.documentElement) return; const t=state.setup.theme, r=document.documentElement;
+  if(r.dataset){ if(t==='light'||t==='dark') r.dataset.theme=t; else delete r.dataset.theme; }
+  const b=document.getElementById&&document.getElementById('themebtn'); if(b&&b.setAttribute){ const dk=isDark(); b.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true">${dk?SUN:MOON}</svg>`; b.setAttribute('aria-label',dk?'Switch to light mode':'Switch to dark mode'); } }
+try{ const br=document.querySelector('header.top .brand'); if(br&&!document.getElementById('themebtn')){ br.insertAdjacentHTML('beforeend','<div class="row" id="hdr-right" style="gap:8px;flex-wrap:nowrap"></div>'); const hr=document.getElementById('hdr-right'), ex=document.getElementById('exflag'); if(ex) hr.appendChild(ex); hr.insertAdjacentHTML('beforeend','<button type="button" id="themebtn" class="themebtn" data-act="theme-toggle"></button>'); }
+  document.head.insertAdjacentHTML('beforeend','<style>.themebtn{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--line);color:var(--ink);cursor:pointer;flex:none;padding:0}.themebtn svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}</style>'); }catch(_){}
+const applyBrandBeforeTheme=applyBrand;
+applyBrand=function(){ applyTheme(); applyBrandBeforeTheme(); applyTheme(); };
+try{ applyTheme(); if(window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{ if(!state.setup.theme||state.setup.theme==='auto'){ applyBrand(); render(); } }); }catch(_){}
+const brandEditorBeforeTheme=brandEditor;
+brandEditor=function(){ const h=brandEditorBeforeTheme(), a='<label class="field">Logo', i=h.indexOf(a), t=state.setup.theme||'auto'; if(i<0) return h;
+  return h.slice(0,i)+`<label class="field">Light or dark<select id="br-theme" data-themesel="1">${[['auto','Match my phone'],['light','Light'],['dark','Dark']].map(([k,l])=>`<option value="${k}" ${t===k?'selected':''}>${l}</option>`).join('')}</select></label>`+h.slice(i); };
+document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.closest('[data-act="theme-toggle"]'); if(!el) return; state.setup.theme=isDark()?'light':'dark'; save(); applyBrand(); render(); });
+document.addEventListener('change',e=>{ const el=e.target; if(!el.dataset||!el.dataset.themesel) return; state.setup.theme=el.value; save(); applyBrand(); render(); });
 
 render();
 </script>

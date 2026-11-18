@@ -139,7 +139,7 @@ applyPersonal(); const c=compute(state); ok(s.takeHome===Math.round(persMonth(s)
 const a=setAside(3000); ok(a.all>0.1&&a.all<0.4&&Math.abs(a.tax+a.ni+a.loan-a.all)<1e-9,'a share to put aside for tax and NI: '+pctTxt(a.all));
 s.studentLoan='plan2'; ok(setAside(4000).loan>0,'student loan included when set');
 view='prices'; h=vPrices(); ok(/Your own outgoings and savings/.test(h)&&/id="sl-tax"/.test(h)&&/Put aside about/.test(h),'prices shows own outgoings and what to put aside');
-view='wizard'; step=wizSteps().findIndex(x=>x.type==='costq'); h=vWizard(); ok(/Your own outgoings/.test(h)&&/You need to take home/.test(h),'set-up asks own outgoings after business ones');
+view='wizard'; step=wizSteps().findIndex(x=>x.type==='costq'); h=vWizard(); ok(!/Your own outgoings/.test(h)&&/run your business/.test(h),'business step is business only'); step=wizSteps().findIndex(x=>x.type==='persq'); h=vWizard(); ok(/What goes out at home/.test(h)&&/You need to take home/.test(h),'home outgoings are their own step');
 console.log('own outgoings tests: fails',fails,'render errs',errs); }
 
 // ---- prices can be typed in the list ----
@@ -166,7 +166,7 @@ s.lastBackup=todayStr(); ok(!/Back up your data/.test(safetyCards()),'no nag rig
 wizFull=false; s.quickMode=true; ok(wizSteps().map(x=>x.type).join(',')==='welcome,industry,pickTreat,quicklist','quick start is 4 steps');
 view='wizard'; step=wizSteps().findIndex(x=>x.type==='quicklist'); ok(!/data-qladd/.test(vWizard()),'quick start skips products');
 step=0; ok(/Quick start/.test(vWizard())&&/Full set-up/.test(vWizard()),'welcome offers quick or full');
-s.quickMode=false; ok(wizSteps().length===7,'full set-up still 7 steps');
+s.quickMode=false; ok(wizSteps().length===8&&wizSteps()[wizSteps().findIndex(x=>x.type==='costq')+1].type==='persq','full set-up is 8 steps, home outgoings straight after business ones');
 const cl={id:'rc',name:'Ann Smith',phone:'07700 900123',patchTests:[]}; state.clients.push(cl); state.bookings.push({id:'rb',date:addDays(todayStr(),1),time:'10:00',staffId:'me',clientId:'rc',serviceId:state.treatments[0].id,addons:[],mins:45,price:35,status:'booked'});
 ok(remindersBlock().includes('wa.me/447700900123')&&/Reminders to send for tomorrow/.test(remindersBlock()),'tomorrow\'s reminders have a WhatsApp button');
 state.bookings.find(b=>b.id==='rb').reminded=true; ok(!remindersBlock().includes('data-id="rb"'),'sent reminders drop off');
@@ -188,3 +188,7 @@ document.getElementById=realGet;
 ok(a.price===17.5&&b.price===cmp.find(x=>x.id===b.id).suggested,'her typed price is kept, an empty one gets the suggested price');
 ok(/Set all to suggested/.test(vPrices()),'a separate button sets all to suggested');
 console.log('own price tests: fails',fails,'render errs',errs); }
+// ---- light or dark ----
+{ fails=0; state=exampleState(); ok(/Light or dark/.test(brandEditor())&&/Match my phone/.test(brandEditor()),'branding offers light, dark or match my phone');
+state.setup.theme='dark'; applyTheme(); ok(!document.documentElement.dataset||document.documentElement.dataset.theme==='dark','dark mode sets the page to dark'); state.setup.theme='auto'; applyTheme(); ok(!document.documentElement.dataset||!document.documentElement.dataset.theme,'match my phone clears it');
+console.log('theme tests: fails',fails,'render errs',errs); }

@@ -2712,7 +2712,7 @@ console.log('tester fix tests: fails',fails,'render errs',errs);
 
 // ---- set-up no longer asks what she earns an hour ----
 { fails=0; state=blankState(); const st=wizSteps().map(x=>x.type);
-ok(!st.includes('profitq')&&st.includes('openq')&&st.includes('costq')&&!st.includes('targetq')&&st.length===7,'set-up is 7 steps (target set on Prices) without the hourly question: '+st.join(','));
+ok(!st.includes('profitq')&&st.includes('openq')&&st.includes('costq')&&!st.includes('targetq')&&st.length===8,'set-up is 8 steps (target set on Prices, home outgoings their own step) without the hourly question: '+st.join(','));
 ok(compute(state).profitRate===20,'it starts at £20 an hour');
 console.log('no hourly step tests: fails',fails,'render errs',errs); }
 
