@@ -1,4 +1,4 @@
-<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="robots" content="noindex"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Know Your Worth"><meta name="theme-color" content="#a3285f"><style>body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}</style></head><body><title>Know Your Worth</title>
+<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="robots" content="noindex"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Know Your Worth"><meta name="theme-color" content="#a3285f"><link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="icon-192.png"><style>body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}</style></head><body><title>Know Your Worth</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2519,7 +2519,7 @@ const OH_MORE={
   fitness:[['monthly','Gym rent or studio hire',400],['monthly','Booking app subscription',15],['monthly','Phone and internet',20],['monthly','Marketing and ads',30],['monthly','Fuel',60],['yearly','Insurance',100],['yearly','Accountant',250],['yearly','Training and courses',250],['equipment','Mats, weights and kit',600,4]],
   coach:[['monthly','Room hire',100],['monthly','Booking and video call apps',25],['monthly','Phone and internet',20],['monthly','Marketing and ads',40],['yearly','Insurance',100],['yearly','Professional body membership',150],['yearly','Accountant',250],['yearly','Training and courses',300],['equipment','Laptop',800,4]]};
 overheadsFor=function(ind){ const o=OH_MORE[ind]; return o? o.map(([group,name,amount,years])=>({id:uid(),group,name,amount,years:years||3})) : overheadsForMore(ind); };
-if(!ALL_TRADES){ IND_GROUPS.length=0; IND_GROUPS.push(['Beauty and hair',['beauty','therapy','hair','barber','laser']],['Health and therapy',['massage','physio','holistic']],['Body art',['tattoo']],['Fitness and coaching',['fitness','coach']],['Pets',['dog']]); }
+if(!ALL_TRADES){ IND_GROUPS.length=0; IND_GROUPS.push(['Beauty and hair',['beauty','therapy','hair','barber','laser']],['Massage',['massage']]); } // beauty, hair and massage only for now
 APPS.other.note='Type in your own fee';
 const profitHourOf=s=>s.profitHour==null?20:(+s.profitHour||0);
 
@@ -2778,7 +2778,7 @@ const GUIDE=[
   ['Record a business trip in your car',"Tap Money and open 'Car trips'. Type the date, the miles there and back and where you went, then tap 'Add trip'.",'money'],
   ['Fix or delete an entry',"Find it in the list on Money and tap Change. To delete it, tap 'Delete this entry' on that sheet, then tap it again.",'money'],
   ['See how much to put aside for tax',"Tap Prices. Under the slider it says what share of your profit to put aside for tax, National Insurance and any student loan. Add a job or student loan under 'Your own outgoings and savings'.",'prices'],
-  ['Get your figures for a tax return or an accountant',"Tap Money. 'Copy this list' on Money in and Money out copies every entry to paste into a message or email.",'money']]],
+  ['Get your figures for a tax return or an accountant',"Tap Money, then Tax. Under 'Your tax pack', tap 'Make my tax pack', then save it or send it to your accountant. It has a PDF of your figures, spreadsheets of every entry and your receipt photos.",'taxyear']]],
 ['Clients',[
   ['Add a client',"Tap Clients, type their name in the box at the top and tap Add. Booking someone new in the diary adds them too.",'clients'],
   ['See or change the details of a client',"Tap Clients, then Open beside their name. Phone, email and notes are under Details, and their visits are just below.",'clients'],
@@ -3203,7 +3203,7 @@ function qlAdd(t){ const have=new Set(t.recipe.map(r=>r.productId)), sug=suggest
   return `<select id="ql-add-${t.id}" aria-label="Add something you use for ${esc(t.name)}" data-qladd="${t.id}" style="margin-top:4px"><option value="">+ Add a product</option>${sug.length?`<optgroup label="Often used for this">${sug.length>1?`<option value="__all">Add all of these (${sug.length})</option>`:''}${sug.map(opt).join('')}</optgroup>`:''}${grp('Already added',mine)}${grp('Others',lib)}<option value="__new">Something else (type it in)</option></select>
     ${qlNew===t.id?`<div class="row" style="flex-wrap:nowrap"><input id="add-new-${t.id}" placeholder="Name it, e.g. ${esc(IND().newItem)}" style="flex:1"><button type="button" class="btn small" data-act="wiz-new-prod" data-t="${t.id}">Add</button></div>`:''}`; }
 const quickStepBeforeProd=quickStep;
-quickStep=function(st){ const r=quickStepBeforeProd(st); if(st.type!=='quicklist'||!r) return r; let b=r.body;
+quickStep=function(st){ const r=quickStepBeforeProd(st); if(st.type!=='quicklist'||!r||state.setup.quickMode) return r; let b=r.body;
   state.treatments.forEach(t=>{ const i=b.indexOf(`<input id="ql-w-${t.id}"`); if(i<0) return; const j=b.indexOf('</article>',i);
     const ps=t.recipe.map(x=>state.products.find(p=>p.id===x.productId)).filter(Boolean);
     b=b.slice(0,j)+`<span class="small" style="font-weight:600;margin-top:4px">What you use${ps.length?'':': nothing added yet'}</span>${ps.map(p=>qlProduct(t,p)).join('')}${qlAdd(t)}`+b.slice(j); });
@@ -3701,6 +3701,63 @@ document.addEventListener('click',async e=>{ const el=e.target.closest&&e.target
   else if(a==='pack-share'&&packReady){ const f=new File([packReady.blob],packReady.name,{type:'application/zip'});
     try{ if(navigator.canShare&&navigator.canShare({files:[f]})){ await navigator.share({files:[f],title:packReady.name}); return; } }catch(err){ if(err&&err.name==='AbortError') return; }
     await saveFile(packReady.name,packReady.blob); toast('Saved. Sharing files is not available here, so send it from your Files app'); } });
+
+// ===================== keep data safe, quick start, reminders to send, the Tax page back =====================
+// ---- keep data safe: ask the browser not to clear it, work offline once installed, nudge to install and back up ----
+const isInstalled=()=>{ try{ return (window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true; }catch(_){ return false; } };
+const onWeb=()=>typeof location!=='undefined'&&/github\.io$/.test(location.hostname||'');
+try{ if(typeof navigator!=='undefined'&&navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{}); }catch(_){}
+try{ if(onWeb()&&typeof navigator!=='undefined'&&'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{}); }catch(_){}
+const hasRecords=()=>state.income.length||state.bookings.length||state.expenses.length||state.clients.length;
+function safetyCards(){ const s=state.setup, out=[]; if(state.example) return '';
+  if(onWeb()&&!isInstalled()&&!s._installSeen) out.push(`<div class="notice info"><b>Add Know Your Worth to your home screen</b> so your phone keeps your data safe and it works without signal. On iPhone, tap Share, then 'Add to Home Screen'. On Android, tap the menu (three dots), then 'Install app' or 'Add to Home screen'. <button class="btn small ghost" data-act="install-seen">Done</button></div>`);
+  const days=s.lastBackup?Math.round((dt(todayStr())-dt(s.lastBackup))/864e5):null;
+  if(hasRecords()&&(days==null||days>=14)) out.push(`<div class="notice warn"><b>Back up your data.</b> ${days==null?'You have not saved a backup yet':`Your last backup was ${days} days ago`}. Your records are only on this phone, so save a copy and keep it in Google Drive, iCloud or your email. <button class="btn small" data-act="backup-file">Save a backup file</button></div>`);
+  return out.join(''); }
+const vDiaryBeforeSafe=vDiary; vDiary=function(){ return safetyCards()+vDiaryBeforeSafe(); };
+
+// ---- quick start: treatments and prices only, typical figures for the rest ----
+const wizStepsBeforeQuick=wizSteps;
+wizSteps=function(){ const st=wizStepsBeforeQuick(); return !wizFull&&state.setup.quickMode?st.filter(x=>['welcome','industry','pickTreat','quicklist'].includes(x.type)):st; };
+const quickStepBeforeQuick=quickStep;
+quickStep=function(st){ const r=quickStepBeforeQuick(st); if(!r||st.type!=='welcome') return r; const q=!!state.setup.quickMode;
+  return {...r, body:r.body.replace('<b>About 10 minutes.</b> It helps to have your price list and your bills to hand.','<b>Choose how much to do now.</b> You can add the rest later.')+
+    `<div class="choices" style="margin-top:12px"><button class="choice" data-act="wiz-mode" data-v="quick" aria-pressed="${q}">Quick start<small>About 2 minutes: what you do and what you charge. Typical costs are used until you change them</small></button><button class="choice" data-act="wiz-mode" data-v="full" aria-pressed="${!q}">Full set-up<small>About 10 minutes: your products, running costs, home outgoings and opening hours too</small></button></div>`}; };
+const vPricesBeforeQuick=vPrices;
+vPrices=function(){ const s=state.setup;
+  if(s.quickMode&&!s._ohEdited&&!s._quickCosts&&typeof selInds==='function'){ s.overheads=overheadsForAll(selInds()); s._quickCosts=true; save(); }
+  const h=vPricesBeforeQuick(); const note=s.quickMode&&!s._ohEdited&&state.treatments.length?`<div class="notice info"><b>You used quick start,</b> so your running costs are typical figures for your trade. Check them so your prices are right. <button class="btn small ghost" data-act="open-costs">Check my running costs</button></div>`:'';
+  return safetyCards()+note+h; };
+
+// ---- reminders to send for tomorrow, one tap each ----
+function dueReminders(){ const tm=addDays(todayStr(),1); return state.bookings.filter(b=>b.date===tm&&b.status==='booked'&&!b.reminded).sort((a,b)=>a.time.localeCompare(b.time)); }
+function remindersBlock(){ const due=dueReminders(); if(!due.length) return '';
+  return `<span class="small" style="font-weight:600">Reminders to send for tomorrow</span><div class="list">${due.map(b=>{ const cl=clientById(b.clientId), msg=encodeURIComponent(reminderText(b)), wa=cl?waNumber(cl.phone):'', ph=cl&&cl.phone?String(cl.phone).replace(/\s/g,''):'';
+    return `<div class="item" style="flex-wrap:wrap"><div class="grow"><p style="white-space:normal"><b>${fmtT(b.time)}</b> ${esc(cl?cl.name:'No name')}</p><p class="small muted">${esc(bookingLabel(b))}</p></div>
+      ${wa?`<a class="btn small" style="text-decoration:none" href="https://wa.me/${wa}?text=${msg}" target="_blank" rel="noopener noreferrer" data-act="rem-sent" data-id="${b.id}">WhatsApp</a><a class="btn small ghost" style="text-decoration:none" href="sms:${esc(ph)}?&body=${msg}" data-act="rem-sent" data-id="${b.id}">Text</a>`:`<span class="small muted">Add their mobile number under ${W().cust==='client'?'Clients':'Customers'}</span>`}</div>`; }).join('')}</div>`; }
+const todayCardBeforeRem=todayCard;
+todayCard=function(){ const h=todayCardBeforeRem(), r=remindersBlock(); if(!r) return h; const i=h.lastIndexOf('</article>'); return h.slice(0,i)+r+h.slice(i); };
+
+// ---- the Tax page is back, with the tax pack; bills stay on Money ----
+navGroups=navGroupsBeforeTax;
+vMoney=vMoneyBeforePack;
+vTaxYear=function(){ const h=vTaxYearBeforeBills(), a='<article class="card"><h3>For your tax return (Self Assessment)</h3>', i=h.indexOf(a); return i<0?h:h.slice(0,i)+packCard()+h.slice(i); };
+const ukDate=x=>`${x.slice(8,10)}/${x.slice(5,7)}/${x.slice(0,4)}`;
+const packCsvsBeforeApps=packCsvs;
+// one list of every payment in and out, in the shape accounting apps import as a bank statement
+packCsvs=function(ty){ const f=packCsvsBeforeApps(ty), {inc,exp}=packRows(ty);
+  const rows=[...inc.map(x=>[x.date,+(+x.amount||0).toFixed(2),'',x.desc||'Takings',x.method||'','Turnover']),...exp.map(x=>[x.date,-(+x.amount||0).toFixed(2),x.supplier||'',x.supplier||'',f.names[x.id]||'',x.category||''])].sort((a,b)=>a[0].localeCompare(b[0]));
+  return {...f,'transactions-for-apps.csv':csv([['Date','Amount','Payee','Description','Reference','Category'],...rows.map(r=>[ukDate(r[0]),...r.slice(1)])])}; };
+const packChecksBeforePoa=packChecks;
+packChecks=function(ty,sm){ const out=packChecksBeforePoa(ty,sm), bill=sm.parts.tax+sm.parts.ni;
+  if(bill>1000) out.push(`Your tax and National Insurance come to more than £1,000, so HMRC will probably ask for payments on account: half of next year's bill in advance, on 31 January and 31 July.`);
+  return out; };
+
+document.addEventListener('click',e=>{ const el=e.target.closest&&e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act, s=state.setup;
+  if(a==='install-seen'){ s._installSeen=true; save(); render(); }
+  else if(a==='wiz-mode'){ s.quickMode=el.dataset.v==='quick'; save(); render(); }
+  else if(a==='open-costs'){ openSecs.add('p-costs'); render(); const n=document.querySelector('[data-sec="p-costs"]'); if(n) n.scrollIntoView({block:'start'}); }
+  else if(a==='rem-sent'){ const b=state.bookings.find(x=>x.id===el.dataset.id); if(b){ b.reminded=true; save(); setTimeout(render,400); } } });
 
 render();
 </script>

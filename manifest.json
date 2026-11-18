@@ -1,0 +1,14 @@
+{
+  "name": "Know Your Worth",
+  "short_name": "Know Your Worth",
+  "description": "Prices, bookings and tax records for beauty, hair and massage businesses.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#141218",
+  "theme_color": "#a3285f",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

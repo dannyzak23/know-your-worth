@@ -1,0 +1,2748 @@
+const _el={innerHTML:'',insertAdjacentHTML(){},hidden:false,set textContent(v){}};
+globalThis.document={addEventListener(){},getElementById(){return _el},querySelectorAll(){return []},documentElement:{dataset:{},style:{setProperty(){}}}};
+globalThis.window={scrollTo(){}};
+
+// ===================== CALC-START (pure maths, tested outside the page) =====================
+const RULES = { // 2026/27. Checked against published sources in November 2026, not yet by an accountant. Update every April.
+  pa:12570, higherStart:50270, basic:.20, higher:.40, ni4Main:.06, ni4Upper:.02, ni4UPL:50270,
+  scoBasic:16537, scoInter:29526, scoHigher:43662, scoAdv:75000, // Scotland 2026/27; the 48% top rate above £125,140 is not modelled
+  scoStarterRate:.19, scoBasicRate:.20, scoInterRate:.21, scoHigherRate:.42, scoAdvRate:.45,
+  tradingAllowance:1000, vatThreshold:90000,
+  mileage:[.45,.25,10000], // pence per mile, then after 10,000 miles. Assumed: check gov.uk
+  sl:{plan1:[26900,.09],plan2:[29385,.09],plan4:[33795,.09],plan5:[25000,.09]}, pg:[21000,.06], // student loan thresholds 2026/27
+  empNI:.15, empNIThreshold:5000, employmentAllowance:10500, pensionRate:.03, pensionLower:6240, pensionUpper:50270, pensionTrigger:10000, // employer costs, assumed: check gov.uk
+  mtd:[{from:'April 2026',over:50000},{from:'April 2027',over:30000},{from:'April 2028',over:20000}]
+};
+function incomeTax(income, region, R){
+  const b = region==='sco' ? [[R.pa,R.scoStarterRate],[R.scoBasic,R.scoBasicRate],[R.scoInter,R.scoInterRate],[R.scoHigher,R.scoHigherRate],[R.scoAdv,R.scoAdvRate]]
+                           : [[R.pa,R.basic],[R.higherStart,R.higher]];
+  let tax=0; b.forEach(([from,rate],i)=>{ const to=i<b.length-1?b[i+1][0]:Infinity; if(income>from) tax+=(Math.min(income,to)-from)*rate; }); return tax;
+}
+function class4(profit, R){ return Math.max(0,Math.min(profit,R.ni4UPL)-R.pa)*R.ni4Main + Math.max(0,profit-R.ni4UPL)*R.ni4Upper; }
+function loanDue(income, o, R){ let d=0; const pl=(R.sl||{})[o.plan]; if(pl) d+=Math.max(0,income-pl[0])*pl[1]; if(o.postgrad && R.pg) d+=Math.max(0,income-R.pg[0])*R.pg[1]; return d; }
+// Self-employed profit sits on top of any job income: the job uses the tax-free allowance first.
+function taxParts(profit, region, R, o){ o=o||{}; const other=+o.other||0; if(profit<=0) return {tax:0,ni:0,loan:0,total:0};
+  const tax=incomeTax(other+profit,region,R)-incomeTax(other,region,R), ni=class4(profit,R), loan=loanDue(other+profit,o,R)-loanDue(other,o,R);
+  return {tax,ni,loan,total:tax+ni+loan}; }
+function taxOnProfit(profit, region, R, o){ return taxParts(profit,region,R,o).total; }
+function profitNeeded(takeHomeYear, region, R, o){ if(takeHomeYear<=0) return 0; let lo=takeHomeYear, hi=takeHomeYear*3+1000;
+  for(let i=0;i<60;i++){ const mid=(lo+hi)/2; if(mid-taxOnProfit(mid,region,R,o)<takeHomeYear) lo=mid; else hi=mid; } return hi; }
+function taxOpts(s){ return {other:+s.otherIncome||0, plan:s.studentLoan, postgrad:!!s.postgrad}; }
+function teamCosts(s, R){
+  const list=Array.isArray(s.staff)?s.staff:[];
+  let gross=0, ni=0, pension=0, hours=0, commHours=0;
+  const people=list.map(p=>{
+    const h=(+p.hours||0)*(52-(+p.weeksOff||0))/12*(1-(+s.nonClient||0))*(+s.busy||0); // their realistic working hours a month
+    let g=0, n=0, pe=0, c=0;
+    if(p.pay==='self') c=(+p.rate||0)/100; // self-employed: they keep a share of what they take, no wages, NI or pension
+    else {
+      g= p.pay==='salary' ? (+p.rate||0) : (+p.rate||0)*(+p.hours||0)*52; // hourly staff are paid for holidays too
+      n=Math.max(0,g-R.empNIThreshold)*R.empNI;
+      pe= g>R.pensionTrigger ? R.pensionRate*Math.max(0,Math.min(g,R.pensionUpper)-R.pensionLower) : 0;
+    }
+    gross+=g; ni+=n; pension+=pe; hours+=h; commHours+=c*h;
+    return {...p, billable:h, gross:g, ni:n, pension:pe, yearCost:g+n+pe, commission:c};
+  });
+  const niAfter= s.employmentAllowance ? Math.max(0, ni-R.employmentAllowance) : ni;
+  const year=gross+niAfter+pension;
+  return {people, gross, ni, niAfter, pension, year, month:year/12, hours, commHours};
+}
+function overheadsMonth(s){
+  if(Array.isArray(s.overheads)) return s.overheads.reduce((a,o)=>a+(o.group==='weekly' ? (+o.amount||0)*52/12 : o.group==='monthly' ? (+o.amount||0)
+    : o.group==='yearly' ? (+o.amount||0)/12 : (+o.amount||0)/(Math.max(1,+o.years||3)*12)),0);
+  return (+s.rent||0) + (+s.insuranceYear||0)/12 + (+s.otherMonthly||0) + (+s.otherYearly||0)/12
+       + ((+s.equipment||0) / (Math.max(1,+s.equipmentYears||3)*12));
+}
+function billableHoursMonth(s){ return (+s.hours||0) * (52-(+s.weeksOff||0))/12 * (1-(+s.nonClient||0)) * (+s.busy||0); }
+// Each recipe line says how many of that treatment one pack does: "one 15 ml bottle of base coat does 15 gel manicures".
+// If a product goes off once opened before it is used up, the thrown-away part is spread over the treatments that use it.
+function productCosts(state){
+  const raw={};
+  state.treatments.forEach(t=>(t.recipe||[]).forEach(r=>{ if(+r.perPack>0) raw[r.productId]=(raw[r.productId]||0)+(+t.perWeek||0)/(+r.perPack); }));
+  return state.products.map(p=>{
+    const rawPPW=raw[p.id]||0, shelf=+p.shelfWeeks||0;
+    const packsPerWeek=(shelf>0 && rawPPW>0) ? Math.max(rawPPW, 1/shelf) : rawPPW; // you open at least one every shelf period
+    const factor= rawPPW>0 ? packsPerWeek/rawPPW : 1;
+    const lost= 1-1/factor;
+    const weeksLeft= packsPerWeek>0 ? (+p.inStock||0)/packsPerWeek : null;
+    const reorder=(+p.reorderAt||0)>0 && (+p.inStock||0) <= (+p.reorderAt||0); // no reorder level set means no nagging
+    return {...p, packsPerWeek, factor, lost, weeksLeft, reorder};
+  });
+}
+function lineCost(r, pmap){ const p=pmap[r.productId]; return (p && +r.perPack>0) ? (+p.packCost||0)/(+r.perPack)*p.factor : 0; }
+function treatmentProductCost(t, pmap){ return (t.recipe||[]).reduce((a,r)=>a+lineCost(r,pmap),0); }
+function compute(state){
+  const s=state.setup, R=RULES;
+  const region=s.region==='sco'?'sco':'ruk';
+  const team=teamCosts(s,R);
+  const capacity=billableHoursMonth(s)+team.hours;
+  const overheads=overheadsMonth(s)+team.month;            // running costs, including any staff wages
+  const wk=(52-(+s.weeksOff||0))/12;
+  const hoursBooked=state.treatments.reduce((a,t)=>a+(+t.perWeek||0)*((+t.clientMin||0)+(+t.prepMin||0)),0)/60*wk;
+  const billable= hoursBooked>0 ? hoursBooked+team.hours : capacity;  // the hours the running costs are shared across
+  // shortcut: the team is assumed as busy as she is, doing the same mix; upgrade when staff get their own 'a week' numbers
+  const k= hoursBooked>0 ? billable/hoursBooked : 1;
+  const overheadRate= billable>0 ? overheads/billable : 0;
+  const profitRate= s.profitHour==null ? 20 : (+s.profitHour||0); // profit wanted per hour with a client; 0 = break even
+  const hourly=overheadRate+profitRate;
+  // the target take-home does NOT feed prices: it is only used for "how many treatments do I need"
+  const needYear=profitNeeded((+s.takeHome||0)*12, region, R, taxOpts(s));
+  const needMonth=needYear/12;
+  const products=productCosts(state);
+  const pmap=Object.fromEntries(products.map(p=>[p.id,p]));
+  const card=+s.cardPct||0, fixed=+s.cardFixed||0;
+  const comm= billable>0 ? team.commHours/billable : 0; // self-employed team members' share
+  const pct=card+comm;
+  const noShowF=1+(+s.noShow||0)*(1-(+s.deposit||0));
+  const vatF= s.vat ? 1.2 : 1;
+  const roundTo=+s.roundTo||1;
+  const gross=x=>(x+fixed)/(1-pct)*noShowF*vatF;   // the price needed for x to reach you
+  const net=pr=>pr/vatF/noShowF*(1-pct)-fixed;     // what reaches you from a price
+  const treatments=state.treatments.map(t=>{
+    const mins=(+t.clientMin||0)+(+t.prepMin||0), hrs=mins/60;
+    const productCost=treatmentProductCost(t,pmap);
+    const timeCost=hrs*overheadRate;               // this treatment's share of the running costs
+    const cost=productCost+timeCost;
+    const minimum=gross(cost);                     // break-even price
+    const suggested=Math.ceil(gross(cost+hrs*profitRate)/roundTo - 1e-9)*roundTo;
+    const price=+t.price||0;
+    const profitNow= price>0 ? net(price)-cost : null;
+    const earnings=net(suggested)-cost;
+    const perHour= hrs>0 ? earnings/hrs : 0;
+    const contribNow= price>0 ? net(price)-productCost : null, contribSug=net(suggested)-productCost;
+    let flag='none'; if(price>0){ flag= price<minimum-0.005 ? 'below' : (price<suggested ? 'under' : 'ok'); }
+    return {...t, mins, productCost, timeCost, cost, minimum, suggested, profitNow, earnings, perHour, contribNow, contribSug, flag};
+  });
+  const bookingsMonth=treatments.reduce((a,t)=>a+(+t.perWeek||0),0)*wk*k;
+  const productsMonth=treatments.reduce((a,t)=>a+(+t.perWeek||0)*t.productCost,0)*wk*k;
+  function month(priceKey, f=1){
+    const takings=treatments.reduce((a,t)=>a+(+t.perWeek||0)*(priceKey==='suggested'?t.suggested:(+t.price||0)*f),0)*wk/vatF*k;
+    const fees=takings*pct+bookingsMonth*fixed; // card fees plus self-employed shares
+    const noShows=takings*(+s.noShow||0)*(1-(+s.deposit||0));
+    return {takings,fees,noShows,profit:takings-fees-productsMonth-overheads-noShows};
+  }
+  // How many treatments to cover running costs, and to reach the target, using her usual mix
+  const mix=treatments.filter(t=>(+t.perWeek||0)>0), pool= mix.length ? mix : treatments.filter(t=>!t.addon);
+  const wOf=t=>mix.length?(+t.perWeek||0):1, wsum=pool.reduce((a,t)=>a+wOf(t),0)||1;
+  function plan(key){
+    const avg=pool.reduce((a,t)=>a+wOf(t)*(key==='now'?(t.contribNow??t.contribSug):(t.flag==='ok'?t.contribNow:t.contribSug)),0)/wsum;
+    if(!(avg>0)) return null;
+    const target=(overheads+needMonth)/avg;
+    return {avg, breakEven:overheads/avg, target, perWeek:target/wk, perDay:target/wk/Math.max(1,+s.daysPerWeek||5)};
+  }
+  return {team, running:overheadsMonth(s), capacity, billable, overheads, needYear, needMonth, hourly, overheadRate, profitRate, products, treatments,
+          hoursBooked, productsMonth, bookingsMonth, scenario:f=>month('current',f), atSuggested:month('suggested'), atCurrent:month('current'),
+          planNow:plan('now'), planSug:plan('sug'),
+          taxShare: needYear>0 ? (needYear-(+s.takeHome||0)*12)/needYear : 0};
+}
+function taxYearOf(dateStr){ const d=new Date(dateStr+'T12:00:00'); const y=d.getFullYear(), m=d.getMonth(), day=d.getDate();
+  return (m>3 || (m===3 && day>=6)) ? y : y-1; }
+function taxYearSummary(state, startYear){
+  const R=RULES, region=state.setup.region==='sco'?'sco':'ruk';
+  const inYear=x=>taxYearOf(x.date)===startYear;
+  const income=state.income.filter(inYear).reduce((a,x)=>a+(+x.amount||0),0);
+  const byCat={}; let expenses=0;
+  state.expenses.filter(inYear).forEach(x=>{ byCat[x.category]=(byCat[x.category]||0)+(+x.amount||0); expenses+=(+x.amount||0); });
+  const miles=(state.trips||[]).filter(inYear).reduce((a,x)=>a+(+x.miles||0),0);
+  const mileage=Math.min(miles,R.mileage[2])*R.mileage[0]+Math.max(0,miles-R.mileage[2])*R.mileage[1];
+  if(mileage>0){ byCat['Car, van and travel']=(byCat['Car, van and travel']||0)+mileage; expenses+=mileage; }
+  const useAllowance= expenses < R.tradingAllowance && income>0;
+  const deduction= useAllowance ? Math.min(R.tradingAllowance, income) : expenses;
+  const profit=Math.max(0, income-deduction);
+  const parts=taxParts(profit, region, R, taxOpts(state.setup));
+  return {income, expenses, byCat, useAllowance, deduction, profit, miles, mileage, parts, tax:parts.total};
+}
+// ===================== CALC-END =====================
+
+const CATEGORIES=['Products and stock','Rent, rates, power and insurance','Repairs and maintenance','Car, van and travel',
+  'Phone, software and office','Advertising and marketing','Accountant and professional fees','Bank, card and booking app fees',
+  'Training and other costs','Equipment (lamps, drills, furniture)'];
+const APPS={
+  fresha:{label:'Fresha',pct:.014,fixed:.25,note:'Online card payments 1.40% + 25p'},
+  booksy:{label:'Booksy',pct:.0129,fixed:.20,note:'Card payments 1.29% + 20p'},
+  timely:{label:'Timely',pct:.0159,fixed:.05,note:'In-person card payments 1.59% + 5p'},
+  other:{label:'Another card reader',pct:.0175,fixed:0,note:'Using 1.75%. Change it under More if yours is different'},
+  none:{label:'Mostly cash or bank transfer',pct:0,fixed:0,note:'No card fees'}
+};
+// Example figures only: every tech should put in her own.
+const LIBRARY=[
+  ['builder','Builder gel (BIAB)','15 ml pot',18,20,0,2,1],['base','Base coat','15 ml bottle',12,15,0,2,1],
+  ['top','Top coat','15 ml bottle',12,40,0,2,1],['colour','Colour gel','10 ml bottle',9,25,0,6,2],
+  ['remover','Gel remover','500 ml bottle',10,30,0,2,1],['tips','Nail tips','box of 500',15,50,0,2,1],
+  ['files','Nail files','pack of 50',20,50,0,1,1],['buffers','Buffers','pack of 50',15,50,0,3,1],
+  ['wipes','Lint-free wipes','pack of 500',8,100,0,2,1],['foils','Foil wraps','pack of 100',4,10,0,2,1],
+  ['oil','Cuticle oil','30 ml bottle',8,100,0,2,1],['glue','Lash glue','5 ml bottle',25,15,6,1,1],
+  ['trays','Classic lash trays','1 tray',14,2,0,4,2],['pads','Under-eye pads','pack of 50 pairs',8,50,0,2,1],
+  ['brushes','Micro brushes','pack of 100',5,40,0,2,1],['tint','Brow tint','15 ml tube',9,15,12,2,1],
+  ['dev','Developer','100 ml bottle',5,50,12,2,1]
+].map(([id,name,pack,packCost,clientsPerPack,shelfWeeks,inStock,reorderAt])=>({id,name,...parsePack(pack),packCost,clientsPerPack,shelfWeeks,inStock,reorderAt}));
+const CATALOGUE=[
+  {id:'gelmani',name:'Gel manicure',clientMin:45,prepMin:10,perWeek:4,price:36,patch:false,recipe:[['base',15],['colour',25],['top',40],['wipes',100],['files',50],['buffers',50],['oil',100]]},
+  {id:'biabfull',name:'BIAB full set with tips',clientMin:75,prepMin:10,perWeek:3,price:50,patch:false,recipe:[['builder',20],['base',15],['colour',25],['top',40],['tips',50],['files',50],['buffers',50],['wipes',100],['oil',100]]},
+  {id:'biabinfill',name:'BIAB infill',clientMin:60,prepMin:10,perWeek:4,price:38,patch:false,recipe:[['builder',33],['colour',25],['top',40],['files',50],['buffers',50],['wipes',100],['oil',100]]},
+  {id:'removal',name:'Gel removal only',clientMin:20,prepMin:5,perWeek:2,price:15,patch:false,recipe:[['remover',30],['foils',10],['wipes',100],['buffers',50]]},
+  {id:'art',name:'Nail art',addon:true,unitLabel:'nail',clientMin:5,prepMin:0,perWeek:8,price:4,patch:false,recipe:[['colour',250]]},
+  {id:'removaladd',name:'Removal before a new set',addon:true,clientMin:15,prepMin:0,perWeek:3,price:8,patch:false,recipe:[['remover',30],['foils',10]]},
+  {id:'french',name:'French tips',addon:true,clientMin:10,prepMin:0,perWeek:2,price:5,patch:false,recipe:[['colour',100]]},
+  {id:'pedi',name:'Gel pedicure',clientMin:60,prepMin:10,perWeek:2,price:42,patch:false,recipe:[['base',12],['colour',19],['top',31],['files',50],['buffers',50],['wipes',100],['oil',100]]},
+  {id:'lashfull',name:'Classic lash full set',clientMin:120,prepMin:10,perWeek:1,price:75,patch:true,recipe:[['trays',2],['glue',15],['pads',50],['brushes',40]]},
+  {id:'lashinfill',name:'Classic lash infill',clientMin:60,prepMin:10,perWeek:2,price:45,patch:true,recipe:[['trays',4],['glue',30],['pads',50],['brushes',80]]},
+  {id:'brow',name:'Brow tint and shape',clientMin:30,prepMin:5,perWeek:3,price:22,patch:true,recipe:[['tint',15],['dev',50],['brushes',80]]}
+].map(t=>({...t,recipe:t.recipe.map(([productId,perPack])=>({productId,perPack}))}));
+LIBRARY.push(...[ // hair, building and decorating starters. Example figures only
+  ['hcol','Permanent hair colour','60 ml',6.5,1,0,10,4],['hdev','Hair developer','1000 ml',8,15,0,2,1],['bleach','Bleach powder','500 g',18,8,0,1,1],
+  ['hfoil','Hair foils','100 pieces',6,2,0,3,1],['shamp','Backwash shampoo','1000 ml',12,40,0,2,1],['cond','Backwash conditioner','1000 ml',12,40,0,2,1],
+  ['styl','Styling products','250 ml',9,40,0,3,1],['capes','Disposable capes','100 pieces',15,100,0,1,1],
+  ['screws','Screws (mixed box)','200 pieces',9,10,0,2,1],['sandp','Sandpaper','10 pieces',6,5,0,2,1],['dust','Dust sheet','1 pieces',8,20,0,3,1],
+  ['mplast','Multi-finish plaster','25 kg',10,0.25,0,4,2],['adhes','Tile adhesive','20 kg',15,0.33,0,3,1],['grout','Grout','5 kg',9,1,0,2,1],
+  ['sealant','Silicone sealant','310 ml',6,2,0,3,1],['fill','Filler','1 kg',8,5,0,2,1],
+  ['emul','Emulsion paint','10 litres',45,1,0,3,1],['gloss','Gloss paint','2.5 litres',30,8,0,2,1],['under','Undercoat','2.5 litres',25,8,0,2,1],
+  ['tape','Masking tape','50 m',4,3,0,4,2],['caulk','Decorators caulk','380 ml',4,3,0,4,2],['roller','Roller sleeve','1 pieces',5,3,0,3,1]
+].map(([id,name,pack,packCost,clientsPerPack,shelfWeeks,inStock,reorderAt])=>({id,name,...parsePack(pack),packCost,clientsPerPack,shelfWeeks,inStock,reorderAt})));
+const mkCat=a=>a.map(t=>({patch:false,...t,recipe:t.recipe.map(([productId,perPack])=>({productId,perPack}))}));
+const CATALOGUES={ beauty:CATALOGUE,
+  hair:mkCat([
+    {id:'cutblow',name:'Cut and blow-dry',clientMin:45,prepMin:10,perWeek:10,price:40,recipe:[['shamp',40],['cond',40],['styl',40],['capes',100]]},
+    {id:'gents',name:'Gents cut',clientMin:30,prepMin:5,perWeek:8,price:18,recipe:[['shamp',40],['capes',100]]},
+    {id:'blowdry',name:'Blow-dry',clientMin:30,prepMin:5,perWeek:4,price:25,recipe:[['shamp',40],['cond',40],['styl',30]]},
+    {id:'fullcol',name:'Full head colour',clientMin:90,prepMin:10,perWeek:3,price:65,patch:true,recipe:[['hcol',0.5],['hdev',15],['shamp',40],['cond',40],['capes',100]]},
+    {id:'halfhl',name:'Half head highlights',clientMin:120,prepMin:10,perWeek:2,price:75,patch:true,recipe:[['bleach',8],['hdev',12],['hfoil',2],['shamp',40],['cond',40]]}]),
+  build:mkCat([
+    {id:'labourday',name:'Day rate (labour)',clientMin:480,prepMin:60,perWeek:2,price:200,recipe:[['screws',10],['sandp',5],['dust',20]]},
+    {id:'halfday',name:'Half day (labour)',clientMin:240,prepMin:30,perWeek:1,price:110,recipe:[['screws',20],['dust',40]]},
+    {id:'door',name:'Fit an internal door',clientMin:180,prepMin:30,perWeek:1,price:120,recipe:[['screws',10],['sandp',5],['fill',10]]},
+    {id:'skim',name:'Skim a room',clientMin:480,prepMin:60,perWeek:1,price:350,recipe:[['mplast',0.25],['dust',10]]},
+    {id:'tilewall',name:'Tile a bathroom wall',clientMin:960,prepMin:60,perWeek:0.5,price:600,recipe:[['adhes',0.33],['grout',1],['sealant',2],['dust',10]]}]),
+  paint:mkCat([
+    {id:'room',name:'Paint a room (walls and ceiling)',clientMin:480,prepMin:60,perWeek:2,price:260,recipe:[['emul',1],['tape',3],['caulk',3],['dust',20],['fill',5],['sandp',5],['roller',3]]},
+    {id:'paintdoor',name:'Paint a door (both sides)',clientMin:120,prepMin:15,perWeek:2,price:60,recipe:[['gloss',8],['under',8],['sandp',5]]},
+    {id:'skirting',name:'Gloss skirting and frames (one room)',clientMin:180,prepMin:15,perWeek:1,price:90,recipe:[['gloss',6],['under',6],['tape',4],['caulk',4]]},
+    {id:'exterior',name:'Exterior painting (day)',clientMin:480,prepMin:60,perWeek:1,price:220,recipe:[['dust',20],['tape',4]]}]),
+  other:[] };
+const ALLCAT=Object.values(CATALOGUES).flat();
+const clone=o=>JSON.parse(JSON.stringify(o));
+const BEAUTY_W={one:'treatment',many:'treatments',One:'Treatment',Many:'Treatments',item:'product',items:'products',Item:'Product',Items:'Products',cust:'client'};
+const TRADE_W={one:'job',many:'jobs',One:'Job',Many:'Jobs',item:'material',items:'materials',Item:'Material',Items:'Materials',cust:'customer'};
+const INDUSTRIES={
+  beauty:{label:'Nails, lashes or brows',w:BEAUTY_W,hours:false,patch:true,example:'e.g. Russian volume lashes',newItem:'e.g. Primer'},
+  hair:{label:'Hair',w:BEAUTY_W,hours:false,patch:true,example:'e.g. Balayage',newItem:'e.g. Toner'},
+  build:{label:'Building and trades',w:TRADE_W,hours:true,patch:false,example:'e.g. Fit a kitchen worktop',newItem:'e.g. Wood glue'},
+  paint:{label:'Painting and decorating',w:TRADE_W,hours:true,patch:false,example:'e.g. Wallpaper a feature wall',newItem:'e.g. Wallpaper paste'},
+  other:{label:'Something else',w:{one:'service',many:'services',One:'Service',Many:'Services',item:'item',items:'items',Item:'Item',Items:'Items',cust:'customer'},hours:false,patch:false,example:'e.g. One-hour session',newItem:'e.g. Printer ink'}
+};
+function selInds(){ const st=state.setup||{}; const a=(Array.isArray(st.industries)&&st.industries.length?st.industries:[st.industry||'beauty']).filter(k=>INDUSTRIES[k]); return a.length?a:['beauty']; }
+// One kind of work: its own settings. Several: shared wording where they agree, plain 'services' where they do not.
+function IND(){ const list=selInds().map(k=>INDUSTRIES[k]), first=list[0]; if(list.length===1) return first;
+  const sameW=list.every(i=>i.w.one===first.w.one && i.w.item===first.w.item);
+  return {...first, w: sameW?first.w:{...SERVICE_W, cust:list.every(i=>i.w.cust===first.w.cust)?first.w.cust:'customer'},
+    hours:list.every(i=>i.hours), patch:list.some(i=>i.patch), big:list.some(i=>i.big), onLabel:null, prepLabel:null, multi:true}; }
+// which kind of work a service belongs to (its own go by the first one ticked)
+function indOf(t){ const ks=selInds(); const k=t?ks.find(k=>(CATALOGUES[k]||[]).some(c=>c.id===t.id)):null; return INDUSTRIES[k||ks[0]]; }
+function W(){ return IND().w; }
+function CAT(){ const seen=new Set(), out=[]; selInds().forEach(k=>(CATALOGUES[k]||[]).forEach(c=>{ if(!seen.has(c.id)){ seen.add(c.id); out.push(c); } })); return out; }
+function fmtTime(m,t){ return (t?indOf(t):IND()).hours ? `${nf(m/60)} h` : `${m} min`; }
+function timeField(id,kind,t,f){ const I=indOf(t), h=I.hours;
+  const label= kind==='on' ? (I.onLabel || (h?'Hours on the job':`Minutes with the ${W().cust}`)) : (I.prepLabel || (h?'Hours setting up, travelling and clearing away':'Minutes to set up and clean down'));
+  return numField(id,label,'',h?nf((+t[f]||0)/60):t[f],`data-tf="${t.id}" data-f="${f}" data-mul="${h?60:1}"`,`step="${h?0.5:5}"`); }
+const UNITS=['ml','litres','g','kg','oz','fl oz','metres','pieces','pairs','trays','packs'];
+const SINGULAR={litres:'litre',metres:'metre',pieces:'piece',pairs:'pair',trays:'tray',packs:'pack'};
+function parsePack(str){ // turns old text like "15 ml bottle" or "pack of 500" into a size and a unit
+  str=String(str||''); let m;
+  if((m=str.match(/(?:pack|box) of (\d+)\s*(pairs)?/i))) return {size:+m[1],unit:m[2]?'pairs':'pieces'};
+  if((m=str.match(/([\d.]+)\s*(fl oz|ml|litres?|kg|g|oz|l|m)\b/i))){ const u=m[2].toLowerCase(); return {size:+m[1],unit:u.startsWith('l')?'litres':u==='m'?'metres':u}; }
+  if((m=str.match(/([\d.]+)\s*(tray|pair|piece|pack)s?/i))) return {size:+m[1],unit:m[2].toLowerCase()+'s'};
+  return {size:1,unit:'packs'};
+}
+function packLabel(p){ const n=+p.size||0; const u=(n===1 && SINGULAR[p.unit])||p.unit||''; return `${nf(n)} ${u}`.trim(); }
+const OVERHEAD_GROUPS=[
+  {key:'monthly',title:'Monthly costs',add:'Add a monthly cost',per:'a month',
+   options:['Room, chair or desk rent','Booking app subscription','Phone and internet','Marketing and ads','Design and admin apps','Laundry','Card machine rental','Electricity and heating','Business rates','Loan interest']},
+  {key:'yearly',title:'Yearly costs',add:'Add a yearly cost',per:'a year',
+   options:['Insurance','Accountant','Training and courses','Council licence','Professional membership','Website and domain']},
+  {key:'equipment',title:'Equipment you have bought',add:'Add equipment',per:'',
+   options:['UV/LED lamp','E-file / drill','Nail desk','Treatment couch','Lash lamp','Steriliser','Card reader','Chair or stool']}
+];
+function defaultOverheads(){ return [
+  ['monthly','Room, chair or desk rent',400],['monthly','Booking app subscription',15],['monthly','Phone and internet',20],
+  ['monthly','Marketing and ads',30],['monthly','Design and admin apps',11],['monthly','Laundry',20],
+  ['yearly','Insurance',180],['yearly','Accountant',300],['yearly','Training and courses',300],
+  ['equipment','UV/LED lamp',120,2],['equipment','E-file / drill',250,3],['equipment','Card reader',99,3]
+].map(([group,name,amount,years])=>({id:uid(),group,name,amount,years:years||3})); }
+function overheadsFromOld(s){ return [
+  ['monthly','Room, chair or desk rent',s.rent],['monthly','Other monthly costs',s.otherMonthly],
+  ['yearly','Insurance',s.insuranceYear],['yearly','Other yearly costs',s.otherYearly],
+  ['equipment','Equipment',s.equipment,s.equipmentYears]
+].filter(x=>+x[2]>0).map(([group,name,amount,years])=>({id:uid(),group,name,amount:+amount,years:+years||3})); }
+function migrateProducts(){ state.products.forEach(p=>{ if(p.size==null) Object.assign(p, parsePack(p.pack)); }); }
+
+function blankSetup(){ return {done:false, region:'ruk', takeHome:2000, hours:35, weeksOff:6, busy:.8, app:'fresha', cardPct:.014, cardFixed:.25,
+  deposit:.5, noShow:.05, industry:'beauty', industries:['beauty'], profitHour:20, daysPerWeek:5, staff:[], employmentAllowance:false, brand:{palette:'berry'}, studentLoan:'none', postgrad:false, otherIncome:0, patchValidDays:180, lastBackup:'', overheads:defaultOverheads(), rent:400, insuranceYear:180, otherMonthly:96, otherYearly:600, equipment:529, equipmentYears:3, vat:false, margin:.10, nonClient:.15, roundTo:1, potSaved:0}; }
+function blankState(){ return {v:2, example:false, setup:blankSetup(), treatments:[], products:[], income:[], expenses:[], bookings:[], holidays:[], clients:[], trips:[], rules:{...RULES}}; }
+function exampleState(){
+  const s=blankState(); s.example=true; s.setup.done=true;
+  const EX=['gelmani','biabfull','biabinfill','removal','art','removaladd','french','pedi','lashfull','lashinfill','brow'];
+  s.treatments=clone(CATALOGUE.filter(t=>EX.includes(t.id))); const used=new Set(s.treatments.flatMap(t=>t.recipe.map(r=>r.productId))); s.products=clone(LIBRARY.filter(p=>used.has(p.id)));
+  const ty=taxYearOf(todayStr()); const d=(m,day)=>{ const y=m>=3?ty:ty+1; return `${y}-${String(m+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`; };
+  s.income=[{id:uid(),date:d(3,10),desc:'April takings (example)',amount:2950,method:'Card'},{id:uid(),date:d(4,12),desc:'May takings (example)',amount:3100,method:'Card'},
+            {id:uid(),date:d(5,9),desc:'June takings (example)',amount:2870,method:'Card'}];
+  s.expenses=[{id:uid(),date:d(3,1),supplier:'Room rent (example)',amount:400,category:CATEGORIES[1]},{id:uid(),date:d(3,14),supplier:'Gel order (example)',amount:96.40,category:CATEGORIES[0]},
+              {id:uid(),date:d(4,1),supplier:'Room rent (example)',amount:400,category:CATEGORIES[1]},{id:uid(),date:d(4,20),supplier:'Insurance (example)',amount:180,category:CATEGORIES[1]},
+              {id:uid(),date:d(5,1),supplier:'Room rent (example)',amount:400,category:CATEGORIES[1]},{id:uid(),date:d(5,18),supplier:'Lash supplies (example)',amount:64.20,category:CATEGORIES[0]}];
+  s.setup.potSaved=900;
+  const td=todayStr();
+  s.clients=[{id:'ex1',name:'Example client A',patchTests:[{id:'p1',date:addDays(td,-30),product:'Lash glue',result:'clear'}]},{id:'ex2',name:'Example client B',patchTests:[]}];
+  s.bookings=[{id:'b1',date:td,time:'10:00',staffId:'me',clientId:'ex1',serviceId:'gelmani',addons:[{id:'art',qty:2}],mins:55,price:44,deposit:10,notes:'',status:'booked'},
+              {id:'b2',date:addDays(td,1),time:'13:00',staffId:'me',clientId:'ex2',serviceId:'lashfull',addons:[],mins:120,price:75,deposit:20,notes:'',status:'booked'}];
+  return s;
+}
+function uid(){ return Math.random().toString(36).slice(2,10); }
+function todayStr(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+const gbp=v=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP'}).format(v||0);
+const gbp0=v=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:0}).format(v||0);
+const pct=v=>(Math.round((v||0)*1000)/10)+'%';
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nf=v=>(Math.round((+v||0)*100)/100).toString();
+
+// ---------- storage ----------
+const KEY='taxpot-v1';
+let lockKey=null, lockSalt=null, locked=false; // passcode lock, see the lock module
+let state=blankState();
+try{ const raw=localStorage.getItem(KEY); if(raw){ const s=JSON.parse(raw); if(s && s.setup && !Array.isArray(s.setup.overheads)) s.setup.overheads=overheadsFromOld({...blankSetup(),...s.setup});
+  if(s && s.v===2){ state={...blankState(),...s,setup:{...blankSetup(),...s.setup}};
+    state.treatments.forEach(t=>(t.recipe||[]).forEach(r=>{ if(r.perPack==null){ const pr=state.products.find(x=>x.id===r.productId); r.perPack=(pr&&+pr.clientsPerPack&&+r.uses)?Math.round(pr.clientsPerPack/r.uses):0; } })); }
+  else if(s && s.v===1) state={...blankState(), income:s.income||[], expenses:s.expenses||[], setup:{...blankSetup(),...s.setup,done:false}}; // old test data: keep money records, ask the questions again
+} }catch(e){}
+migrateProducts();
+let storageOk=true;
+function save(){ if(locked) return; if(lockKey){ saveLocked(); return; } try{ localStorage.setItem(KEY, JSON.stringify(state)); storageOk=true; }catch(e){ storageOk=false; } }
+let dbp=null;
+function db(){ if(!dbp) dbp=new Promise((res,rej)=>{ try{ const r=indexedDB.open('taxpot',1); r.onupgradeneeded=()=>r.result.createObjectStore('receipts'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);}catch(e){rej(e);} }); return dbp; }
+async function putReceipt(id,blob){ const d=await db(); return new Promise((res,rej)=>{ const tx=d.transaction('receipts','readwrite'); tx.objectStore('receipts').put(blob,id); tx.oncomplete=res; tx.onerror=()=>rej(tx.error); }); }
+async function getReceipt(id){ const d=await db(); return new Promise((res,rej)=>{ const r=d.transaction('receipts').objectStore('receipts').get(id); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+async function delReceipt(id){ try{ const d=await db(); d.transaction('receipts','readwrite').objectStore('receipts').delete(id); }catch(e){} }
+async function shrink(file){
+  try{ const bmp=await createImageBitmap(file); const k=Math.min(1,1400/Math.max(bmp.width,bmp.height));
+    const c=document.createElement('canvas'); c.width=Math.round(bmp.width*k); c.height=Math.round(bmp.height*k);
+    c.getContext('2d').drawImage(bmp,0,0,c.width,c.height); return await new Promise(r=>c.toBlob(b=>r(b||file),'image/jpeg',.72)); }
+  catch(e){ return file; }
+}
+const thumbCache={};
+async function hydrateThumbs(){
+  for(const img of document.querySelectorAll('img[data-receipt]')){
+    const id=img.dataset.receipt;
+    try{ if(!thumbCache[id]){ const b=await getReceipt(id); if(b) thumbCache[id]=URL.createObjectURL(b); } if(thumbCache[id]) img.src=thumbCache[id]; }catch(e){}
+  }
+}
+
+// ---------- UI helpers ----------
+let view = state.setup.done ? 'prices' : 'wizard';
+let step = 0;
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.hidden=false; clearTimeout(toast.h); toast.h=setTimeout(()=>t.hidden=true,3200); }
+async function copyText(text){
+  try{ await navigator.clipboard.writeText(text); toast('Copied'); }
+  catch(e){ const o=document.getElementById('overlay'); o.innerHTML=`<div class="card" style="max-width:640px;width:100%"><h3>Copy this</h3><textarea id="copybox" rows="10">${esc(text)}</textarea><button class="btn" data-act="close-overlay">Done</button></div>`; o.hidden=false; const tb=document.getElementById('copybox'); tb.focus(); tb.select(); }
+}
+const TABS=()=>[['prices','Prices'],['diary','Diary'],['clients',W().cust==='client'?'Clients':'Customers'],['treatments',W().Many],['stock','Products'],['money','Money in and out'],['taxyear','Tax year'],['report','Report'],['more','More']];
+function renderTabs(){
+  const n=document.getElementById('tabs');
+  n.innerHTML = (view==='wizard'||view==='lock') ? '' : TABS().map(([k,l])=>`<button data-tab="${k}" ${view===k?'aria-current="page"':''}>${l}</button>`).join('');
+  document.getElementById('exflag').hidden=!state.example;
+}
+function render(){
+  renderTabs();
+  const m=document.getElementById('main');
+  const views={lock:vLock,wizard:vWizard,prices:vPrices,diary:vDiary,clients:vClients,treatments:vTreatments,stock:vStock,money:vMoney,taxyear:vTaxYear,report:vReport,more:vMore};
+  m.innerHTML=(views[view]||vPrices)();
+  if(!storageOk) m.insertAdjacentHTML('afterbegin','<div class="notice bad">This browser is not letting the page save. Your entries will be lost when you close it. Try a normal (not private) window.</div>');
+  hydrateThumbs();
+  afterRender();
+}
+
+// ---------- QUESTIONS ----------
+// Order: what you do, which services, then each one with what it uses, then your business and pay, then your tax pot. Nothing is priced until the end.
+const PARTS=['','What you do','Each one and what it uses','Your business and pay','Your tax pot'];
+const partName=n=>n===2?`Each ${W().one} and its ${W().items}`:PARTS[n];
+const BASIC=[
+  {q:'Where do you live?', why:'Scotland has different income tax bands.', type:'choice', key:'region',
+   opts:[['ruk','England'],['ruk','Wales'],['ruk','Northern Ireland'],['sco','Scotland']]},
+  {q:'How much do you want in your pocket each month, after tax?', why:'Include anything you want to save or put in a pension.', type:'money', key:'takeHome', chips:[1500,2000,2500,3000]},
+  {q:'How many hours a week do you work?', why:'Everything: clients, breaks, admin, cleaning down.', type:'number', key:'hours', chips:[20,30,35,40,45], unit:'hours'},
+  {q:'How many weeks off do you take a year?', why:'Holidays, bank holidays, sick days and training days.', type:'number', key:'weeksOff', chips:[4,6,8,10], unit:'weeks'},
+  {q:'How busy is your diary usually?', why:'Most people are not fully booked, and prices need to allow for that.', type:'choice', key:'busy',
+   opts:[[.95,'Fully booked','Hardly any gaps'],[.8,'Mostly full','A few gaps most weeks'],[.55,'About half full','Plenty of gaps'],[.35,'Quiet','Still building up clients']]},
+  {q:'How do clients mostly pay you?', why:'Card fees come off every payment, so they go into your prices.', type:'app'},
+  {q:'Do you take deposits?', why:'A deposit covers some of the cost when someone does not turn up.', type:'choice', key:'deposit',
+   opts:[[0,'No deposits'],[.5,'Yes, part of the price'],[1,'Yes, the full price up front']]},
+  {q:'How often do clients not turn up or cancel last minute?', why:'This is built into prices so the people who do turn up cover it.', type:'choice', key:'noShow',
+   opts:[[.02,'Rarely','About 1 in 50 bookings'],[.05,'Sometimes','About 1 in 20 bookings'],[.10,'Often','About 1 in 10 bookings']]},
+  {q:'What does it cost to run your business?', why:'Not stock or materials, you have done those. Pick each cost from the list, or choose Something else and type it. Tap + to add more.', type:'costs'},
+  {q:'Does anyone work for you?', why:'Employees, apprentices, or self-employed people working in your business. Leave it empty if it is just you.', type:'team'},
+  {q:'Do you also have a job or a student loan?', why:'Both change how much tax to put aside. Skip it if neither applies.', type:'taxextra'},
+  {q:'Are you VAT registered?', why:'Most solo techs are not. You only have to register if your takings go over £90,000 a year.', type:'choice', key:'vat',
+   opts:[[false,'No'],[true,'Yes'],[false,'Not sure','Then the answer is almost certainly no']]},
+  {q:'How much extra profit do you want on top?', why:'Your pay is already covered. This is a cushion for slow weeks, new kit and growing the business.', type:'choice', key:'margin',
+   opts:[[.05,'A little','5%'],[.10,'Normal','10%'],[.20,'Healthy','20%']]}
+];
+function wizSteps(){
+  const st=[{type:'industry',part:1},{type:'pickTreat',part:1}];
+  state.treatments.forEach(t=>st.push({type:'treatment',id:t.id,part:2}));
+  BASIC.forEach(b=>st.push({...b,part:3}));
+  st.push({type:'pot',part:4});
+  return st;
+}
+function suggestedProductIds(){ const ids=new Set(); state.treatments.forEach(t=>{ const c=ALLCAT.find(x=>x.id===t.id); (c?c.recipe:[]).forEach(r=>ids.add(r.productId)); }); return ids; }
+function moneyField(id,label,hint,value,attrs){ return `<label class="field">${label}${hint?`<span class="hint">${hint}</span>`:''}<span class="money-in"><input id="${id}" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(value)}" ${attrs}></span></label>`; }
+function numField(id,label,hint,value,attrs,extra=''){ return `<label class="field">${label}${hint?`<span class="hint">${hint}</span>`:''}<input id="${id}" type="number" inputmode="decimal" min="0" value="${esc(value)}" ${attrs} ${extra}></label>`; }
+
+function staffEditor(){
+  const s=state.setup, R=RULES, tm=teamCosts(s,R);
+  const PAY={hourly:'Paid by the hour',salary:'Yearly salary',self:'Self-employed, keeps a % of what they take'};
+  const rows=tm.people.map(m=>`<article class="card">
+    <div class="treat-head"><input id="st-name-${m.id}" placeholder="Name or job title, e.g. Junior stylist" value="${esc(m.name)}" data-st="${m.id}" data-f="name" style="font-weight:700">
+      <button class="iconbtn" aria-label="Remove" data-act="st-del" data-id="${m.id}">✕</button></div>
+    <label class="field">How are they paid?<select id="st-pay-${m.id}" data-st="${m.id}" data-f="pay">${Object.entries(PAY).map(([k,v])=>`<option value="${k}" ${m.pay===k?'selected':''}>${v}</option>`).join('')}</select></label>
+    <div class="fields">
+      ${m.pay==='self' ? `<label class="field">Their share of what they take (%)<input id="st-rate-${m.id}" type="number" min="0" max="100" step="1" value="${esc(m.rate)}" data-st="${m.id}" data-f="rate"></label>`
+        : `<label class="field">${m.pay==='salary'?'Salary a year':'Pay per hour'}<span class="money-in"><input id="st-rate-${m.id}" type="number" min="0" step="0.01" value="${esc(m.rate)}" data-st="${m.id}" data-f="rate"></span></label>`}
+      <label class="field">Hours a week${ownHours(m)?' (from the times below)':''}<input id="st-hrs-${m.id}" type="number" min="0" step="0.5" value="${esc(m.hours)}" data-st="${m.id}" data-f="hours" ${ownHours(m)?'disabled':''}></label>
+      <label class="field">Days off a year<input id="st-off-${m.id}" type="number" min="0" max="300" step="1" value="${esc(m.daysOff??Math.round((+m.weeksOff||0)*Math.max(1,openDays(hoursFor(m.id)))))}" data-st="${m.id}" data-f="daysOff"></label>
+    </div>
+    ${staffHoursBlock(m)}
+    <p class="small muted">${m.pay==='self' ? `No wages, NI or pension from you. Their ${nf(m.rate)}% comes off what they take, and your prices allow for it.`
+      : `Costs you about <b class="num">${gbp0(m.yearCost)}</b> a year: pay ${gbp0(m.gross)}, employer's National Insurance ${gbp0(m.ni)}, pension ${gbp0(m.pension)}. Adds about ${nf(Math.round(m.billable))} working hours a month.`}</p>
+  </article>`).join('');
+  const anyEmp=tm.people.some(m=>m.pay!=='self');
+  return `<div class="stack">${rows || `<p class="muted">Nobody yet. If it is just you, leave this empty.</p>`}
+    <button class="btn ghost" data-act="st-add">+ Add a person</button>
+    ${anyEmp?`<label class="row small" style="flex-wrap:nowrap;align-items:flex-start"><input type="checkbox" data-act="st-ea" ${s.employmentAllowance?'checked':''} style="flex:none"><span>I claim Employment Allowance. It takes up to £10,500 a year off the employer's National Insurance bill, and most small businesses with staff can claim it</span></label>`:''}
+    ${tm.people.length?`<p class="live">Your team costs about <span class="num">${gbp0(tm.month)}</span> a month.</p>
+    <p class="small muted">The 'a week' numbers on your treatments are the ones you do yourself. We assume your team are as busy as you in the hours they work.</p>`:''}
+    ${anyEmp?`<p class="small muted">Uses 2026/27 rates: employer's National Insurance is 15% of pay above £5,000 a year, and the pension is the 3% minimum.</p>`:''}</div>`;
+}
+function overheadEditor(){
+  const s=state.setup, list=s.overheads||[];
+  const groups=OVERHEAD_GROUPS.map(g=>{
+    const items=list.filter(o=>o.group===g.key);
+    const sub=items.reduce((a,o)=>a+(+o.amount||0),0);
+    return `<article class="card"><div class="treat-head"><h3>${g.title}</h3>${items.length?`<span class="num muted">${gbp(sub)}${g.per?' '+g.per:''}</span>`:''}</div>
+      ${items.map(o=>{ const other=o.custom || (o.name && !g.options.includes(o.name));
+        return `<div class="stack" style="gap:8px;padding-bottom:12px;border-bottom:1px solid var(--line)">
+          <div class="row" style="flex-wrap:nowrap;gap:8px">
+            <select id="oh-sel-${o.id}" aria-label="What is it?" data-oh="${o.id}" data-f="sel" style="flex:1">
+              ${g.options.map(x=>`<option ${!other&&x===o.name?'selected':''}>${esc(x)}</option>`).join('')}
+              <option value="__other" ${other?'selected':''}>Something else (type it)</option></select>
+            <button class="iconbtn" aria-label="Remove" data-act="oh-del" data-id="${o.id}">✕</button></div>
+          ${other?`<input id="oh-name-${o.id}" placeholder="What is it?" value="${esc(o.name)}" data-oh="${o.id}" data-f="name">`:''}
+          <div class="fields">
+            <label class="field">${g.key==='equipment'?'What it cost':'How much'}${g.per?` (${g.per})`:''}<span class="money-in"><input id="oh-amt-${o.id}" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(o.amount)}" data-oh="${o.id}" data-f="amount"></span></label>
+            ${g.key==='equipment'?`<label class="field">How many years it lasts<input id="oh-yrs-${o.id}" type="number" inputmode="decimal" min="1" step="1" value="${esc(o.years)}" data-oh="${o.id}" data-f="years"></label>`:''}
+          </div></div>`; }).join('')}
+      <button class="btn ghost" data-act="oh-add" data-g="${g.key}">+ ${g.add}</button></article>`; }).join('');
+  return `<div class="stack">${groups}<p class="live">Your running costs come to <span class="num">${gbp(overheadsMonth(s))}</span> a month.</p></div>`;
+}
+function vWizard(){
+  const steps=wizSteps(); if(step>=steps.length) step=steps.length-1;
+  const st=steps[step], s=state.setup, total=steps.length;
+  let q='', why='', body='';
+  const qs=quickStep(st);
+  if(qs){ q=qs.q; why=qs.why; body=qs.body; }
+  else if(st.type==='industry'){
+    q='What do you do?'; why='Tick everything you offer. The questions and starter lists follow what you pick, and you can add your own as you go.';
+    body=IND_GROUPS.map(([title,keys])=>`<p class="part" style="margin-top:6px">${title}</p><div class="choices" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">${keys.map(k=>`<button class="choice" data-act="wiz-ind" data-k="${k}" aria-pressed="${indOn(k)}">${indOn(k)?'✓ ':''}${esc(INDUSTRIES[k].label)}</button>`).join('')}</div>`).join('')
+      + ((state.setup._indTouched||state.setup.done)?`<p class="live">You have picked: ${selInds().map(k=>esc(INDUSTRIES[k].label)).join(' + ')}</p>`:'');
+  } else if(st.type==='pickTreat'){
+    q=`Which ${W().many} do you do?`; why='Tick all that apply, or add your own. You can add more later.';
+    const custom=state.treatments.filter(t=>!CAT().some(c=>c.id===t.id));
+    const pickRow=c=>`<label class="pick"><input type="checkbox" aria-label="${esc(c.name)}" data-act="pick-treat" data-id="${c.id}" ${state.treatments.some(t=>t.id===c.id)?'checked':''}><span>${esc(c.name)}${c.addon?'<small>Add-on</small>':''}</span></label>`;
+    const shown=new Set();
+    const groups=selInds().map(k=>{ const items=(CATALOGUES[k]||[]).filter(c=>!shown.has(c.id)); items.forEach(c=>shown.add(c.id)); return (selInds().length>1 && items.length?`<p class="part" style="margin-top:6px">${esc(INDUSTRIES[k].label)}</p>`:'')+items.map(pickRow).join(''); }).join('');
+    body=`<div class="stack">${groups}
+      ${custom.map(t=>`<label class="pick"><input type="checkbox" aria-label="${esc(t.name)}" data-act="pick-treat" data-id="${t.id}" checked><span>${esc(t.name)}<small>Your own</small></span></label>`).join('')}
+      <div class="row"><input id="new-treat" placeholder="Add your own ${esc(IND().example)}" style="flex:1"><button class="btn ghost" data-act="add-custom-treat">Add</button></div></div>`;
+  } else if(st.type==='treatment'){
+    const t=state.treatments.find(x=>x.id===st.id); const c=compute(state); const tc=c.treatments.find(x=>x.id===st.id);
+    const pmap=Object.fromEntries(c.products.map(p=>[p.id,p]));
+    const n=state.treatments.indexOf(t)+1;
+    // a product shared by several treatments is asked about in full on the first one, then shown as already set
+    const firstOwner=pid=>state.treatments.find(x=>x.recipe.some(r=>r.productId===pid));
+    const notUsed=state.products.filter(p=>!t.recipe.some(r=>r.productId===p.id));
+    q=t.name; why=`${W().One} ${n} of ${state.treatments.length}. First the ${W().one}, then each of the ${W().items} you use for it.${IND().big?' Leave out big things you buy for one job, like timber, tiles or a boiler, and quote those on top.':''}`;
+    body=`<div class="stack">${supData()}
+      <div class="grid2">${timeField('wc-'+t.id,'on',t,'clientMin')}
+      ${timeField('wp-'+t.id,'prep',t,'prepMin')}
+      ${numField('ww-'+t.id,'How many do you do a week?','A rough guess is fine',t.perWeek,`data-tf="${t.id}" data-f="perWeek"`,'step="0.5"')}
+      ${moneyField('wr-'+t.id,'What do you charge now?','Leave blank if new',t.price||'',`data-tf="${t.id}" data-f="price"`)}</div>
+      ${IND().patch?`<label class="row" style="font-weight:600"><input type="checkbox" data-tf="${t.id}" data-f="patch" ${t.patch?'checked':''}> Needs a patch test first</label>`:''}
+      <label class="row small"><input type="checkbox" data-tf="${t.id}" data-f="addon" ${t.addon?'checked':''}> This is an add-on to another ${W().one}, like nail art or a removal</label>${t.addon?`<label class="field">Priced per<input id="ul-${t.id}" value="${esc(t.unitLabel||'')}" placeholder="e.g. nail. Leave blank if it is a flat price" data-tf="${t.id}" data-f="unitLabel"></label>`:''}
+      <h3 style="margin-top:8px">${W().Items} you use for a ${esc(t.name)}</h3>
+      <p class="small muted">We have filled in the usual ones. Change anything that is not right for you.</p>
+      ${t.recipe.map(r=>{ const p=state.products.find(x=>x.id===r.productId); if(!p) return ''; const cp=pmap[p.id];
+        const owner=firstOwner(p.id); const askedBefore=owner && owner.id!==t.id;
+        const fields=`<div class="fields"><label class="field">What size do you buy?<span class="row" style="flex-wrap:nowrap;gap:8px"><input id="pp-${t.id}-${p.id}" type="number" inputmode="decimal" min="0" step="any" aria-label="Size" value="${esc(p.size)}" data-pf="${p.id}" data-f="size" style="flex:1"><select id="pu2-${t.id}-${p.id}" aria-label="Unit" data-pf="${p.id}" data-f="unit" style="flex:1">${UNITS.map(u=>`<option ${u===p.unit?'selected':''}>${u}</option>`).join('')}</select></span></label>
+          ${moneyField('pc-'+t.id+'-'+p.id,'What does one cost you?','',p.packCost,`data-pf="${p.id}" data-f="packCost"`)}
+          <label class="field">Where do you buy it?<input id="sp-${t.id}-${p.id}" list="sup-list" placeholder="Pick one or type your own" value="${esc(p.supplier||'')}" data-pf="${p.id}" data-f="supplier"></label>
+          ${numField('ps-'+t.id+'-'+p.id,'Goes off after (weeks)','Blank if it keeps',p.shelfWeeks||'',`data-pf="${p.id}" data-f="shelfWeeks" placeholder="Keeps"`,'step="1"')}
+          ${numField('pi-'+t.id+'-'+p.id,'How many have you got?','',p.inStock,`data-pf="${p.id}" data-f="inStock"`,'step="1"')}
+          ${numField('pr-'+t.id+'-'+p.id,'Reorder when down to','',p.reorderAt,`data-pf="${p.id}" data-f="reorderAt"`,'step="1"')}</div>`;
+        return `<article class="card">
+          <div class="treat-head"><div><h3>${esc(p.name)}</h3><p class="small muted">${esc(packLabel(p))} · ${gbp(+p.packCost)}</p></div>
+            <button class="iconbtn" aria-label="Not used for this ${W().one}" title="Not used for this ${W().one}" data-act="wiz-rm-prod" data-t="${t.id}" data-p="${p.id}">✕</button></div>
+          ${askedBefore ? `<details><summary>Already set up under ${esc(owner.name)}. Change it</summary><div class="stack" style="margin-top:10px">${fields}</div></details>` : fields}
+          <div class="fields">${numField('pu-'+t.id+'-'+p.id,`How many uses can you get from ${esc(packLabel(p))} of ${esc(p.name)}?`,'',r.perPack||'',`data-ru="${t.id}" data-p="${p.id}"`,'step="1"')}</div>
+          ${+r.perPack>0?`<p class="live">That is <span class="num">${gbp(lineCost(r,pmap))}</span> of ${esc(p.name)} per ${esc(t.name)}${cp.factor>1.01?' (it goes off before you use it all, so this includes the waste)':''}.</p>`:''}
+        </article>`; }).join('') || `<p class="muted">No ${W().items} yet. Add the ones you use below, or leave it empty if you do not use any.</p>`}
+      <article class="card"><h3>Add ${an(W().item)} ${W().item}</h3>
+        ${notUsed.length?`<div class="row"><select id="add-existing-${t.id}" aria-label="Product you already have" style="flex:1">${notUsed.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select><button class="btn ghost" data-act="wiz-add-prod" data-t="${t.id}">Add</button></div>`:''}
+        <div class="row"><input id="add-new-${t.id}" placeholder="Something new, ${esc(IND().newItem)}" style="flex:1"><button class="btn ghost" data-act="wiz-new-prod" data-t="${t.id}">Add new</button></div>
+      </article>
+      <p class="live">${W().Items} for one ${esc(t.name)}: <span class="num">${gbp(tc.productCost)}</span></p></div>`;
+  } else if(st.type==='pot'){
+    q='Have you put any money aside for tax since 6 April?'; why='We will keep track of it on the Tax year tab and tell you how much more to save.';
+    body=moneyField('wiz-pot','Amount put aside so far','Put 0 if nothing yet',s.potSaved,'data-set="potSaved"')+
+      `<div class="chips"><button class="chip" data-act="wiz-chip" data-key="potSaved" data-v="0">Nothing yet</button></div>`;
+  } else {
+    q=st.q; why=st.why;
+    if(st.type==='choice'){
+      body=`<div class="choices">${st.opts.map(([v,l,sub],i)=>`<button class="choice" data-act="wiz-choice" data-i="${i}" aria-pressed="${s['_pick_'+st.key]!=null ? s['_pick_'+st.key]===l : String(s[st.key])===String(v)}">${esc(l)}${sub?`<small>${esc(sub)}</small>`:''}</button>`).join('')}</div>`;
+    } else if(st.type==='money' || st.type==='number'){
+      body=`<label class="field">${st.type==='money'?'Amount':'Number of '+st.unit}<span class="${st.type==='money'?'money-in':''}"><input id="wiz-${st.key}" type="number" inputmode="decimal" min="0" step="1" value="${esc(s[st.key])}" data-set="${st.key}"></span></label>
+        <div class="chips">${st.chips.map(c=>`<button class="chip" data-act="wiz-chip" data-key="${st.key}" data-v="${c}" aria-pressed="${+s[st.key]===c}">${st.type==='money'?gbp0(c):c+' '+st.unit}</button>`).join('')}</div>`;
+    } else if(st.type==='app'){
+      body=`<div class="choices">${Object.entries(APPS).map(([k,a])=>`<button class="choice" data-act="wiz-app" data-k="${k}" aria-pressed="${s.app===k}">${a.label}<small>${a.note}</small></button>`).join('')}</div>`;
+    } else if(st.type==='costs'){
+      body=overheadEditor();
+    } else if(st.type==='team'){
+      body=staffEditor();
+    } else if(st.type==='taxextra'){
+      body=taxExtraEditor();
+    }
+  }
+  const last=step===total-1;
+  return `<section class="stack">
+    <div class="progress" aria-hidden="true"><i style="width:${(step+1)/total*100}%"></i></div>
+    <p class="part">${wizFull?`Part ${st.part} of 4 · ${partName(st.part)}`:`Step ${step+1} of ${total}`}</p>
+    <h2 class="q">${esc(q)}</h2>
+    <p class="muted">${esc(why)}</p>
+    ${body}
+    <div class="row" style="justify-content:space-between;margin-top:8px">
+      ${step===0?'<span></span>':'<button class="btn ghost" data-act="wiz-back">Back</button>'}
+      <span class="small muted">${wizFull?`${step+1} of ${total}`:''}</span>
+      <button class="btn" data-act="wiz-next">${last?'Work out my prices':st.type==='welcome'?'Start':'Next'}</button>
+    </div>
+    ${state.setup.done?`<button class="btn small ghost" data-act="wiz-exit">Leave the questions and go back to the app</button>`:''}
+    ${step===0 && !state.setup.done ? `<div class="notice info">Just looking? <button class="btn small ghost" data-act="load-example">Try it with example figures</button></div>`:''}
+  </section>`;
+}
+function wizNext(){
+  const steps=wizSteps(), st=steps[step];
+  if(st.type==='industry' && !(state.setup._indTouched||state.setup.done)){ toast('Tick what you do first'); return; }
+  if(st.type==='pickTreat' && !state.treatments.length){ toast(`Tick at least one ${W().one}`); return; }
+  if(st.type==='treatment'){ const t=state.treatments.find(x=>x.id===st.id);
+    const missing=t.recipe.filter(r=>!(+r.perPack>0)).map(r=>state.products.find(p=>p.id===r.productId)).filter(Boolean);
+    if(missing.length){ toast(`Say how many uses you get from ${missing[0].name}`); return; } }
+  if(step<steps.length-1){ step++; render(); window.scrollTo(0,0); return; }
+  state.setup.done=true; state.example=false; save(); view='prices'; render(); window.scrollTo(0,0);
+}
+
+// ---------- PRICES ----------
+const FLAG={below:['bad','Below break-even'],under:['warn','Under-priced'],ok:['ok','Good'],none:['info','No price yet']};
+function vPrices(){
+  const c=compute(state), s=state.setup;
+  if(!state.treatments.length) return `<div class="card"><h2>No ${W().many} yet</h2><p>Add your ${W().many} to see prices.</p><button class="btn" data-tab="treatments">Add ${W().many}</button></div>`;
+  const a=c.atSuggested, cur=c.atCurrent;
+  const fill=c.billable>0?c.hoursBooked/c.billable:0;
+  const diary= fill>1.05 ? `<div class="notice warn">The bookings you entered need <b class="num">${c.hoursBooked.toFixed(0)}</b> hours a month, but you only have about <b class="num">${c.billable.toFixed(0)}</b> realistic working hours. Lower the numbers a week, or work more hours.</div>`
+    : fill<0.9 ? `<div class="notice info">The bookings you entered fill about ${pct(fill)} of your realistic hours. Prices assume you fill them, so the money check below may look short.</div>` : '';
+  const curPct=c.needMonth>0?Math.max(0,Math.min(1,cur.profit/c.needMonth)):0;
+  const counts={below:0,under:0}; c.treatments.forEach(t=>{ if(counts[t.flag]!=null) counts[t.flag]++; });
+  return `
+  <section class="card">
+    <div><h2>Your prices</h2><p class="muted">To take home ${gbp0(s.takeHome)} a month after tax.</p></div>
+    <div class="grid2">
+      <div class="stat hero"><span class="label">Every working hour must earn</span><span class="value">${gbp(c.hourly)}</span></div>
+      <div class="stat"><span class="label">Put aside for tax</span><span class="value">${pct(c.taxShare)}</span><span class="small muted">of your profit</span></div>
+      <div class="stat"><span class="label">Working hours a month</span><span class="value">${c.billable.toFixed(0)}</span><span class="small muted">${c.team.people.length?'you and your team, after gaps':'realistic, after gaps'}</span></div>
+      ${c.team.people.length?`<div class="stat"><span class="label">Team costs</span><span class="value">${gbp0(c.team.month)}</span><span class="small muted">a month, in your prices</span></div>`:''}
+    </div>
+    ${diary}
+  </section>
+  <section class="card">
+    <h3>At your current prices</h3>
+    <div class="bar ${cur.profit<c.needMonth?'short':''}" role="img" aria-label="${pct(curPct)} of what you need"><i style="width:${curPct*100}%"></i></div>
+    <p>${cur.profit>=c.needMonth ? `You make about <b class="num">${gbp0(cur.profit)}</b> a month before tax. That covers what you need (<span class="num">${gbp0(c.needMonth)}</span>).`
+       : `You make about <b class="num">${gbp0(cur.profit)}</b> a month before tax, but need <b class="num">${gbp0(c.needMonth)}</b>. That is <b class="num">${gbp0(c.needMonth-cur.profit)}</b> short.`}</p>
+    <p class="muted small">At the suggested prices: about ${gbp0(a.profit)} a month. ${counts.below?`${counts.below} ${counts.below>1?W().many+' are':W().one+' is'} below break-even. `:''}${counts.under?`${counts.under} under-priced.`:''}</p>
+  </section>
+  <section class="stack">
+    ${c.treatments.map(t=>{ const [cls,lab]=FLAG[t.flag]; return `<article class="treat">
+      <div class="treat-head"><div><h3>${esc(t.name)}</h3><p class="muted small">${fmtTime(t.mins,t)} with set-up · ${W().items} ${gbp(t.productCost)} · your time ${gbp(t.timeCost)}${t.patch?' · patch test needed':''}</p></div><span class="pill ${cls}">${lab}</span></div>
+      <div class="prices"><div><div class="k">Your price</div><div class="v">${t.price?gbp(+t.price):'–'}</div></div>
+        <div><div class="k">Minimum</div><div class="v">${gbp(t.minimum)}</div></div>
+        <div class="sugg"><div class="k">Suggested</div><div class="v">${gbp(t.suggested)}</div></div></div>
+      <p class="small muted">At the suggested price you earn about <span class="num">${gbp(t.perHour)}</span> an hour from this, before tax.</p>
+    </article>`; }).join('')}
+  </section>
+  ${priceExtras(c)}
+  <p class="small muted">Minimum covers time, ${W().items}, ${c.team.people.length?'your team, ':''}card fees, no-shows${s.vat?' and VAT':''} with no extra profit. Suggested adds your profit cushion and rounds up. Estimates only, not tax advice.</p>`;
+}
+
+// ---------- TREATMENTS ----------
+function vTreatments(){
+  const c=compute(state); const pmap=Object.fromEntries(c.products.map(p=>[p.id,p]));
+  const opts=sel=>state.products.map(p=>`<option value="${p.id}" ${p.id===sel?'selected':''}>${esc(p.name)}</option>`).join('');
+  return `<section class="stack"><div><h2>${W().Many}</h2><p class="muted">Times, prices and the ${W().items} each one uses. Add your own at the bottom.</p></div>
+  ${c.treatments.map(t=>`<article class="card">
+    <div class="treat-head"><input id="tn-${t.id}" aria-label="${W().One} name" value="${esc(t.name)}" data-tf="${t.id}" data-f="name" style="font-weight:700"><button class="iconbtn" aria-label="Remove ${esc(t.name)}" data-act="del-treat" data-id="${t.id}">✕</button></div>
+    <div class="grid2">
+      ${timeField('tc-'+t.id,'on',t,'clientMin')}
+      ${timeField('tp-'+t.id,'prep',t,'prepMin')}
+      ${numField('tw-'+t.id,'How many a week','',t.perWeek,`data-tf="${t.id}" data-f="perWeek"`,'step="0.5"')}
+      ${moneyField('tr-'+t.id,'Your price','',t.price||'',`data-tf="${t.id}" data-f="price"`)}
+    </div>
+    ${IND().patch?`<label class="row small"><input type="checkbox" data-tf="${t.id}" data-f="patch" ${t.patch?'checked':''}> Needs a patch test first</label>`:''}
+      <label class="row small"><input type="checkbox" data-tf="${t.id}" data-f="addon" ${t.addon?'checked':''}> This is an add-on to another ${W().one}, like nail art or a removal</label>${t.addon?`<label class="field">Priced per<input id="ul-${t.id}" value="${esc(t.unitLabel||'')}" placeholder="e.g. nail. Leave blank if it is a flat price" data-tf="${t.id}" data-f="unitLabel"></label>`:''}
+    <details ${t.recipe.length?'':'open'}><summary>${W().Items} used · ${gbp(t.productCost)} a time</summary>
+      <div class="tablebox" style="margin-top:10px"><table><thead><tr><th>${W().Item}</th><th class="r">Uses from one</th><th class="r">Cost each time</th><th></th></tr></thead><tbody>
+      ${t.recipe.map((r,i)=>{ const p=pmap[r.productId]; return `<tr><td><select aria-label="Product" data-rf="${t.id}" data-i="${i}" data-f="productId">${opts(r.productId)}</select></td>
+        <td class="r"><input type="number" min="0" step="1" aria-label="Uses from one" value="${esc(r.perPack||'')}" data-rf="${t.id}" data-i="${i}" data-f="perPack" style="width:90px"></td>
+        <td class="r num">${gbp(lineCost(r,pmap))}</td>
+        <td><button class="iconbtn" aria-label="Remove product" data-act="del-recipe" data-id="${t.id}" data-i="${i}">✕</button></td></tr>`; }).join('')}
+      </tbody></table></div>
+      <p class="small muted" style="margin-top:6px">How many uses you get from one of each, for this ${W().one}.</p>
+      <button class="btn small ghost" style="margin-top:10px" data-act="add-recipe" data-id="${t.id}" ${state.products.length?'':'disabled'}>Add ${W().item=='item'?'an':'a'} ${W().item}</button>
+    </details>
+  </article>`).join('')}
+  <button class="btn" data-act="add-treat">+ Add your own ${W().one}</button></section>`;
+}
+
+// ---------- STOCK ----------
+function vStock(){
+  const c=compute(state);
+  const reorder=c.products.filter(p=>p.reorder), expiring=c.products.filter(p=>p.lost>0.05);
+  return `<section class="stack">${supData()}<div><h2>Stock</h2><p class="muted">What you have, how fast it goes, and when to reorder. How many uses each one gives is set on the ${W().Many} tab.</p></div>
+  ${reorder.length?`<div class="notice warn"><b>Reorder:</b> ${reorder.map(p=>esc(p.name)).join(', ')}</div>`:'<div class="notice ok">Nothing needs reordering.</div>'}
+  ${expiring.map(p=>`<div class="notice info"><b>${esc(p.name)}</b> goes off before you use it up. About <b>${pct(p.lost)}</b> of each ${esc(packLabel(p))} gets thrown away, so it costs ${pct(p.factor-1)} more per ${W().one} than it looks. That is already in your prices.</div>`).join('')}
+  <div class="tablebox"><table>
+    <thead><tr><th>${W().Item}</th><th>Supplier</th><th>Size</th><th class="r">Cost £</th><th class="r">Lasts once open (weeks)</th><th class="r">In stock</th><th class="r">Reorder at</th><th class="r">Used a week</th><th class="r">Weeks left</th><th></th></tr></thead>
+    <tbody>${c.products.map(p=>`<tr>
+      <td><input aria-label="Product name" value="${esc(p.name)}" data-pf="${p.id}" data-f="name" style="min-width:160px"></td>
+      <td><input aria-label="Supplier" list="sup-list" placeholder="Pick or type" value="${esc(p.supplier||'')}" data-pf="${p.id}" data-f="supplier" style="min-width:140px"></td>
+      <td><span class="row" style="flex-wrap:nowrap;gap:6px"><input type="number" min="0" step="any" aria-label="Size" value="${esc(p.size)}" data-pf="${p.id}" data-f="size" style="width:80px"><select aria-label="Unit" data-pf="${p.id}" data-f="unit" style="width:auto">${UNITS.map(u=>`<option ${u===p.unit?'selected':''}>${u}</option>`).join('')}</select></span></td>
+      <td class="r"><input type="number" min="0" step="0.01" aria-label="Cost of one" value="${esc(p.packCost)}" data-pf="${p.id}" data-f="packCost" style="width:80px"></td>
+      <td class="r"><input type="number" min="0" aria-label="Weeks it lasts once open" value="${esc(p.shelfWeeks||'')}" placeholder="keeps" data-pf="${p.id}" data-f="shelfWeeks" style="width:80px"></td>
+      <td class="r"><input type="number" min="0" aria-label="In stock" value="${esc(p.inStock)}" data-pf="${p.id}" data-f="inStock" style="width:70px"></td>
+      <td class="r"><input type="number" min="0" aria-label="Reorder at" value="${esc(p.reorderAt)}" data-pf="${p.id}" data-f="reorderAt" style="width:70px"></td>
+      <td class="r num">${p.packsPerWeek?p.packsPerWeek.toFixed(2):'–'}</td>
+      <td class="r num">${p.weeksLeft==null?'–':p.weeksLeft.toFixed(1)} ${p.reorder?'<span class="pill warn">Reorder</span>':''}</td>
+      <td><button class="iconbtn" aria-label="Remove ${esc(p.name)}" data-act="del-product" data-id="${p.id}">✕</button></td></tr>`).join('')}</tbody></table></div>
+  <button class="btn" data-act="add-product">Add ${W().item=='item'?'an':'a'} ${W().item}</button>
+  <p class="small muted">Weeks left uses how many ${W().many} a week you entered. A dash means nothing uses it yet.</p></section>`;
+}
+
+// ---------- MONEY ----------
+let moneyYear=null;
+function fmtDate(d){ try{ return new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}); }catch(e){ return d; } }
+function vMoney(){
+  const ty=moneyYear ?? taxYearOf(todayStr());
+  const inc=state.income.filter(x=>taxYearOf(x.date)===ty).sort((a,b)=>b.date.localeCompare(a.date));
+  const exp=state.expenses.filter(x=>taxYearOf(x.date)===ty).sort((a,b)=>b.date.localeCompare(a.date));
+  const tripMiles=state.trips.filter(x=>taxYearOf(x.date)===ty).reduce((a,x)=>a+(+x.miles||0),0);
+  const sumI=inc.reduce((a,x)=>a+(+x.amount||0),0), sumE=exp.reduce((a,x)=>a+(+x.amount||0),0);
+  return `<section class="stack"><div><h2>Money in and out</h2><p class="muted">Tax year ${ty}/${String((ty+1)%100).padStart(2,'0')} (6 April to 5 April). Snap receipts as you go.</p></div>
+  <div class="grid2"><div class="stat"><span class="label">Money in</span><span class="value">${gbp(sumI)}</span></div><div class="stat"><span class="label">Money out</span><span class="value">${gbp(sumE)}</span></div></div>
+  ${tripMiles>0?`<p class="small muted">Plus ${gbp(mileageClaim(tripMiles))} for the ${nf(tripMiles)} miles you have driven for work. The Tax tab counts that as money out too.</p>`:''}
+  <article class="card"><h3>Quick add ${an(W().one)} ${W().one} you did today</h3>
+    <div class="chips">${state.treatments.filter(t=>+t.price>0&&!t.addon).map(t=>`<button class="chip" data-act="quick-income" data-id="${t.id}">${esc(t.name)} · ${gbp(+t.price)}</button>`).join('') || `<span class="muted small">Add prices on the ${W().Many} tab to get one-tap buttons.</span>`}</div>
+  </article>
+  <details class="fold"><summary><span class="grow">Add money in</span></summary><form class="stack" id="form-income">
+    <div class="grid2"><label class="field">Date<input id="i-date" type="date" name="date" value="${todayStr()}" required></label>
+    <label class="field">Amount<span class="money-in"><input id="i-amount" type="number" name="amount" step="0.01" min="0" inputmode="decimal" required></span></label></div>
+    <label class="field">What for<input id="i-desc" name="desc" placeholder="e.g. Saturday takings, or a payout from Fresha"></label>
+    <label class="field">Paid by<select id="i-method" name="method">${['Card','Cash','Bank transfer','App payout'].map(m=>`<option ${m===payDefault()?'selected':''}>${m}</option>`).join('')}</select></label>
+    <button class="btn" type="submit">Add money in</button></form></details>
+  <details class="fold"><summary><span class="grow">Add money out<small>With a receipt photo</small></span></summary><form class="stack" id="form-expense">
+    <div class="grid2"><label class="field">Date<input id="e-date" type="date" name="date" value="${todayStr()}" required></label>
+    <label class="field">Amount<span class="money-in"><input id="e-amount" type="number" name="amount" step="0.01" min="0" inputmode="decimal" required></span></label></div>
+    <label class="field">What it was for, or who you paid<input id="e-supplier" name="supplier" placeholder="e.g. nail files, room rent" required></label>
+    <label class="field">What kind of cost<select id="e-cat" name="category">${CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></label>
+    <label class="field">Receipt photo<span class="hint">Take a photo or pick one. It stays on this device.</span><input id="e-photo" type="file" name="photo" accept="image/*" capture="environment"></label>
+    <button class="btn" type="submit">Add money out</button></form></details>
+  <details class="fold" data-sec="m-trips" ${isOpen('m-trips')?'open':''}><summary><span class="grow">Car trips<small>Miles you drive for work</small></span></summary><div class="stack">
+    <p class="small muted">Trips you drive for work in your own car, not your usual journey to where you work. Each mile takes ${Math.round(RULES.mileage[0]*100)}p off the money you pay tax on (${Math.round(RULES.mileage[1]*100)}p after ${RULES.mileage[2].toLocaleString('en-GB')} miles a year). If you add trips here, do not also add petrol or car costs as money out.</p>
+    <form class="fields" id="form-trip"><label class="field">Date<input id="tr-date" type="date" name="date" value="${todayStr()}" required></label>
+      <label class="field">Miles (there and back)<input id="tr-miles" type="number" name="miles" min="0" step="0.1" inputmode="decimal" required></label>
+      <label class="field">Where to<input id="tr-route" name="route" placeholder="e.g. Client in Solihull"></label><label class="field">&nbsp;<button class="btn" type="submit">Add trip</button></label></form>
+    <div class="list">${state.trips.filter(x=>taxYearOf(x.date)===ty).sort((a,b)=>b.date.localeCompare(a.date)).map(x=>`<div class="item"><div class="grow"><p><b>${esc(x.route||'Trip')}</b></p><p class="small muted">${fmtDate(x.date)} · ${nf(x.miles)} miles</p></div><span class="num">${gbp(mileageClaim(+x.miles||0))}</span><button class="iconbtn" aria-label="Delete" data-act="trip-del" data-id="${x.id}">✕</button></div>`).join('') || '<p class="muted small">No trips yet.</p>'}</div>
+  </div></details>
+  <article class="card"><div class="row" style="justify-content:space-between"><h3>Money in</h3><button class="btn small ghost" data-act="copy-income" data-y="${ty}">Copy this list</button></div>
+    <div class="list">${inc.map(x=>`<div class="item"><div class="grow"><p><b>${esc(x.desc||'Takings')}</b></p><p class="small muted">${fmtDate(x.date)} · ${esc(x.method)}</p></div><span class="num">${gbp(+x.amount)}</span><button class="btn small ghost" data-act="inc-edit" data-id="${x.id}">Change</button></div>`).join('') || '<p class="muted small">Nothing yet.</p>'}</div></article>
+  <article class="card"><div class="row" style="justify-content:space-between"><h3>Money out</h3><button class="btn small ghost" data-act="copy-expenses" data-y="${ty}">Copy this list</button></div>
+    <div class="list">${exp.map(x=>`<div class="item">${x.receiptId?`<img class="thumb" alt="Receipt" data-receipt="${x.receiptId}" data-act="view-receipt" data-id="${x.receiptId}">`:'<span class="thumb" aria-hidden="true"></span>'}<div class="grow"><p><b>${esc(x.supplier)}</b></p><p class="small muted">${fmtDate(x.date)} · ${esc(x.category)}</p></div><span class="num">${gbp(+x.amount)}</span><button class="btn small ghost" data-act="exp-edit" data-id="${x.id}">Change</button></div>`).join('') || '<p class="muted small">Nothing yet.</p>'}</div></article>
+  </section>`;
+}
+
+// ---------- TAX YEAR ----------
+function vTaxYear(){
+  const ty=moneyYear ?? taxYearOf(todayStr());
+  const years=[...new Set([taxYearOf(todayStr()),...state.income.map(x=>taxYearOf(x.date)),...state.expenses.map(x=>taxYearOf(x.date))])].sort((a,b)=>b-a);
+  const R=RULES, sm=taxYearSummary(state, ty);
+  const start=new Date(ty,3,6), end=new Date(ty+1,3,5,23,59), now=new Date();
+  const frac=Math.min(1,Math.max(0.0001,(now-start)/(end-start)));
+  const isCurrent=ty===taxYearOf(todayStr());
+  const projIncome=isCurrent? sm.income/frac : sm.income;
+  const projProfit=isCurrent? sm.profit/frac : sm.profit;
+  const region=state.setup.region==='sco'?'sco':'ruk';
+  const pp=taxParts(projProfit, region, R, taxOpts(state.setup)), projTax=pp.total, bill=pp.tax+pp.ni, poa=bill>1000;
+  const saved=+state.setup.potSaved||0;
+  const label=`${ty}/${String((ty+1)%100).padStart(2,'0')}`;
+  const mtd=R.mtd.find(m=>projIncome>m.over);
+  const lines=[`Tax year ${label} (working for yourself)`,`Money in (turnover): ${gbp(sm.income)}`,
+    sm.useAllowance?`Flat ${gbp0(R.tradingAllowance)} trading allowance used in place of your costs: ${gbp(sm.deduction)}`:`Money out (total allowable expenses): ${gbp(sm.expenses)}`,
+    ...(!sm.useAllowance?CATEGORIES.filter(c=>sm.byCat[c]).map(c=>`  ${c}: ${gbp(sm.byCat[c])}`):[]),
+    `Profit: ${gbp(sm.profit)}`,`Tax and National Insurance on that profit (estimate): ${gbp(sm.tax)}`,'Estimate only. Check against your HMRC tax return.'].join('\n');
+  const cc=compute(state), estMonth=taxOnProfit(Math.max(0,(cc.treatments.some(t=>+t.price>0)?cc.atCurrent:cc.atSuggested).profit*12),region,R,taxOpts(state.setup))/12; // from her prices, for before she has recorded anything
+  const yearTax=isCurrent?(sm.income?projTax:estMonth*12):sm.tax, left=Math.max(0,projTax-saved), months=Math.max(1,Math.round((1-frac)*12));
+  return `<section class="stack"><div class="row" style="justify-content:space-between"><div><h2>Tax year ${label}</h2><p class="muted">6 April ${ty} to 5 April ${ty+1}</p></div>
+    ${years.length>1?`<select aria-label="Tax year" data-act="pick-year" style="width:auto">${years.map(y=>`<option value="${y}" ${y===ty?'selected':''}>${y}/${String((y+1)%100).padStart(2,'0')}</option>`).join('')}</select>`:''}</div>
+  <div class="grid2">
+    <div class="stat"><span class="label">Money in</span><span class="value">${gbp0(sm.income)}</span></div>
+    <div class="stat"><span class="label">${sm.useAllowance?'Flat allowance taken off':'Money out'}</span><span class="value">${gbp0(sm.deduction)}</span></div>
+    <div class="stat"><span class="label">What is left (profit)</span><span class="value">${gbp0(sm.profit)}</span></div>
+    <div class="stat hero"><span class="label">${isCurrent?'Tax bill for the year, about':'Tax bill, about'}</span><span class="value">${gbp0(yearTax)}</span></div>
+  </div>
+  ${sm.useAllowance?`<div class="notice info">You have spent less than ${gbp0(R.tradingAllowance)} so far, so we take off the flat ${gbp0(R.tradingAllowance)} allowance everyone gets, not your own costs. It leaves less to pay tax on. You can use one or the other, not both.</div>`:''}
+  ${isCurrent?`<article class="card"><h3>Your tax pot</h3>
+    ${!sm.income?`<div class="notice info">You have not recorded any money in yet. Going by your prices and how many ${W().many} you do, ${estMonth>=1?`put aside about <b class="num">${gbp0(estMonth)}</b> a month for tax`:'there is no tax to put aside yet'}.</div>`
+      :`<p>If the rest of the year goes the way it has so far, your tax bill will be about <b class="num">${gbp0(projTax)}</b>${pp.loan>0?`, including ${gbp0(pp.loan)} student loan`:''}${+state.setup.otherIncome>0?'. Your job is counted first, so more of this is taxed':''}.</p>`}
+    ${moneyField('pot-saved','Money you have put aside so far','',saved,'data-set="potSaved"')}
+    ${!sm.income?'':left<1?`<div class="notice ok">${projTax<1?'There is no tax to put aside at the moment.':'You have put aside enough for this bill.'}</div>`
+      :`<div class="notice warn">Put aside about <b class="num">${gbp0(left/months)}</b> a month from now until April and you will have it ready.</div>`}
+  </article>`:''}
+  <article class="card"><h3>For your tax return (Self Assessment)</h3>
+    <div class="tablebox"><table><tbody>
+      <tr><td>Money in (turnover)</td><td class="r num">${gbp(sm.income)}</td></tr>
+      ${sm.useAllowance?`<tr><td>Flat trading allowance</td><td class="r num">${gbp(sm.deduction)}</td></tr>`:CATEGORIES.filter(c=>sm.byCat[c]).map(c=>`<tr><td>${c}</td><td class="r num">${gbp(sm.byCat[c])}</td></tr>`).join('')+`<tr><th>Money out (total expenses)</th><th class="r num">${gbp(sm.expenses)}</th></tr>`}
+      <tr><th>Profit</th><th class="r num">${gbp(sm.profit)}</th></tr>
+    </tbody></table></div>
+    <button class="btn ghost" data-act="copy-summary" data-text="${esc(lines)}">Copy summary</button>
+    <p class="small muted">These are the figures your online tax return asks for, so far this year. Equipment can usually be claimed in full in the year you buy it; an accountant can confirm.</p>
+  </article>
+  <article class="card"><h3>Dates for ${label}</h3>
+    <div class="list">
+      <div class="item"><div class="grow"><p><b>5 October ${ty+1}</b></p><p class="small muted">If this is your first year, tell HMRC you work for yourself by now. It is called registering for Self Assessment.</p></div></div>
+      <div class="item"><div class="grow"><p><b>31 January ${ty+2}</b></p><p class="small muted">${poa?`Send your tax return and pay about <b class="num">${gbp0(projTax+bill/2)}</b>: this bill of ${gbp0(projTax)} plus ${gbp0(bill/2)} towards next year`:'Send your tax return online and pay the bill'}</p></div></div>
+      <div class="item"><div class="grow"><p><b>31 July ${ty+2}</b></p><p class="small muted">${poa?`Pay another <b class="num">${gbp0(bill/2)}</b> towards next year`:'Nothing to pay then, unless your bill is over £1,000'}</p></div></div>
+    </div>
+    ${poa?`<div class="notice warn">Bills over £1,000 come with payments on account: HMRC asks for half of next year's tax in advance, twice a year. The first time, that makes January's payment about one and a half times the bill. After that, what you paid in advance comes off the next bill. These figures assume you have not paid any in advance yet.</div>`:''}
+    ${mtd?`<div class="notice warn">At this rate your takings are over ${gbp0(mtd.over)} a year. From ${mtd.from}, people over that level must keep digital records and send HMRC an update every quarter using approved software. Check gov.uk for when it applies to you.</div>`:''}
+    ${projIncome>R.vatThreshold*0.85?`<div class="notice bad">Your takings are close to the VAT threshold (${gbp0(R.vatThreshold)} a year). Speak to an accountant.</div>`:''}
+  </article>
+  <p class="small muted">These are estimates using 2026/27 income tax and National Insurance rates for ${state.setup.region==='sco'?'Scotland':'England, Wales and Northern Ireland'}. They include a job and a student loan if you added them under More. They do not cover earnings over £100,000. Not tax advice.</p>
+  </section>`;
+}
+
+// ---------- MORE ----------
+let resetArmed=false;
+function vMore(){
+  const s=state.setup;
+  const f=(key,label,hint,stepv='1',scale=1)=>`<label class="field">${label}${hint?`<span class="hint">${hint}</span>`:''}<input id="m-${key}" type="number" step="${stepv}" value="${esc(Math.round((+s[key]||0)*scale*1000)/1000)}" data-set="${key}" data-scale="${scale}"></label>`;
+  return `<section class="stack"><h2>More</h2>
+  <article class="card"><h3>Answer the questions again</h3><p class="muted">Goes through what you do, each ${W().one} and what it uses, your business, your team and your tax pot. Your money records stay.</p><button class="btn ghost" data-act="rerun">Start the questions</button></article>
+  ${brandEditor()}
+  <article class="card"><h3>Job and student loan</h3>${taxExtraEditor()}</article>
+  <h3>Running costs</h3>${overheadEditor()}
+  <h3>Your team</h3>${staffEditor()}
+  <article class="card"><h3>Fine-tune</h3><div class="grid2">
+    ${f('cardPct','Card fee %','From your payment provider','0.01',100)}
+    ${f('cardFixed','Card fee per payment £','','0.01')}
+    ${f('nonClient','Non-client time %','Breaks, admin, cleaning','1',100)}
+    ${f('busy','Diary full %','','1',100)}
+    ${f('margin','Extra profit %','','1',100)}
+    ${f('roundTo','Round prices up to nearest £','e.g. 1 or 5','1')}
+    ${IND().patch?f('patchValidDays','Patch test lasts (days)','Follow your insurer and product maker','1'):''}
+  </div></article>
+  <article class="card"><h3>Back up your data</h3>
+    <p class="muted">Everything is kept in this browser on this device only. Nobody else can see it, including us. Copy a backup and keep it somewhere safe, like your notes app or an email to yourself.</p>
+    <label class="row small"><input type="checkbox" id="bk-photos"> Include receipt photos (makes the backup much bigger)</label>
+    <div class="row"><button class="btn ghost" data-act="backup">Copy backup</button><button class="btn ghost" data-act="restore-open">Restore a backup</button></div>
+    <p class="small muted">${s.lastBackup?`Last backup: ${fmtDay(s.lastBackup)}.`:'No backup yet.'} Signatures and your logo are included. Receipt photos only if you tick the box.</p>
+  </article>
+  ${lockCard()}
+  ${privacyCard()}
+  <article class="card"><h3>Start again</h3><p class="muted">Deletes everything on this device, including receipt photos.</p>
+    <button class="btn ${resetArmed?'danger':'ghost'}" data-act="reset">${resetArmed?'Tap again to delete everything':'Delete all my data'}</button></article>
+  <p class="small muted">Know Your Worth is a test version. Prices and tax are estimates using 2026/27 rates, not tax or financial advice.</p>
+  </section>`;
+}
+
+// ---------- events ----------
+function removeProduct(id){ state.products=state.products.filter(p=>p.id!==id); state.treatments.forEach(t=>t.recipe=t.recipe.filter(r=>r.productId!==id)); }
+document.addEventListener('click', async e=>{
+  const tab=e.target.closest('[data-tab]'); if(tab){ view=tab.dataset.tab; resetArmed=false; render(); window.scrollTo(0,0); return; }
+  const el=e.target.closest('[data-act]'); if(!el) return;
+  const act=el.dataset.act, s=state.setup;
+  if(act==='wiz-ind' || act==='wiz-combo'){ let ks;
+    if(act==='wiz-combo') ks=el.dataset.k.split(',');
+    else { ks=selInds().slice(); const k=el.dataset.k, i=ks.indexOf(k); if(i>=0){ if(ks.length>1) ks.splice(i,1); else toast('Keep at least one ticked'); } else if(!s._indTouched && !s.done) ks=[k]; else ks.push(k); }
+    s._indTouched=true; s.industries=ks; s.industry=ks[0]; if(!s.done && !s._ohEdited) s.overheads=overheadsForAll(ks); save(); render(); }
+  else if(act==='st-add'){ s.staff=[...(s.staff||[]),{id:uid(),name:'',pay:'hourly',rate:0,hours:0,weeksOff:6}]; save(); render(); } // starts empty: a made-up wage looked like a bill
+  else if(act==='st-del'){ s.staff=(s.staff||[]).filter(x=>x.id!==el.dataset.id); save(); render(); }
+  else if(act==='st-ea'){ s.employmentAllowance=el.checked; save(); render(); }
+  else if(act==='wiz-choice'){ const st=wizSteps()[step]; const o=st.opts[+el.dataset.i]; s[st.key]=o[0]; s['_pick_'+st.key]=o[1]; save(); render(); }
+  else if(act==='wiz-chip'){ s[el.dataset.key]=+el.dataset.v; save(); render(); }
+  else if(act==='wiz-app'){ const a=APPS[el.dataset.k]; s.app=el.dataset.k; s.cardPct=a.pct; s.cardFixed=a.fixed; save(); render(); }
+  else if(act==='pick-treat'){ const id=el.dataset.id;
+    if(el.checked){ if(!state.treatments.some(t=>t.id===id)){ const c=ALLCAT.find(x=>x.id===id); if(c){ state.treatments.push(clone(c));
+        c.recipe.forEach(r=>{ if(!state.products.some(p=>p.id===r.productId)){ const l=LIBRARY.find(x=>x.id===r.productId); if(l) state.products.push(clone(l)); } }); } } }
+    else { state.treatments=state.treatments.filter(t=>t.id!==id); state.products=state.products.filter(p=>state.treatments.some(t=>t.recipe.some(r=>r.productId===p.id))); }
+    save(); render(); }
+  else if(act==='wiz-rm-prod'){ const t=state.treatments.find(x=>x.id===el.dataset.t); t.recipe=t.recipe.filter(r=>r.productId!==el.dataset.p);
+    if(!state.treatments.some(x=>x.recipe.some(r=>r.productId===el.dataset.p))) state.products=state.products.filter(p=>p.id!==el.dataset.p);
+    save(); render(); }
+  else if(act==='wiz-add-prod'){ const t=state.treatments.find(x=>x.id===el.dataset.t); const pid=document.getElementById('add-existing-'+t.id).value;
+    if(pid && !t.recipe.some(r=>r.productId===pid)) t.recipe.push({productId:pid,perPack:0}); save(); render(); }
+  else if(act==='wiz-new-prod'){ const t=state.treatments.find(x=>x.id===el.dataset.t); const v=document.getElementById('add-new-'+t.id).value.trim();
+    if(!v){ toast('Type the product name first'); return; }
+    const l=LIBRARY.find(x=>x.name.toLowerCase()===v.toLowerCase()); const id=l?l.id:uid();
+    if(!state.products.some(p=>p.id===id)) state.products.push(l?clone(l):{id,name:v,size:1,unit:'packs',packCost:0,shelfWeeks:0,inStock:1,reorderAt:1});
+    if(!t.recipe.some(r=>r.productId===id)) t.recipe.push({productId:id,perPack:0}); save(); render(); }
+  else if(act==='add-custom-treat'){ const v=document.getElementById('new-treat').value.trim(); if(!v){ toast(`Type the ${W().one} first`); return; } state.treatments.push({id:uid(),name:v,clientMin:30,prepMin:5,perWeek:1,price:0,patch:false,recipe:[]}); save(); render(); }
+  else if(act==='pick-prod'){ const id=el.dataset.id;
+    if(el.checked){ if(!state.products.some(p=>p.id===id)){ const l=LIBRARY.find(x=>x.id===id); if(l){ state.products.push(clone(l)); state.treatments.forEach(t=>{ const c=ALLCAT.find(x=>x.id===t.id); const r=c&&c.recipe.find(x=>x.productId===id); if(r && !t.recipe.some(x=>x.productId===id)) t.recipe.push({...r}); }); } } }
+    else removeProduct(id);
+    save(); render(); }
+  else if(act==='add-custom-prod'){ const v=document.getElementById('new-prod').value.trim(); if(!v){ toast('Type the product name first'); return; } state.products.push({id:uid(),name:v,size:1,unit:'packs',packCost:0,clientsPerPack:0,shelfWeeks:0,inStock:1,reorderAt:1}); save(); render(); }
+  else if(act==='wiz-rp'){ const t=state.treatments.find(x=>x.id===el.dataset.t), pid=el.dataset.p;
+    if(el.checked){ if(!t.recipe.some(r=>r.productId===pid)) t.recipe.push({productId:pid,uses:1}); } else t.recipe=t.recipe.filter(r=>r.productId!==pid);
+    save(); render(); }
+  else if(act==='oh-add'){ s._ohEdited=true; const g=OVERHEAD_GROUPS.find(x=>x.key===el.dataset.g); const used=(s.overheads||[]).filter(o=>o.group===g.key).map(o=>o.name);
+    s.overheads=[...(s.overheads||[]),{id:uid(),group:g.key,name:g.options.find(x=>!used.includes(x))||'',custom:!g.options.some(x=>!used.includes(x)),amount:0,years:3}]; save(); render(); }
+  else if(act==='oh-del'){ s._ohEdited=true; s.overheads=(s.overheads||[]).filter(o=>o.id!==el.dataset.id); save(); render(); }
+  else if(act==='wiz-back'){ step=Math.max(0,step-1); render(); window.scrollTo(0,0); }
+  else if(act==='wiz-next'){ wizNext(); }
+  else if(act==='load-example'){ state=exampleState(); save(); view='prices'; render(); toast('Loaded example figures'); }
+  else if(act==='del-treat'){ state.treatments=state.treatments.filter(t=>t.id!==el.dataset.id); save(); render(); }
+  else if(act==='add-treat'){ state.treatments.push({id:uid(),name:`New ${W().one}`,clientMin:30,prepMin:5,perWeek:1,price:0,patch:false,recipe:[]}); save(); render(); }
+  else if(act==='add-recipe'){ const t=state.treatments.find(x=>x.id===el.dataset.id); const free=state.products.find(p=>!t.recipe.some(r=>r.productId===p.id))||state.products[0]; if(free) t.recipe.push({productId:free.id,perPack:0}); save(); render(); }
+  else if(act==='del-recipe'){ const t=state.treatments.find(x=>x.id===el.dataset.id); t.recipe.splice(+el.dataset.i,1); save(); render(); }
+  else if(act==='add-product'){ state.products.push({id:uid(),name:'New product',size:1,unit:'packs',packCost:0,shelfWeeks:0,inStock:1,reorderAt:1}); save(); render(); }
+  else if(act==='del-product'){ removeProduct(el.dataset.id); save(); render(); }
+  else if(act==='quick-income'){ const t=state.treatments.find(x=>x.id===el.dataset.id); state.income.push({id:uid(),date:todayStr(),desc:t.name,amount:+t.price,method:(+state.setup.cardPct||+state.setup.cardFixed)?'Card':'Cash'}); useStock({serviceId:t.id,addons:[]},1); save(); render(); toast(`Added ${t.name} to your money in`); }
+  else if(act==='del-income'){ state.income=state.income.filter(x=>x.id!==el.dataset.id); save(); render(); }
+  else if(act==='del-expense'){ state.expenses=state.expenses.filter(y=>y.id!==el.dataset.id); save(); render(); }
+  else if(act==='view-receipt'){ const src=thumbCache[el.dataset.id]; if(src){ const o=document.getElementById('overlay'); o.innerHTML=`<div class="stack" style="align-items:center"><img src="${src}" alt="Receipt"><button class="btn" data-act="close-overlay">Close</button></div>`; o.hidden=false; } }
+  else if(act==='close-overlay'){ document.getElementById('overlay').hidden=true; }
+  else if(act==='copy-income'){ const y=+el.dataset.y; copyText(['Date\tWhat for\tPaid by\tAmount',...state.income.filter(x=>taxYearOf(x.date)===y).map(x=>`${x.date}\t${x.desc}\t${x.method}\t${(+x.amount).toFixed(2)}`)].join('\n')); }
+  else if(act==='copy-expenses'){ const y=+el.dataset.y; copyText(['Date\tWho\tCategory\tAmount\tReceipt',...state.expenses.filter(x=>taxYearOf(x.date)===y).map(x=>`${x.date}\t${x.supplier}\t${x.category}\t${(+x.amount).toFixed(2)}\t${x.receiptId?'Photo saved':'None'}`)].join('\n')); }
+  else if(act==='copy-summary'){ copyText(el.dataset.text); }
+  else if(act==='backup'){ doBackup(); }
+  else if(act==='restore-open'){ const o=document.getElementById('overlay'); o.innerHTML=`<div class="card" style="max-width:640px;width:100%"><h3>Paste your backup</h3><p class="small muted">Paste the backup text you copied before, then tap Restore. It replaces everything on this phone.</p><textarea id="restorebox" rows="8" placeholder="Paste the backup text here"></textarea><div class="row"><button class="btn" data-act="restore-do">Restore</button><button class="btn ghost" data-act="close-overlay">Cancel</button></div><p id="restore-msg" class="small muted"></p></div>`; o.hidden=false; }
+  else if(act==='restore-do'){ try{ const s2=JSON.parse(document.getElementById('restorebox').value); if(!s2||s2.v!==2) throw 0; if(s2.setup && !Array.isArray(s2.setup.overheads)) s2.setup.overheads=overheadsFromOld({...blankSetup(),...s2.setup}); const rc=s2._receipts; delete s2._receipts; state={...blankState(),...s2,setup:{...blankSetup(),...s2.setup}}; migrateProducts(); save(); restoreReceipts(rc); document.getElementById('overlay').hidden=true; view='prices'; render(); toast('Backup restored'); }catch(err){ document.getElementById('restore-msg').textContent='That does not look like a Know Your Worth backup. Copy the whole text and try again.'; } }
+  else if(act==='rerun'){ step=0; view='wizard'; render(); window.scrollTo(0,0); }
+  else if(act==='reset'){ if(!resetArmed){ resetArmed=true; render(); return; } try{ localStorage.removeItem(KEY); localStorage.removeItem(KEY+'-enc'); indexedDB.deleteDatabase('taxpot'); }catch(err){} lockKey=null; lockSalt=null; state=blankState(); step=0; resetArmed=false; view='wizard'; render(); toast('Everything deleted'); }
+});
+document.addEventListener('change', e=>{
+  const el=e.target, s=state.setup;
+  if(el.dataset.act==='pick-year'){ moneyYear=+el.value; render(); return; }
+  if(el.dataset.st){ const m=(s.staff||[]).find(x=>x.id===el.dataset.st); if(!m) return; const f=el.dataset.f;
+    m[f]=(f==='name'||f==='pay')?el.value:(+el.value||0); if(f==='pay') m.rate=0; // the number means something different for each kind of pay
+    save(); render(); return; }
+  if(el.dataset.oh){ s._ohEdited=true; const o=(s.overheads||[]).find(x=>x.id===el.dataset.oh); if(!o) return; const f=el.dataset.f;
+    if(f==='sel'){ if(el.value==='__other'){ o.custom=true; o.name=''; } else { o.custom=false; o.name=el.value; } }
+    else if(f==='name') o.name=el.value; else o[f]=+el.value||0;
+    save(); render(); return; }
+  if(el.dataset.set){ const scale=+(el.dataset.scale||1); s[el.dataset.set]=(+el.value||0)/scale; save(); if(view!=='wizard') render(); return; }
+  if(el.dataset.tf){ const t=state.treatments.find(x=>x.id===el.dataset.tf); if(!t) return; const f=el.dataset.f; t[f]= (f==='name'||f==='unitLabel')?el.value : (f==='patch'||f==='addon')?el.checked : (+el.value||0)*(+(el.dataset.mul||1)); save(); render(); return; }
+  if(el.dataset.ru){ const t=state.treatments.find(x=>x.id===el.dataset.ru); const r=t&&t.recipe.find(x=>x.productId===el.dataset.p); if(r){ r.perPack=+el.value||0; save(); render(); } return; }
+  if(el.dataset.rf){ const t=state.treatments.find(x=>x.id===el.dataset.rf); const r=t.recipe[+el.dataset.i]; r[el.dataset.f]= el.dataset.f==='perPack'?(+el.value||0):el.value; save(); render(); return; }
+  if(el.dataset.pf){ const p=state.products.find(x=>x.id===el.dataset.pf); const f=el.dataset.f;
+    p[f]=(f==='name'||f==='unit'||f==='supplier')?el.value:(+el.value||0); save(); render(); return; }
+});
+document.addEventListener('submit', async e=>{
+  e.preventDefault();
+  const fd=new FormData(e.target);
+  if(e.target.id==='form-income'){ state.income.push({id:uid(),date:fd.get('date'),desc:fd.get('desc')||'Takings',amount:+fd.get('amount'),method:fd.get('method')}); save(); render(); toast('Money in added'); }
+  if(e.target.id==='form-expense'){
+    let receiptId=null; const file=fd.get('photo');
+    if(file && file.size){ try{ receiptId=uid(); await putReceipt(receiptId, await shrink(file)); }catch(err){ receiptId=null; toast('Could not save the photo on this device'); } }
+    state.expenses.push({id:uid(),date:fd.get('date'),supplier:fd.get('supplier'),amount:+fd.get('amount'),category:fd.get('category'),receiptId}); save(); render(); toast('Money out added');
+  }
+});
+
+// ===================== MODULE: diary, clients, report, branding and extras =====================
+const PALETTES={
+  berry:{name:'Berry',accent:'#a3285f',soft:'#f6e3ec',accentD:'#f07aae',softD:'#3b1f2d'},
+  tag:{name:'Teal and coral',accent:'#0F5C5A',soft:'#E3F0EE',accentD:'#4FC2BB',softD:'#163a38'},
+  bars:{name:'Emerald and gold',accent:'#0E7C5A',soft:'#E2F1EA',accentD:'#3CC596',softD:'#173a2d'},
+  balance:{name:'Navy and mint',accent:'#1B2A4A',soft:'#E3EAF8',accentD:'#3DDC97',softD:'#173a2f'},
+  hallmark:{name:'Plum and peach',accent:'#5B2A6E',soft:'#F1E6F5',accentD:'#FFB38A',softD:'#3a2440'}
+};
+const SUPPLIERS={
+  beauty:['Salons Direct','Salon Services','Capital Hair & Beauty','Sweet Squared','Ellisons','Louella Belle','The Gel Bottle','Mylee','Sally Beauty','Amazon'],
+  trades:['Screwfix','Toolstation','B&Q','Wickes','Travis Perkins','Jewson','Dulux Decorator Centre','Brewers','Amazon']
+};
+function supplierList(){ const out=[]; selInds().forEach(k=>(SUPPLIERS[INDUSTRIES[k].sup||'beauty']||[]).forEach(x=>{ if(!out.includes(x)) out.push(x); })); return out; }
+function isDark(){ const t=document.documentElement.dataset.theme; return t==='dark' || (t!=='light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }
+function applyBrand(){
+  const b=state.setup.brand||{}, pal=PALETTES[b.palette]||PALETTES.berry, r=document.documentElement.style, dk=isDark();
+  r.setProperty('--accent', dk?pal.accentD:pal.accent); r.setProperty('--accent-soft', dk?pal.softD:pal.soft);
+  const h=document.getElementById('brandhead');
+  if(h) h.innerHTML = b.businessName
+    ? `<div class="row" style="gap:10px;flex-wrap:nowrap">${b.logo?`<img src="${b.logo}" alt="" style="width:40px;height:40px;border-radius:10px;object-fit:cover">`:''}<div><h1>${esc(b.businessName)}</h1><small>Know Your Worth</small></div></div>`
+    : `<h1>Know Your <span>Worth</span></h1><small>Prices, costs and tax for beauty businesses</small>`;
+}
+function afterRender(){ applyBrand(); initSig(); }
+function supData(){ return `<datalist id="sup-list">${supplierList().map(x=>`<option value="${esc(x)}"></option>`).join('')}</datalist>`; }
+
+// ---------- dates ----------
+const pad2=n=>String(n).padStart(2,'0');
+const ymd=d=>`${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+const dt=s=>new Date(s+'T12:00:00');
+const addDays=(s,n)=>{ const d=dt(s); d.setDate(d.getDate()+n); return ymd(d); };
+const weekStart=s=>{ const d=dt(s); const k=(d.getDay()+6)%7; d.setDate(d.getDate()-k); return ymd(d); };
+const fmtDay=s=>dt(s).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
+const toMin=t=>{ const [h,m]=(t||'0:0').split(':').map(Number); return h*60+m; };
+const fromMin=m=>`${pad2(Math.floor(m/60)%24)}:${pad2(m%60)}`;
+
+// ---------- people, services, clients ----------
+function people(){ return [{id:'me',name:'You',weeksOff:+state.setup.weeksOff||0}, ...(state.setup.staff||[]).map(m=>({id:m.id,name:m.name||'Team member',weeksOff:+m.weeksOff||0}))]; }
+const personName=id=>(people().find(p=>p.id===id)||{name:'Someone'}).name;
+const svc=id=>state.treatments.find(t=>t.id===id);
+const clientById=id=>state.clients.find(c=>c.id===id);
+function onHoliday(pid,date){ return state.holidays.some(h=>h.staffId===pid && h.from<=date && date<=h.to); }
+function unitPrice(t){ if(!t) return 0; if(+t.price>0) return +t.price; const c=compute(state).treatments.find(x=>x.id===t.id); return c?c.suggested:0; }
+function patchState(clientId,date){
+  const cl=clientById(clientId); if(!cl) return 'missing';
+  const tests=(cl.patchTests||[]).slice().sort((a,b)=>b.date.localeCompare(a.date));
+  if(!tests.length) return 'missing';
+  if(tests[0].result==='reaction') return 'reaction';
+  const days=(dt(date)-dt(tests[0].date))/864e5;
+  if(days<2) return 'soon';
+  if(days>(+state.setup.patchValidDays||180)) return 'expired';
+  return 'ok';
+}
+const PATCH_MSG={missing:'No patch test on record',expired:'Patch test is out of date',soon:'Patch test was less than 48 hours before this booking',reaction:'Last patch test showed a reaction'};
+
+// ---------- stock used by a finished booking ----------
+function useStock(b, sign){
+  const lines=[]; const t=svc(b.serviceId); if(t) t.recipe.forEach(r=>lines.push([r,1]));
+  (b.addons||[]).forEach(a=>{ const at=svc(a.id); if(at) at.recipe.forEach(r=>lines.push([r,+a.qty||0])); });
+  lines.forEach(([r,q])=>{ const p=state.products.find(x=>x.id===r.productId); if(p && +r.perPack>0) p.inStock=Math.round(((+p.inStock||0)-sign*q/(+r.perPack))*1000)/1000; });
+}
+
+// ---------- DIARY ----------
+let diaryWeek=weekStart(todayStr());
+let bkDraft=null, holDraft=null;
+const STATUS={booked:['info','Booked'],done:['ok','Paid'],noshow:['bad','No-show'],cancelled:['info','Cancelled']};
+function bookingLabel(b){ const t=svc(b.serviceId); const adds=(b.addons||[]).filter(a=>+a.qty>0).map(a=>{ const at=svc(a.id); return at?`${at.name}${+a.qty>1?' ×'+a.qty:''}`:''; }).filter(Boolean); return (t?t.name:'Booking')+(adds.length?' + '+adds.join(', '):''); }
+function vDiary(){
+  const days=[...Array(7)].map((_,i)=>addDays(diaryWeek,i));
+  const yr=todayStr().slice(0,4), dayY=x=>fmtDay(x)+(x.slice(0,4)!==yr?' '+x.slice(0,4):''); // a date next year says so
+  const offRows=people().map(p=>{ let d=0; state.holidays.filter(h=>h.staffId===p.id).forEach(h=>{ for(let x=h.from; x<=h.to; x=addDays(x,1)) if(x.slice(0,4)===yr && dayMins(hoursFor(p.id)[dayIdx(x)])>0) d++; }); return `<div class="item"><div class="grow"><p><b>${esc(p.name)}</b></p><p class="small muted">${d} day${d===1?'':'s'} off booked for ${yr}, out of about ${nf(Math.round(p.weeksOff*Math.max(1,openDays(hoursFor(p.id)))))}</p></div></div>`; }).join('');
+  return `<section class="stack">
+  <div class="row" style="justify-content:space-between"><div><h2>Diary</h2><p class="muted">Week of ${fmtDay(diaryWeek)}</p></div>
+    <div class="row"><button class="btn small ghost" data-act="dy-prev" aria-label="Previous week">‹</button><button class="btn small ghost" data-act="dy-today">This week</button><button class="btn small ghost" data-act="dy-next" aria-label="Next week">›</button></div></div>
+  ${!state.treatments.filter(t=>!t.addon).length?`<div class="notice warn">Add your ${W().many} first, so bookings know the time and price.</div>`:''}
+  ${days.map(d=>{ const offs=people().filter(p=>onHoliday(p.id,d));
+    const bks=state.bookings.filter(b=>b.date===d).sort((a,b)=>a.time.localeCompare(b.time));
+    return `<article class="card${d===todayStr()?' today':''}" id="day-${d}"><div class="treat-head"><h3>${fmtDay(d)}${d===todayStr()?' · Today':''}</h3><button class="btn small" data-act="bk-new" data-date="${d}">+ Booking</button></div>
+      <p class="small muted" style="margin-top:-6px">${openLine(d)}</p>
+      ${offs.length?`<div class="chips">${offs.map(p=>`<span class="pill warn">${p.id==='me'?'You are off':esc(p.name)+' is off'}</span>`).join('')}</div>`:''}
+      ${bks.length?`<div class="list">${bks.map(b=>{ const [cls,lab]=STATUS[b.status]||STATUS.booked; const cl=clientById(b.clientId);
+        return `<div class="item" style="align-items:flex-start;flex-wrap:wrap"><div class="num" style="min-width:64px">${fmtT(b.time)}</div>
+          <div class="grow"><p style="white-space:normal"><b>${esc(bookingLabel(b))}</b></p><p class="small muted" style="white-space:normal">${esc(cl?cl.name:'No name')} · ${esc(personName(b.staffId))} · ${gbp(+b.price)}${+b.deposit?` · deposit ${gbp(+b.deposit)}`:''}</p>
+            </div>
+          <span class="pill ${cls}">${lab}</span>
+          ${b.status==='booked'?`<div class="row" style="flex-basis:100%;gap:6px"><span class="small muted">Paid by</span><button class="btn small" data-act="bk-done" data-id="${b.id}" data-m="Card" aria-label="Paid by card">Card</button><button class="btn small ghost" data-act="bk-done" data-id="${b.id}" data-m="Cash" aria-label="Paid by cash">Cash</button><button class="btn small ghost" data-act="bk-done" data-id="${b.id}" data-m="Bank transfer" aria-label="Paid by bank transfer">Transfer</button></div>
+          <div style="flex-basis:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px">${[['bk-remind','Reminder'],['bk-cal','Calendar'],['bk-edit','Change'],...(b.date<=todayStr()?[['bk-noshow','No-show']]:[]),['bk-cancel','Cancelled']].map(([a,l])=>`<button class="btn small ghost" style="min-width:0;padding-inline:4px" data-act="${a}" data-id="${b.id}">${l}</button>`).join('')}</div>`:`<div class="row" style="flex-basis:100%"><button class="btn small ghost" data-act="bk-reopen" data-id="${b.id}">Undo this</button></div>`}</div>`; }).join('')}</div>`
+        : `<p class="small muted">${offs.some(p=>p.id==='me')?'You are off.':'No bookings.'}</p>`}
+    </article>`; }).join('')}
+  <article class="card"><div class="treat-head"><h3>Holidays and days off</h3><button class="btn small" data-act="hol-new">+ Add time off</button></div>
+    <div class="list">${offRows}</div>
+    <div class="list">${state.holidays.slice().sort((a,b)=>a.from.localeCompare(b.from)).map(h=>`<div class="item"><div class="grow"><p><b>${esc(personName(h.staffId))}</b>: ${dayY(h.from)}${h.to!==h.from?' to '+dayY(h.to):''}</p><p class="small muted">${esc(h.note||'')}</p></div><button class="iconbtn" aria-label="Delete" data-act="hol-del" data-id="${h.id}">✕</button></div>`).join('')}</div>
+  </article>
+  <p class="small muted">Marking a booking as paid adds it to your money in. A no-show keeps the deposit.</p>
+  </section>`;
+}
+function bkWarnings(d){
+  const w=[]; const t=svc(d.serviceId); if(!t) return w;
+  const mins=bkMins(d), start=toMin(d.time), end=start+mins;
+  if(onHoliday(d.staffId,d.date)) w.push(d.staffId==='me'?'You are booked off that day.':`${personName(d.staffId)} is booked off that day.`);
+  const clash=state.bookings.find(b=>b.id!==d.id && b.date===d.date && b.staffId===d.staffId && b.status!=='cancelled' && toMin(b.time)<end && toMin(b.time)+(+b.mins||0)>start);
+  if(clash) w.push(`Clashes with ${bookingLabel(clash)} at ${fmtT(clash.time)}.`);
+  const needsPatch=t.patch || (d.addons||[]).some(a=>+a.qty>0 && (svc(a.id)||{}).patch);
+  if(needsPatch && IND().patch){ const ps=d.clientId?patchState(d.clientId,d.date):'missing'; if(ps!=='ok') w.push(`${PATCH_MSG[ps]}. A patch test is needed at least 48 hours before.`); }
+  return w;
+}
+function bkMins(d){ const t=svc(d.serviceId); let m=t?(+t.clientMin||0):0; (d.addons||[]).forEach(a=>{ const at=svc(a.id); if(at) m+=(+at.clientMin||0)*(+a.qty||0); }); return m; }
+function bkAutoPrice(d){ let p=unitPrice(svc(d.serviceId)); (d.addons||[]).forEach(a=>{ p+=unitPrice(svc(a.id))*(+a.qty||0); }); return p; }
+function renderBkForm(){
+  const d=bkDraft, o=document.getElementById('overlay'); if(!d){ o.hidden=true; return; }
+  const mains=state.treatments.filter(t=>!t.addon), adds=state.treatments.filter(t=>t.addon);
+  const price=d.priceTouched?d.price:bkAutoPrice(d); const warns=bkWarnings(d); if(!warns.length) d._ack=false;
+  o.innerHTML=`<form class="card" id="form-booking" style="max-width:560px;width:100%;max-height:90vh;overflow:auto">
+    <div class="treat-head"><h3>${d.id?'Change booking':'New booking'}</h3><button type="button" class="iconbtn" aria-label="Close" data-act="bk-close">✕</button></div>
+    <div class="fields"><label class="field">Date<input id="bk-date" type="date" value="${esc(d.date)}" data-bkf="date" required></label>
+      <label class="field">Start time<input id="bk-time" type="time" value="${esc(d.time)}" data-bkf="time" required></label></div>
+    <label class="field">${W().One}<select id="bk-svc" data-bkf="serviceId">${mains.map(t=>`<option value="${t.id}" ${t.id===d.serviceId?'selected':''}>${esc(t.name)}</option>`).join('')}</select></label>
+    ${adds.length?`<div class="stack" style="gap:6px"><span class="small" style="font-weight:600">Add-ons</span>${adds.map(a=>{ const q=((d.addons||[]).find(x=>x.id===a.id)||{}).qty||0; return `<label class="row small" style="flex-wrap:nowrap"><span class="grow" style="flex:1">${esc(a.name)} · ${gbp(unitPrice(a))}${a.unitLabel?' per '+esc(a.unitLabel):''}</span><input type="number" min="0" step="1" aria-label="How many ${esc(a.name)}" value="${q}" data-bkaddon="${a.id}" style="width:80px"></label>`; }).join('')}</div>`:''}
+    ${people().length>1?`<label class="field">Who is doing it<select id="bk-who" data-bkf="staffId">${people().map(p=>`<option value="${p.id}" ${p.id===d.staffId?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>`:''}
+    <label class="field">${W().cust==='client'?'Client':'Customer'}<select id="bk-client" data-bkf="clientId"><option value="">New ${W().cust} (type below)</option>${state.clients.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(c=>`<option value="${c.id}" ${c.id===d.clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label>
+    ${d.clientId?'':`<input id="bk-newclient" placeholder="Name of new ${W().cust}" aria-label="Name of new ${W().cust}" value="${esc(d.newClient||'')}" data-bkf="newClient" required>`}
+    <div class="fields"><label class="field">Price<span class="money-in"><input id="bk-price" type="number" min="0" step="0.01" value="${esc(nf(price))}" data-bkf="price"></span></label>
+      <label class="field">Deposit taken<span class="money-in"><input id="bk-dep" type="number" min="0" step="0.01" value="${esc(d.deposit||0)}" data-bkf="deposit"></span></label></div>
+    <label class="field">Notes<input id="bk-notes" value="${esc(d.notes||'')}" data-bkf="notes"></label>
+    <p class="small muted">Takes about ${fmtTime(bkMins(d),svc(d.serviceId))}${d.time?`, finishing around ${fmtT(fromMin(toMin(d.time)+bkMins(d)))}`:''}.</p>
+    ${warns.map(x=>`<div class="notice warn">${esc(x)}</div>`).join('')}
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="bk-close">Cancel</button><button class="btn" type="submit">${warns.length&&d._ack?'Save anyway':'Save booking'}</button></div>
+    ${d.id?`<button type="button" class="btn small ghost" data-act="${delArmed?'bk-del':'bk-del-ask'}" data-id="${d.id}">${delArmed?'Tap again to delete':'Delete this booking'}</button>`:''}
+  </form>`;
+  o.hidden=false;
+}
+function renderHolForm(){
+  const d=holDraft, o=document.getElementById('overlay'); if(!d){ o.hidden=true; return; }
+  o.innerHTML=`<form class="card" id="form-holiday" style="max-width:480px;width:100%">
+    <div class="treat-head"><h3>Time off</h3><button type="button" class="iconbtn" aria-label="Close" data-act="bk-close">✕</button></div>
+    ${people().length>1?`<label class="field">Who<select id="hol-who" data-hol="staffId">${people().map(p=>`<option value="${p.id}" ${p.id===d.staffId?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>`:''}
+    <div class="fields"><label class="field">From<input id="hol-from" type="date" value="${esc(d.from)}" data-hol="from" required></label><label class="field">To<input id="hol-to" type="date" value="${esc(d.to)}" data-hol="to" required></label></div>
+    <label class="field">Note<input id="hol-note" placeholder="e.g. Holiday, training, bank holiday" value="${esc(d.note||'')}" data-hol="note"></label>
+    ${state.bookings.some(b=>b.staffId===d.staffId && b.status==='booked' && b.date>=d.from && b.date<=d.to)?`<div class="notice warn">${d.staffId==='me'?'You already have':esc(personName(d.staffId))+' already has'} bookings in these dates. Move them in the diary.</div>`:''}
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="bk-close">Cancel</button><button class="btn" type="submit">Save</button></div></form>`;
+  o.hidden=false;
+}
+
+// ---------- CLIENTS ----------
+let clSearch='', clOpen=null;
+const CONSULT_Q=[['allergies','Any allergies (including to nail, lash, brow or hair products)?'],['conditions','Any medical or skin conditions?'],['medication','Any medication?'],['pregnant','Pregnant or breastfeeding?'],['reactions','Any reactions to treatments before?']];
+function vClients(){
+  const custs=W().cust==='client'?'Clients':'Customers';
+  const list=state.clients.filter(c=>!clSearch || c.name.toLowerCase().includes(clSearch.toLowerCase())).sort((a,b)=>a.name.localeCompare(b.name));
+  const open=clOpen && clientById(clOpen);
+  if(open) return clientCard(open);
+  return `<section class="stack"><div><h2>${custs}</h2><p class="muted">${state.clients.length} ${W().cust}${state.clients.length===1?'':'s'}. Kept on this phone only.</p></div>
+    <form class="row" id="form-client" style="flex-wrap:nowrap"><input id="cl-new" name="name" placeholder="Add a ${W().cust}: name" required style="flex:1"><button class="btn" type="submit">Add</button></form>
+    <input id="cl-search" placeholder="Search" value="${esc(clSearch)}" data-clsearch="1">
+    ${newsletterList().length?`<div class="row"><button class="btn small ghost" data-act="cl-news">Copy email list for a newsletter</button><span class="small muted">${newsletterList().length} with an email who ticked 'Happy to get offers and reminders'</span></div>`:''}
+    <article class="card"><div class="list">${list.map(c=>{ const visits=state.bookings.filter(b=>b.clientId===c.id && b.status==='done'); const last=visits.map(b=>b.date).sort().pop();
+      const ps=IND().patch && (c.patchTests||[]).length ? patchState(c.id,todayStr()) : null;
+      return `<div class="item"><div class="grow"><p><b>${esc(c.name)}</b></p><p class="small muted">${visits.length} visit${visits.length===1?'':'s'}${last?' · last '+fmtDay(last):''}${c.phone?' · '+esc(c.phone):''}</p></div>
+        ${ps&&PATCH_PILL[ps]?`<span class="pill ${PATCH_PILL[ps][0]}">${PATCH_PILL[ps][1]}</span>`:''}<button class="btn small ghost" data-act="cl-open" data-id="${c.id}">Open</button></div>`; }).join('') || `<p class="muted small">No ${custs.toLowerCase()} yet.</p>`}</div></article></section>`;
+}
+function clientCard(c){
+  const visits=state.bookings.filter(b=>b.clientId===c.id).sort((a,b)=>b.date.localeCompare(a.date));
+  const spent=visits.filter(b=>b.status==='done').reduce((a,b)=>a+(+b.price||0),0), noShows=visits.filter(b=>b.status==='noshow').length;
+  const con=c.consult||{answers:{}};
+  return `<section class="stack"><div class="row" style="justify-content:space-between"><h2>${esc(c.name)}</h2><button class="btn small ghost" data-act="cl-close">Back to list</button></div>
+  <div class="grid2"><div class="stat"><span class="label">Spent</span><span class="value">${gbp0(spent)}</span></div><div class="stat"><span class="label">Visits</span><span class="value">${visits.filter(b=>b.status==='done').length}</span></div><div class="stat"><span class="label">No-shows</span><span class="value">${noShows}</span></div></div>
+  <article class="card"><h3>Details</h3><p class="small muted">What you type here saves by itself.</p><div class="fields">
+    <label class="field">Name<input id="clf-name" value="${esc(c.name)}" data-clf="name"></label>
+    <label class="field">Phone<input id="clf-phone" type="tel" value="${esc(c.phone||'')}" data-clf="phone"></label>
+    <label class="field">Email<input id="clf-email" type="email" value="${esc(c.email||'')}" data-clf="email"></label>
+    <label class="field">${IND().hours?'Address':'Notes'}<input id="clf-notes" value="${esc(c.notes||'')}" data-clf="notes"></label></div></article>
+  <article class="card"><h3>Visits</h3><div class="list">${visits.map(b=>{ const [cls,lab]=STATUS[b.status]||STATUS.booked; return `<div class="item"><div class="grow"><p><b>${fmtDay(b.date)}</b> · ${esc(bookingLabel(b))}</p><p class="small muted">${gbp(+b.price)}</p></div><span class="pill ${cls}">${lab}</span></div>`; }).join('') || '<p class="small muted">No visits yet.</p>'}</div></article>
+  ${IND().patch?`<article class="card"><h3>Patch tests</h3>
+    <div class="list">${(c.patchTests||[]).slice().sort((a,b)=>b.date.localeCompare(a.date)).map(p=>`<div class="item"><div class="grow"><p><b>${fmtDay(p.date)}</b> · ${esc(p.product||'')}</p></div><span class="pill ${p.result==='reaction'?'bad':'ok'}">${p.result==='reaction'?'Reaction':'Clear'}</span><button class="iconbtn" aria-label="Delete" data-act="pt-del" data-id="${p.id}">✕</button></div>`).join('') || '<p class="small muted">None recorded.</p>'}</div>
+    <form class="fields" id="form-patch"><label class="field">Date<input id="pt-date" type="date" name="date" value="${todayStr()}" required></label><label class="field">Product<input id="pt-prod" name="product" placeholder="e.g. Brow tint, lash glue"></label>
+      <label class="field">Result<select id="pt-res" name="result"><option value="clear">Clear</option><option value="reaction">Reaction</option></select></label><label class="field">&nbsp;<button class="btn" type="submit">Add patch test</button></label></form>
+    <p class="small muted">Bookings warn you if the last test is older than ${nf(+state.setup.patchValidDays||180)} days (you can change this under More, in 'What you earn and card fees'), less than 48 hours before, or showed a reaction. Follow your insurer's and product maker's rules.</p></article>
+  <article class="card"><h3>Consultation form</h3>
+    ${CONSULT_Q.map(([k,q])=>`<label class="field">${q}<input id="cq-${k}" value="${esc(con.answers[k]||'')}" data-cq="${k}"></label>`).join('')}
+    <label class="row small"><input type="checkbox" data-cq="photos" ${con.answers.photos?'checked':''}> Happy for photos of their ${W().one} to be used on social media</label>
+    <label class="row small"><input type="checkbox" data-cq="marketing" ${con.answers.marketing?'checked':''}> Happy to get offers and reminders</label>
+    <p class="small" style="font-weight:600">Signature${con.date?` · signed ${fmtDay(con.date)}`:''}</p>
+    ${con.signature?`<img src="${con.signature}" alt="Signature" style="background:#fff;border-radius:10px;border:1px solid var(--line);max-height:120px">`:''}
+    <canvas id="sigpad" width="600" height="180" style="width:100%;height:150px;background:#fff;border:1.5px solid var(--line);border-radius:10px;touch-action:none" aria-label="Sign here"></canvas>
+    <div class="row"><button class="btn ghost small" data-act="cl-sig-clear">Clear</button><button class="btn small" data-act="cl-sig-save">Save signature and answers</button></div>
+    <p class="small muted">Health answers are sensitive. They stay on this device; tell ${W().cust}s how you keep them (see the privacy notice on More).</p></article>`:''}
+  <button class="btn ghost" data-act="cl-del" data-id="${c.id}">${clDelArmed?'Tap again to delete this '+W().cust:'Delete this '+W().cust}</button></section>`;
+}
+let clDelArmed=false;
+function initSig(){
+  const c=document.getElementById('sigpad'); if(!c || c._init) return; c._init=1;
+  const x=c.getContext('2d'); x.lineWidth=3; x.lineCap='round'; x.lineJoin='round'; x.strokeStyle='#1d1a26'; let down=false; c._dirty=false;
+  const pos=e=>{ const r=c.getBoundingClientRect(); return [(e.clientX-r.left)*c.width/r.width,(e.clientY-r.top)*c.height/r.height]; };
+  c.addEventListener('pointerdown',e=>{ down=true; c._dirty=true; try{c.setPointerCapture(e.pointerId);}catch(_){} x.beginPath(); x.moveTo(...pos(e)); });
+  c.addEventListener('pointermove',e=>{ if(!down) return; x.lineTo(...pos(e)); x.stroke(); });
+  ['pointerup','pointercancel'].forEach(t=>c.addEventListener(t,()=>{ down=false; }));
+}
+
+// ---------- REPORT ----------
+let repMonth=todayStr().slice(0,7);
+function mileageClaim(miles){ const R=RULES; return Math.min(miles,R.mileage[2])*R.mileage[0]+Math.max(0,miles-R.mileage[2])*R.mileage[1]; }
+function vReport(){
+  const c=compute(state), inM=x=>(x.date||'').slice(0,7)===repMonth;
+  const inc=state.income.filter(inM).reduce((a,x)=>a+(+x.amount||0),0), exp=state.expenses.filter(inM).reduce((a,x)=>a+(+x.amount||0),0);
+  const miles=state.trips.filter(inM).reduce((a,x)=>a+(+x.miles||0),0), mclaim=miles*RULES.mileage[0];
+  const profit=inc-exp-mclaim, aside=Math.max(0,profit)*c.taxShare;
+  const bks=state.bookings.filter(inM), done=bks.filter(b=>b.status==='done'), ns=bks.filter(b=>b.status==='noshow'), cx=bks.filter(b=>b.status==='cancelled');
+  const kept=state.income.filter(x=>inM(x) && /^Deposit kept/.test(x.desc||'')).reduce((a,x)=>a+(+x.amount||0),0);
+  const by={}; done.forEach(b=>{ const k=b.serviceId; by[k]=by[k]||{n:0,v:0}; by[k].n++; by[k].v+=(+b.price||0); });
+  const ranked=Object.entries(by).map(([k,v])=>({name:(svc(k)||{name:'Removed'}).name,...v})).sort((a,b)=>b.v-a.v);
+  const nsRate=(done.length+ns.length)?ns.length/(done.length+ns.length):0;
+  const label=dt(repMonth+'-01').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+  return `<section class="stack"><div class="row" style="justify-content:space-between"><div><h2>${label}</h2><p class="muted">Your month at a glance</p></div><input type="month" aria-label="Month" value="${repMonth}" data-rep="1" style="width:auto"></div>
+  <div class="grid2"><div class="stat"><span class="label">Money in</span><span class="value">${gbp0(inc)}</span></div><div class="stat"><span class="label">Money out</span><span class="value">${gbp0(exp+mclaim)}</span><span class="small muted">${miles?`includes ${nf(miles)} miles`:''}</span></div>
+    <div class="stat hero"><span class="label">Profit</span><span class="value">${gbp0(profit)}</span></div><div class="stat"><span class="label">Put aside for tax</span><span class="value">${gbp0(aside)}</span><span class="small muted">about ${pct(c.taxShare)} of profit</span></div></div>
+  <article class="card"><h3>Bookings</h3><div class="grid2"><div class="stat"><span class="label">Paid</span><span class="value">${done.length}</span></div><div class="stat"><span class="label">No-shows</span><span class="value">${ns.length}</span><span class="small muted">${pct(nsRate)} · you planned for ${pct(+state.setup.noShow||0)}</span></div><div class="stat"><span class="label">Cancelled</span><span class="value">${cx.length}</span></div><div class="stat"><span class="label">Deposits kept</span><span class="value">${gbp0(kept)}</span></div></div>
+    ${nsRate>(+state.setup.noShow||0)+0.02 && done.length>=10?`<div class="notice warn">More no-shows than you planned for. Think about taking bigger deposits, or change the no-show answer on More so prices cover it.</div>`:''}</article>
+  <article class="card"><h3>Best and worst earners</h3><div class="list">${ranked.map((r,i)=>`<div class="item"><div class="grow"><p><b>${esc(r.name)}</b></p><p class="small muted">${r.n} done</p></div><span class="num">${gbp0(r.v)}</span>${i===0?'<span class="pill ok">Top</span>':i===ranked.length-1&&ranked.length>2?'<span class="pill warn">Lowest</span>':''}</div>`).join('') || '<p class="small muted">No paid bookings this month. Mark bookings as paid in the diary.</p>'}</div></article>
+  ${state.setup.trackStock?`<article class="card"><h3>Stock to reorder</h3><p>${c.products.filter(p=>p.reorder).map(p=>esc(p.name)).join(', ')||'Nothing.'}</p></article>`:''}
+  </section>`;
+}
+
+// ---------- PRICES extras ----------
+let priceAdj=0;
+function priceExtras(c){
+  const now=c.atCurrent.profit, then=c.scenario(1+priceAdj/100).profit, perB=c.bookingsMonth>0?(c.atCurrent.takings*(1+priceAdj/100)/c.bookingsMonth):0;
+  const fewer= priceAdj>0 && perB>0 ? (then-now)/(perB*(1-(+state.setup.cardPct||0))-c.productsMonth/Math.max(1,c.bookingsMonth)) : 0;
+  const lb=state.setup.lastBackup, hasData=state.income.length||state.bookings.length||state.expenses.length||state.clients.length;
+  const stale=hasData && (!lb || (dt(todayStr())-dt(lb))/864e5>14);
+  return `${stale?`<div class="notice warn">${lb?`Last backup ${fmtDay(lb)}.`:'You have not backed up yet.'} Everything is only on this device. <button class="btn small" data-act="backup">Back up now</button></div>`:''}`;
+}
+
+// ---------- tax extras, branding, privacy, backup ----------
+const SL_PLANS=[['none','No student loan'],['plan1','Plan 1'],['plan2','Plan 2'],['plan4','Plan 4 (Scotland)'],['plan5','Plan 5']];
+function taxExtraEditor(){ const s=state.setup; return `<div class="stack">
+  ${moneyField('tx-job','Income from a job each year, before tax','Put 0 if you only work for yourself. A job uses up your tax-free amount first, so more of this work is taxed',s.otherIncome||0,'data-set="otherIncome"')}
+  <label class="field">Student loan<span class="hint">Your plan number is on your payslip or your student loan account</span><select id="tx-sl" data-sl="1">${SL_PLANS.map(([k,v])=>`<option value="${k}" ${s.studentLoan===k?'selected':''}>${v}</option>`).join('')}</select></label>
+  <label class="row small"><input type="checkbox" data-act="pg-toggle" ${s.postgrad?'checked':''}> I also have a postgraduate loan</label>
+  <p class="small muted">Uses the 2026/27 student loan thresholds.</p></div>`; }
+function brandEditor(){ const b=state.setup.brand||{}; return `<article class="card"><h3>Your branding</h3>
+  <label class="field">Business name<input id="br-name" value="${esc(b.businessName||'')}" placeholder="e.g. Nails by Sophie" data-brand="businessName"></label>
+  <label class="field">Colours<select id="br-pal" data-brand="palette">${Object.entries(PALETTES).map(([k,v])=>`<option value="${k}" ${(b.palette||'berry')===k?'selected':''}>${v.name}</option>`).join('')}</select></label>
+  <label class="field">Logo<span class="hint">A square picture works best</span><input id="br-logo" type="file" accept="image/*" data-logo="1"></label>
+  ${b.logo?`<div class="row"><img src="${b.logo}" alt="Your logo" style="width:56px;height:56px;border-radius:12px;object-fit:cover"><button class="btn small ghost" data-act="logo-del">Remove logo</button></div>`:''}
+  <p class="small muted">Used in the header and on your price list.</p></article>`; }
+function privacyCard(){ return `<article class="card"><h3>Privacy</h3>
+  <p class="small">Know Your Worth keeps everything you enter (prices, money, ${W().cust}s, consultation answers, signatures and receipt photos) in this browser on this device. Nothing is sent to us or anyone else. If you clear your browser or lose your phone, it is gone unless you have a backup.</p>
+  <p class="small">If you keep ${W().cust}s' health answers, the law says you must look after them: only ask for what you need, keep it safe, and delete it when you no longer need it. The ICO (the UK's data watchdog) has a short guide for small businesses on what to tell ${W().cust}s.</p>
+  <p class="small muted">Prices and tax figures are estimates, not tax or financial advice. Check with an accountant.</p></article>
+  <article class="card"><h3>Tell us what you think</h3><textarea id="fb-text" rows="4" placeholder="What worked, what was confusing, what is missing?"></textarea>
+  <button class="btn ghost" data-act="fb-copy">Copy my feedback</button><p class="small muted">Then paste it into a message to whoever shared this app with you. Please leave out ${W().cust} names and health details.</p></article>`; }
+function blobToDataURL(b){ return new Promise(r=>{ const f=new FileReader(); f.onload=()=>r(f.result); f.onerror=()=>r(null); f.readAsDataURL(b); }); }
+function dataURLToBlob(u){ const [h,d]=u.split(','); const mime=(h.match(/data:([^;]+)/)||[])[1]||'image/jpeg'; const bin=atob(d); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i); return new Blob([a],{type:mime}); }
+async function doBackup(){
+  const withPhotos=!!(document.getElementById('bk-photos')||{}).checked;
+  const copy=JSON.parse(JSON.stringify(state));
+  if(withPhotos){ copy._receipts={}; for(const e of state.expenses) if(e.receiptId){ try{ const b=await getReceipt(e.receiptId); if(b) copy._receipts[e.receiptId]=await blobToDataURL(b); }catch(_){} } }
+  state.setup.lastBackup=todayStr(); save();
+  copyText(JSON.stringify(copy));
+}
+async function restoreReceipts(map){ if(!map) return; for(const [id,u] of Object.entries(map)){ try{ if(u) await putReceipt(id, dataURLToBlob(u)); }catch(_){} } }
+
+// ---------- events for this module ----------
+document.addEventListener('click', e=>{
+  const el=e.target.closest('[data-act]'); if(!el) return; const act=el.dataset.act, s=state.setup;
+  if(act==='dy-prev'){ diaryWeek=addDays(diaryWeek,-7); render(); }
+  else if(act==='dy-next'){ diaryWeek=addDays(diaryWeek,7); render(); }
+  else if(act==='dy-today'){ diaryWeek=weekStart(todayStr()); render(); }
+  else if(act==='bk-new'){ const first=state.treatments.find(t=>!t.addon); if(!first){ toast(`Add your ${W().many} first`); return; } bkDraft={date:el.dataset.date||todayStr(),time:'10:00',staffId:'me',clientId:'',newClient:'',serviceId:first.id,addons:[],deposit:0,notes:''}; renderBkForm(); }
+  else if(act==='bk-edit'){ const b=state.bookings.find(x=>x.id===el.dataset.id); bkDraft={...clone(b),priceTouched:true}; renderBkForm(); }
+  else if(act==='bk-close'){ bkDraft=null; holDraft=null; document.getElementById('overlay').hidden=true; }
+  else if(act==='bk-done'){ const b=state.bookings.find(x=>x.id===el.dataset.id); if(!b) return; b.status='done'; b.method=el.dataset.m;
+    const cl=clientById(b.clientId); const inc={id:uid(),date:b.date,desc:`${bookingLabel(b)}${cl?' · '+cl.name:''}`,amount:+b.price||0,method:el.dataset.m,bookingId:b.id}; state.income.push(inc); useStock(b,1); save(); render(); toast(state.setup.trackStock?'Paid. Added to your money in, stock updated':'Paid. Added to your money in'); }
+  else if(act==='bk-noshow'){ const b=state.bookings.find(x=>x.id===el.dataset.id); b.status='noshow'; if(+b.deposit>0) state.income.push({id:uid(),date:b.date,desc:'Deposit kept (no-show)',amount:+b.deposit,method:payDefault(),bookingId:b.id}); save(); render(); }
+  else if(act==='bk-cancel'){ const b=state.bookings.find(x=>x.id===el.dataset.id); b.status='cancelled'; save(); render(); }
+  else if(act==='bk-del'){ const b=state.bookings.find(x=>x.id===el.dataset.id); if(!b) return; if(b.status==='done') useStock(b,-1); state.income=state.income.filter(x=>x.bookingId!==b.id); state.bookings=state.bookings.filter(x=>x.id!==b.id); save(); render(); toast('Booking deleted'); }
+  else if(act==='hol-new'){ holDraft={staffId:'me',from:todayStr(),to:todayStr(),note:''}; renderHolForm(); }
+  else if(act==='hol-del'){ state.holidays=state.holidays.filter(h=>h.id!==el.dataset.id); save(); render(); }
+  else if(act==='cl-open'){ clOpen=el.dataset.id; clDelArmed=false; render(); window.scrollTo(0,0); }
+  else if(act==='cl-close'){ clOpen=null; render(); }
+  else if(act==='cl-del'){ if(!clDelArmed){ clDelArmed=true; render(); return; } state.clients=state.clients.filter(c=>c.id!==el.dataset.id); state.bookings.forEach(b=>{ if(b.clientId===el.dataset.id) b.clientId=''; }); clOpen=null; clDelArmed=false; save(); render(); toast('Deleted'); }
+  else if(act==='pt-del'){ const c=clientById(clOpen); c.patchTests=(c.patchTests||[]).filter(p=>p.id!==el.dataset.id); save(); render(); }
+  else if(act==='cl-sig-clear'){ const cv=document.getElementById('sigpad'); if(cv){ cv.getContext('2d').clearRect(0,0,cv.width,cv.height); cv._dirty=false; } }
+  else if(act==='cl-sig-save'){ const c=clientById(clOpen); const cv=document.getElementById('sigpad'); c.consult=c.consult||{answers:{}};
+    if(cv && cv._dirty){ c.consult.signature=cv.toDataURL('image/png'); c.consult.date=todayStr(); } save(); render(); toast('Saved'); }
+  else if(act==='trip-del'){ state.trips=state.trips.filter(t=>t.id!==el.dataset.id); save(); render(); }
+  else if(act==='pl-make'){ makePriceList(el.dataset.k); }
+  else if(act==='pg-toggle'){ s.postgrad=el.checked; save(); if(view!=='wizard') render(); }
+  else if(act==='logo-del'){ s.brand={...(s.brand||{}),logo:''}; save(); render(); }
+  else if(act==='fb-copy'){ const t=(document.getElementById('fb-text')||{}).value||''; if(!t.trim()){ toast('Write something first'); return; } copyText('Know Your Worth feedback:\n'+t); }
+});
+document.addEventListener('change', async e=>{
+  const el=e.target, s=state.setup;
+  if(el.dataset.bkf && bkDraft){ const f=el.dataset.bkf; bkDraft[f]=(f==='price'||f==='deposit')?(+el.value||0):el.value; if(f==='price') bkDraft.priceTouched=true; if(f==='serviceId') bkDraft.priceTouched=false; renderBkForm(); }
+  else if(el.dataset.bkaddon && bkDraft){ const id=el.dataset.bkaddon; bkDraft.addons=(bkDraft.addons||[]).filter(a=>a.id!==id); if(+el.value>0) bkDraft.addons.push({id,qty:+el.value}); bkDraft.priceTouched=false; renderBkForm(); }
+  else if(el.dataset.hol && holDraft){ holDraft[el.dataset.hol]=el.value; if(el.dataset.hol==='from' && holDraft.to<holDraft.from) holDraft.to=holDraft.from; renderHolForm(); }
+  else if(el.dataset.clf){ const c=clientById(clOpen); if(c){ c[el.dataset.clf]=el.value; save(); } }
+  else if(el.dataset.cq){ const c=clientById(clOpen); if(c){ c.consult=c.consult||{answers:{}}; c.consult.answers[el.dataset.cq]= el.type==='checkbox'?el.checked:el.value; save(); } }
+  else if(el.dataset.adj){ priceAdj=+el.value; render(); }
+  else if(el.dataset.rep){ repMonth=el.value||repMonth; render(); }
+  else if(el.dataset.sl){ s.studentLoan=el.value; save(); if(view!=='wizard') render(); }
+  else if(el.dataset.brand){ s.brand={...(s.brand||{}),[el.dataset.brand]:el.value}; save(); render(); }
+  else if(el.dataset.logo && el.files && el.files[0]){ const sm=await shrinkTo(el.files[0],256); s.brand={...(s.brand||{}),logo:await blobToDataURL(sm)}; save(); render(); }
+});
+document.addEventListener('input', e=>{ if(e.target.dataset.clsearch){ clSearch=e.target.value; const pos=e.target.selectionStart; render(); const i=document.getElementById('cl-search'); if(i){ i.focus(); try{i.setSelectionRange(pos,pos);}catch(_){} } } });
+document.addEventListener('submit', e=>{
+  const f=e.target; const fd=new FormData(f);
+  if(f.id==='form-booking'){ e.preventDefault(); const d=bkDraft; if(!d) return;
+    if(bkWarnings(d).length&&!d._ack){ d._ack=true; renderBkForm(); toast('Read the warning. Save again if you still want it'); return; } // a warning takes two taps to get past
+    let cid=d.clientId; if(!cid && (d.newClient||'').trim()){ cid=uid(); state.clients.push({id:cid,name:d.newClient.trim(),patchTests:[]}); }
+    const b={id:d.id||uid(),date:d.date,time:d.time,staffId:d.staffId,clientId:cid,serviceId:d.serviceId,addons:(d.addons||[]).filter(a=>+a.qty>0),mins:bkMins(d),price:d.priceTouched?+d.price:bkAutoPrice(d),deposit:+d.deposit||0,notes:d.notes||'',status:d.status||'booked'};
+    const i=state.bookings.findIndex(x=>x.id===b.id); if(i>=0) state.bookings[i]={...state.bookings[i],...b}; else state.bookings.push(b);
+    bkDraft=null; document.getElementById('overlay').hidden=true; diaryWeek=weekStart(b.date); save(); render(); toast('Booking saved'); }
+  else if(f.id==='form-holiday'){ e.preventDefault(); const d=holDraft; if(!d) return; state.holidays.push({id:uid(),staffId:d.staffId,from:d.from,to:d.to<d.from?d.from:d.to,note:d.note||''}); holDraft=null; document.getElementById('overlay').hidden=true; save(); render(); toast('Time off saved'); }
+  else if(f.id==='form-client'){ e.preventDefault(); const n=(fd.get('name')||'').trim(); if(!n) return; const id=uid(); state.clients.push({id,name:n,patchTests:[]}); clOpen=id; save(); render(); toast('Added. Fill in their details below'); }
+  else if(f.id==='form-patch'){ e.preventDefault(); const c=clientById(clOpen); c.patchTests=[...(c.patchTests||[]),{id:uid(),date:fd.get('date'),product:fd.get('product')||'',result:fd.get('result')}]; save(); render(); toast('Patch test saved'); }
+  else if(f.id==='form-trip'){ e.preventDefault(); state.trips.push({id:uid(),date:fd.get('date'),route:fd.get('route')||'',miles:+fd.get('miles')||0}); save(); render(); toast(`Trip added. That is ${gbp(mileageClaim(+fd.get('miles')||0))} off the money you pay tax on`); }
+});
+async function shrinkTo(file,max){
+  try{ const bmp=await createImageBitmap(file); const k=Math.min(1,max/Math.max(bmp.width,bmp.height)); const c=document.createElement('canvas'); c.width=Math.round(bmp.width*k); c.height=Math.round(bmp.height*k); c.getContext('2d').drawImage(bmp,0,0,c.width,c.height); return await new Promise(r=>c.toBlob(b=>r(b||file),'image/png')); }catch(_){ return file; }
+}
+
+
+// ===================== MODULE: passcode lock, undo, editing entries, messages =====================
+// ---------- passcode lock: the saved data is scrambled with AES-GCM, key made from the passcode (PBKDF2) ----------
+const ENCKEY=KEY+'-enc';
+let saveSeq=0, lockMsg='', lockResetArmed=false;
+const hasCrypto=!!(globalThis.crypto && globalThis.crypto.subtle);
+function b64(buf){ const u=new Uint8Array(buf); let s=''; for(let i=0;i<u.length;i+=0x8000) s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000)); return btoa(s); }
+function unb64(str){ const bin=atob(str); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return u; }
+async function deriveKey(pass,salt){ const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:310000,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']); }
+async function encryptState(){ const salt=lockSalt, iv=crypto.getRandomValues(new Uint8Array(12));
+  const data=await crypto.subtle.encrypt({name:'AES-GCM',iv},lockKey,new TextEncoder().encode(JSON.stringify(state)));
+  return JSON.stringify({v:1,salt:b64(salt),iv:b64(iv),data:b64(data)}); }
+function saveLocked(){ const seq=++saveSeq; encryptState().then(pkg=>{ if(seq!==saveSeq) return; try{ localStorage.setItem(ENCKEY,pkg); localStorage.removeItem(KEY); storageOk=true; }catch(e){ storageOk=false; } }).catch(()=>{ storageOk=false; }); }
+function adopt(s){ if(s && s.setup && !Array.isArray(s.setup.overheads)) s.setup.overheads=overheadsFromOld({...blankSetup(),...s.setup});
+  state={...blankState(),...s,setup:{...blankSetup(),...s.setup}}; migrateProducts(); }
+async function unlock(pass){
+  try{ const pkg=JSON.parse(localStorage.getItem(ENCKEY)); const salt=unb64(pkg.salt); const key=await deriveKey(pass,salt);
+    const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(pkg.iv)},key,unb64(pkg.data));
+    adopt(JSON.parse(new TextDecoder().decode(plain))); lockKey=key; lockSalt=salt; locked=false; lockMsg=''; view=state.setup.done?'prices':'wizard'; render(); cleanReceipts(); }
+  catch(e){ lockMsg='That passcode is not right. Try again.'; render(); }
+}
+async function setPasscode(pass){ lockSalt=crypto.getRandomValues(new Uint8Array(16)); lockKey=await deriveKey(pass,lockSalt); save(); render(); toast('The lock is on'); }
+function removePasscode(){ lockKey=null; lockSalt=null; saveSeq++; try{ localStorage.removeItem(ENCKEY); }catch(e){} save(); render(); toast('The lock is off'); }
+function lockNow(){ if(!lockKey) return; locked=true; lockKey=null; lockSalt=null; state=blankState(); view='lock'; lockMsg=''; undoSnap=null; document.getElementById('overlay').hidden=true; render(); }
+function vLock(){ return `<section class="stack" style="max-width:420px;margin:40px auto;width:100%"><h2>Locked</h2><p class="muted">Type your passcode to open Know Your Worth.</p>
+  <form id="form-unlock" class="stack"><input id="lock-pass" type="password" name="pass" autocomplete="current-password" placeholder="Passcode" required><button class="btn" type="submit">Unlock</button></form>
+  ${lockMsg?`<div class="notice bad">${esc(lockMsg)}</div>`:''}
+  <details ${lockResetArmed?'open':''}><summary class="small">Forgotten it?</summary><p class="small muted" style="margin:8px 0">A forgotten passcode cannot be recovered. If you have a backup, delete everything here, then restore the backup from the More tab.</p>
+  <button class="btn ${lockResetArmed?'danger':'ghost'}" data-act="lock-wipe">${lockResetArmed?'Tap again to delete everything':'Delete everything on this device'}</button></details></section>`; }
+function lockCard(){
+  if(!hasCrypto) return `<article class="card"><h3>Lock the app</h3><p class="muted">This browser cannot lock the app.</p></article>`;
+  return lockKey ? `<article class="card"><h3>Lock the app</h3><div class="notice ok">The lock is on. Nobody can open the app without your passcode.</div>
+      <div class="row"><button class="btn ghost" data-act="lock-now">Lock now</button><button class="btn ghost" data-act="lock-off">Turn the lock off</button></div>
+      <p class="small muted">It locks itself after 5 minutes in the background. Receipt photos and backups are not locked, so keep your backups private.</p></article>`
+    : `<article class="card"><h3>Lock the app</h3><p class="muted">Set a passcode so nobody else can open your prices, money and ${W().cust} records on this device.</p>
+      <form id="form-setlock" class="fields"><label class="field">New passcode (4 or more characters)<input id="lk-1" type="password" name="p1" minlength="4" autocomplete="new-password" required></label>
+        <label class="field">Type it again<input id="lk-2" type="password" name="p2" minlength="4" autocomplete="new-password" required></label>
+        <label class="field"><button class="btn" type="submit">Turn the lock on</button></label></form>
+      <div class="notice warn">If you forget the passcode, nobody can get your data back, including us. Keep a backup somewhere safe.</div></article>`;
+}
+let hiddenAt=0;
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) hiddenAt=Date.now(); else if(lockKey && hiddenAt && Date.now()-hiddenAt>5*60*1000) lockNow(); });
+
+// ---------- receipt photos nothing points to any more (kept until now so Undo can bring an expense back) ----------
+async function cleanReceipts(){ if(!state.setup.done) return;
+  try{ const d=await db(); const keys=await new Promise((res,rej)=>{ const r=d.transaction('receipts').objectStore('receipts').getAllKeys(); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+    const used=new Set(state.expenses.map(e=>e.receiptId).filter(Boolean)); keys.forEach(k=>{ if(!used.has(k)) delReceipt(k); }); }catch(e){} }
+
+// ---------- undo ----------
+const UNDOABLE=new Set(['del-income','del-expense','bk-del','bk-done','bk-noshow','bk-cancel','del-treat','del-product','del-recipe','wiz-rm-prod','hol-del','cl-del','pt-del','trip-del','oh-del','st-del']);
+let undoSnap=null, undoTimer=null;
+document.addEventListener('click', e=>{ const el=e.target.closest && e.target.closest('[data-act]'); if(!el || !UNDOABLE.has(el.dataset.act) || locked) return;
+  const before=JSON.stringify(state);
+  setTimeout(()=>{ if(!locked && JSON.stringify(state)!==before){ undoSnap=before; const u=document.getElementById('undobar'); u.hidden=false; clearTimeout(undoTimer); undoTimer=setTimeout(()=>{ u.hidden=true; undoSnap=null; },9000); } },0);
+}, true);
+
+// ---------- editing a money entry ----------
+let editDraft=null;
+function renderEdit(){
+  const d=editDraft, o=document.getElementById('overlay'); if(!d){ o.hidden=true; return; } const x=d.x;
+  o.innerHTML=`<form class="card" id="form-edit" style="max-width:520px;width:100%;max-height:90vh;overflow:auto">
+    <div class="treat-head"><h3>Change ${d.kind==='income'?'money in':'money out'}</h3><button type="button" class="iconbtn" aria-label="Close" data-act="bk-close">✕</button></div>
+    <div class="fields"><label class="field">Date<input id="ed-date" type="date" name="date" value="${esc(x.date)}" required></label>
+      <label class="field">Amount<span class="money-in"><input id="ed-amount" type="number" name="amount" step="0.01" min="0" inputmode="decimal" value="${esc(x.amount)}" required></span></label></div>
+    ${d.kind==='income' ? `<label class="field">What for<input id="ed-desc" name="desc" value="${esc(x.desc||'')}"></label>
+      <label class="field">Paid by<select id="ed-method" name="method">${['Card','Cash','Bank transfer','App payout'].map(m=>`<option ${m===x.method?'selected':''}>${m}</option>`).join('')}</select></label>`
+    : `<label class="field">What it was for, or who you paid<input id="ed-supplier" name="supplier" value="${esc(x.supplier||'')}" required></label>
+      <label class="field">What kind of cost<select id="ed-cat" name="category">${CATEGORIES.map(c=>`<option ${c===x.category?'selected':''}>${c}</option>`).join('')}</select></label>`}
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="bk-close">Cancel</button><button class="btn" type="submit">Save</button></div>
+    <button type="button" class="btn small ghost" data-act="${delArmed?(d.kind==='income'?'del-income':'del-expense'):'ed-del-ask'}" data-id="${x.id}">${delArmed?'Tap again to delete':'Delete this entry'}</button></form>`;
+  o.hidden=false;
+}
+
+// ---------- reminder messages and newsletter list ----------
+function reminderText(b){ const cl=clientById(b.clientId), biz=(state.setup.brand||{}).businessName;
+  return `Hi${cl?' '+cl.name.split(' ')[0]:''}, a reminder of your ${bookingLabel(b)} on ${fmtDay(b.date)} at ${fmtT(b.time)}${biz?' with '+biz:''}. Please let me know as soon as you can if you need to change it. Thank you!`; }
+function waNumber(p){ const d=String(p||'').replace(/\D/g,''); if(!d) return ''; return d.startsWith('0')?'44'+d.slice(1):d; }
+function showReminder(b){ const cl=clientById(b.clientId), msg=reminderText(b), wa=cl?waNumber(cl.phone):'', o=document.getElementById('overlay');
+  o.innerHTML=`<div class="card" style="max-width:520px;width:100%"><div class="treat-head"><h3>Reminder message</h3><button class="iconbtn" aria-label="Close" data-act="bk-close">✕</button></div>
+    <textarea id="rem-text" rows="5">${esc(msg)}</textarea>
+    <div class="row"><button class="btn" data-act="rem-copy">Copy message</button>${wa?`<a class="btn ghost" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(msg)}">Open in WhatsApp</a>`:''}</div>
+    <p class="small muted">${cl&&cl.email?`Email: ${esc(cl.email)}. `:''}${cl&&cl.phone?`Phone: ${esc(cl.phone)}. `:'Add their phone number under Clients to get a WhatsApp button. '}Paste the message into a text, WhatsApp or email.</p></div>`;
+  o.hidden=false; }
+function newsletterList(){ return state.clients.filter(c=>c.email && c.consult && c.consult.answers && c.consult.answers.marketing); }
+
+document.addEventListener('click', e=>{
+  const el=e.target.closest && e.target.closest('[data-act]'); if(!el) return; const act=el.dataset.act;
+  if(act==='undo'){ if(undoSnap){ state=JSON.parse(undoSnap); undoSnap=null; save(); render(); toast('Put back'); } document.getElementById('undobar').hidden=true; }
+  else if(act==='inc-edit'){ const x=state.income.find(i=>i.id===el.dataset.id); if(x){ editDraft={kind:'income',x}; renderEdit(); } }
+  else if(act==='exp-edit'){ const x=state.expenses.find(i=>i.id===el.dataset.id); if(x){ editDraft={kind:'expense',x}; renderEdit(); } }
+  else if(act==='bk-close'){ editDraft=null; }
+  else if(act==='bk-remind'){ const b=state.bookings.find(x=>x.id===el.dataset.id); if(b) showReminder(b); }
+  else if(act==='rem-copy'){ copyText((document.getElementById('rem-text')||{}).value||''); }
+  else if(act==='cl-news'){ const l=newsletterList(); if(!l.length){ toast('Nobody yet. Add an email and tick the offers box on their consultation form'); return; } copyText(l.map(c=>`${c.name} <${c.email}>`).join('\n')); }
+  else if(act==='lock-now'){ lockNow(); }
+  else if(act==='lock-off'){ removePasscode(); }
+  else if(act==='lock-wipe'){ if(!lockResetArmed){ lockResetArmed=true; render(); return; }
+    try{ localStorage.removeItem(KEY); localStorage.removeItem(ENCKEY); indexedDB.deleteDatabase('taxpot'); }catch(err){}
+    lockKey=null; lockSalt=null; locked=false; lockResetArmed=false; state=blankState(); step=0; view='wizard'; render(); toast('Everything deleted'); }
+});
+document.addEventListener('submit', e=>{
+  const f=e.target, fd=new FormData(f);
+  if(f.id==='form-unlock'){ e.preventDefault(); unlock(fd.get('pass')||''); }
+  else if(f.id==='form-setlock'){ e.preventDefault(); const a=fd.get('p1')||'', b=fd.get('p2')||''; if(a.length<4){ toast('Use 4 or more characters'); return; } if(a!==b){ toast('The two passcodes do not match'); return; } setPasscode(a); }
+  else if(f.id==='form-edit'){ e.preventDefault(); const d=editDraft; if(!d) return; const x=d.x; x.date=fd.get('date'); x.amount=+fd.get('amount')||0;
+    if(d.kind==='income'){ x.desc=fd.get('desc')||'Takings'; x.method=fd.get('method'); } else { x.supplier=fd.get('supplier'); x.category=fd.get('category'); }
+    editDraft=null; document.getElementById('overlay').hidden=true; save(); render(); toast('Saved'); }
+});
+let hasLockedData=false; try{ hasLockedData=!!localStorage.getItem(ENCKEY); }catch(e){}
+if(hasLockedData && hasCrypto){ locked=true; view='lock'; } else cleanReceipts();
+
+
+// ===================== MODULE: more trades, bigger starter lists =====================
+// Every price, time and pack size here is a typical UK example to start from. Each person changes them to their own.
+function P(id,name,pack,cost,shelf){ return {id,name,...parsePack(pack),packCost:cost,clientsPerPack:1,shelfWeeks:shelf||0,inStock:2,reorderAt:1}; }
+function S(id,name,min,prep,perWeek,price,recipe,extra){ return {id,name,clientMin:min,prepMin:prep,perWeek,price,patch:false,...(extra||{}),recipe:(recipe||[]).map(([productId,perPack])=>({productId,perPack}))}; }
+function addProducts(list){ list.forEach(p=>{ if(!LIBRARY.some(x=>x.id===p.id)) LIBRARY.push(p); }); }
+function addServices(key,list){ CATALOGUES[key]=CATALOGUES[key]||[]; list.forEach(s=>{ if(!CATALOGUES[key].some(x=>x.id===s.id)) CATALOGUES[key].push(s); if(!ALLCAT.some(x=>x.id===s.id)) ALLCAT.push(s); }); }
+const an=w=>/^[aeiou]/i.test(w)?'an':'a';
+const AD={addon:true}, PT={patch:true};
+
+// ---------- nails, lashes and brows: more ----------
+addProducts([P('acrylp','Acrylic powder','660 g',28),P('monomer','Acrylic liquid (monomer)','500 ml',22),P('primer','Nail primer','15 ml',9),P('dehyd','Nail dehydrator','15 ml',7),
+  P('forms','Nail forms','500 pieces',9),P('cutrem','Cuticle remover','120 ml',8),P('footfile','Disposable foot files','50 pieces',18),P('scrub','Foot scrub','500 ml',12),
+  P('lotion','Hand and foot lotion','500 ml',11),P('polish','Nail polish','15 ml',7),P('chrome','Chrome powder','1 g',6),P('voltrays','Volume lash trays','1 tray',16),
+  P('lashrem','Lash glue remover','15 ml',9),P('lashprim','Lash primer','15 ml',8),P('liftkit','Lash lift sachets','10 pieces',25),P('lamkit','Brow lamination sachets','10 pieces',28),
+  P('strips','Wax strips','100 pieces',5),P('facewax','Facial wax','400 g',10),P('thread','Threading thread','300 m',4),P('henna','Brow henna','10 g',18,26)]);
+addServices('beauty',[
+  S('classicmani','Classic manicure',30,10,2,20,[['polish',20],['cutrem',40],['lotion',100],['files',50],['buffers',50],['oil',100]]),
+  S('acrylfull','Acrylic full set',90,10,2,40,[['acrylp',60],['monomer',40],['primer',40],['dehyd',50],['tips',50],['files',50],['buffers',50],['top',40],['oil',100]]),
+  S('acrylinfill','Acrylic infill',60,10,3,30,[['acrylp',100],['monomer',70],['primer',40],['files',50],['buffers',50],['top',40],['oil',100]]),
+  S('gelext','Gel extensions (sculpted)',105,10,1,50,[['builder',12],['forms',50],['base',15],['top',40],['files',50],['buffers',50],['wipes',100],['oil',100]]),
+  S('luxpedi','Luxury pedicure',60,10,1,38,[['footfile',50],['scrub',25],['lotion',40],['polish',20],['cutrem',40],['files',50]]),
+  S('chromeadd','Chrome or ombré',15,0,2,8,[['chrome',10]],AD),
+  S('repair','Nail repair',10,0,2,3,[['builder',60]],{addon:true,unitLabel:'nail'}),
+  S('hybridfull','Hybrid lash full set',135,10,1,70,[['trays',3],['voltrays',3],['glue',15],['pads',50],['brushes',40],['lashprim',40]],PT),
+  S('volfull','Russian volume full set',150,10,1,80,[['voltrays',2],['glue',15],['pads',50],['brushes',40],['lashprim',40]],PT),
+  S('volinfill','Volume lash infill',75,10,2,48,[['voltrays',4],['glue',30],['pads',50],['brushes',80]],PT),
+  S('lashlift','Lash lift and tint',50,10,2,40,[['liftkit',10],['tint',15],['dev',50],['pads',50],['brushes',40]],PT),
+  S('lashremove','Lash removal',20,5,1,12,[['lashrem',15],['pads',50],['brushes',50]]),
+  S('browlam','Brow lamination and tint',50,10,2,40,[['lamkit',10],['tint',15],['dev',50],['brushes',40]],PT),
+  S('browwax','Brow wax and shape',15,5,3,12,[['facewax',80],['strips',50]]),
+  S('browthread','Brow threading',15,5,2,10,[['thread',150]]),
+  S('hennabrow','Henna brows',45,10,1,32,[['henna',10],['brushes',40]],PT)]);
+
+// ---------- waxing, facials, massage and tanning ----------
+addProducts([P('hotwax','Hot wax beads','1 kg',14),P('stripwax','Strip wax','800 g',9),P('spatulas','Wooden spatulas','100 pieces',3),P('prewax','Pre-wax cleanser','500 ml',8),
+  P('afterwax','After-wax lotion','500 ml',9),P('couch','Couch roll (pack of 9)','9 pieces',22),P('massoil','Massage oil','1 litre',14),P('cleanser','Facial cleanser','500 ml',16),
+  P('exfol','Exfoliator','250 ml',14),P('facemask','Face mask','500 ml',22),P('moist','Moisturiser','500 ml',20),P('tansol','Spray tan solution','1 litre',28,26),
+  P('dispunder','Disposable underwear','50 pieces',9),P('stickyfeet','Sticky feet','50 pairs',8),P('gloves','Disposable gloves','100 pieces',6)]);
+addServices('therapy',[
+  S('halfleg','Half leg wax',20,5,3,18,[['stripwax',15],['strips',10],['spatulas',50],['prewax',60],['afterwax',60],['couch',360],['gloves',50]]),
+  S('fullleg','Full leg wax',35,5,3,30,[['stripwax',8],['strips',6],['spatulas',50],['prewax',40],['afterwax',40],['couch',360],['gloves',50]]),
+  S('bikini','Bikini wax',15,5,3,14,[['hotwax',20],['spatulas',50],['prewax',80],['afterwax',80],['couch',360],['gloves',50]]),
+  S('hollywood','Hollywood or Brazilian wax',30,5,3,35,[['hotwax',8],['spatulas',30],['prewax',60],['afterwax',60],['couch',360],['gloves',50]]),
+  S('underarm','Underarm wax',10,5,3,10,[['hotwax',25],['spatulas',50],['prewax',100],['afterwax',100],['gloves',50]]),
+  S('lipchin','Lip or chin wax',10,5,3,9,[['facewax',60],['spatulas',100],['gloves',50]]),
+  S('expfacial','Express facial',30,10,2,30,[['cleanser',60],['exfol',50],['facemask',40],['moist',80],['couch',360]]),
+  S('luxfacial','Luxury facial',60,10,2,55,[['cleanser',40],['exfol',30],['facemask',25],['moist',50],['massoil',100],['couch',360]]),
+  S('bns','Back, neck and shoulder massage',30,10,3,30,[['massoil',60],['couch',360]]),
+  S('fullbody','Full body massage',60,10,2,48,[['massoil',30],['couch',360]]),
+  S('hotstone','Hot stone massage',75,15,1,60,[['massoil',30],['couch',360]]),
+  S('ihm','Indian head massage',30,5,1,28,[['massoil',100]]),
+  S('spraytan','Spray tan',20,10,3,25,[['tansol',15],['dispunder',50],['stickyfeet',50]],PT)]);
+
+// ---------- make-up artist ----------
+addProducts([P('found','Foundation','30 ml',30,52),P('mprimer','Face primer','30 ml',25,52),P('powder','Setting powder','30 g',25),P('setspray','Setting spray','100 ml',22),
+  P('striplash','Strip lashes','10 pairs',25),P('mascwand','Disposable mascara wands','100 pieces',4),P('lipwand','Disposable lip wands','100 pieces',4),
+  P('sponges','Make-up sponges','20 pieces',10),P('brushcl','Brush cleaner','500 ml',12)]);
+addServices('makeup',[
+  S('bridal','Bridal make-up (bride)',90,30,1,120,[['found',15],['mprimer',20],['powder',30],['setspray',15],['striplash',10],['mascwand',50],['lipwand',50],['sponges',20],['brushcl',40]]),
+  S('bridesmaid','Bridesmaid or guest make-up',45,10,2,55,[['found',20],['mprimer',25],['powder',40],['setspray',20],['mascwand',50],['lipwand',50],['sponges',20],['brushcl',60]]),
+  S('trial','Bridal trial',90,15,1,60,[['found',15],['mprimer',20],['powder',30],['setspray',15],['mascwand',50],['lipwand',50],['sponges',20],['brushcl',40]]),
+  S('occasion','Occasion or prom make-up',60,15,2,50,[['found',20],['mprimer',25],['powder',40],['setspray',20],['mascwand',50],['lipwand',50],['sponges',20],['brushcl',60]]),
+  S('mulesson','Make-up lesson',120,15,0.5,90,[['mascwand',25],['lipwand',25],['sponges',10],['brushcl',40]]),
+  S('lashesadd','Strip lashes',5,0,3,8,[['striplash',10]],AD)]);
+
+// ---------- hair: more ----------
+addProducts([P('toner','Toner or gloss','60 ml',7),P('bond','Bond-building treatment','500 ml',90),P('perml','Perm lotion and neutraliser','1 pack',9),P('keratin','Keratin smoothing treatment','500 ml',120),
+  P('neck','Neck strips','500 pieces',6),P('pins','Hair pins and grips','500 pieces',6),P('hspray','Hairspray','500 ml',6)]);
+addServices('hair',[
+  S('restyle','Restyle cut and blow-dry',60,10,2,50,[['shamp',40],['cond',40],['styl',40],['capes',100]]),
+  S('childcut','Child cut',20,5,3,12,[['capes',100]]),
+  S('roots','Root tint (regrowth)',75,10,4,48,[['hcol',1],['hdev',20],['shamp',40],['cond',40],['gloves',50]],PT),
+  S('fullhl','Full head highlights',150,10,1,105,[['bleach',5],['hdev',8],['hfoil',1],['toner',1],['shamp',40],['cond',40],['gloves',50]],PT),
+  S('balayage','Balayage',180,15,1,130,[['bleach',5],['hdev',8],['toner',1],['bond',25],['shamp',40],['cond',40],['gloves',50]],PT),
+  S('bleachtone','Bleach and tone',180,15,0.5,120,[['bleach',3],['hdev',6],['toner',1],['bond',25],['shamp',40],['cond',40],['gloves',50]],PT),
+  S('perm','Perm',120,10,0.5,65,[['perml',1],['shamp',40],['cond',40]],PT),
+  S('hairup','Hair up or occasion style',60,10,1,45,[['pins',20],['hspray',15],['styl',30]]),
+  S('keratint','Keratin smoothing',150,10,0.5,150,[['keratin',8],['shamp',40]]),
+  S('toneradd','Toner or gloss',20,0,3,15,[['toner',1],['hdev',40]],AD),
+  S('bondadd','Bond treatment',10,0,3,15,[['bond',25]],AD)]);
+
+// ---------- barber ----------
+addProducts([P('blades','Razor blades','100 pieces',9),P('shavecr','Shaving cream','500 ml',8),P('aftersh','Aftershave balm','500 ml',10),P('clipspray','Clipper disinfectant spray','400 ml',9),
+  P('clipoil','Clipper oil','100 ml',5),P('talc','Neck powder','200 g',5)]);
+addServices('barber',[
+  S('skinfade','Skin fade',40,5,15,22,[['neck',500],['blades',100],['clipspray',150],['clipoil',300],['talc',150],['styl',60]]),
+  S('scissor','Scissor cut',30,5,10,20,[['neck',500],['clipspray',150],['talc',150],['styl',60]]),
+  S('clipper','Clipper cut (one grade)',15,5,8,13,[['neck',500],['clipspray',150],['clipoil',300],['talc',150]]),
+  S('kidscut','Kids cut',20,5,8,13,[['neck',500],['clipspray',150],['talc',150]]),
+  S('beard','Beard trim and shape',15,5,8,10,[['blades',100],['aftersh',100],['neck',500]]),
+  S('cutbeard','Cut and beard',45,5,10,30,[['neck',500],['blades',100],['clipspray',150],['clipoil',300],['aftersh',100],['styl',60]]),
+  S('hotshave','Hot towel shave',30,10,2,22,[['blades',100],['shavecr',40],['aftersh',50]]),
+  S('headshave','Head shave',20,5,2,15,[['blades',100],['shavecr',30],['aftersh',60]]),
+  S('washadd','Wash',5,0,5,3,[['shamp',60]],AD),
+  S('browtidy','Eyebrow tidy',5,0,3,4,[['blades',100]],AD)]);
+
+// ---------- dog grooming ----------
+addProducts([P('dshamp','Dog shampoo (concentrate)','5 litres',30),P('dcond','Dog conditioner','5 litres',32),P('cologne','Dog cologne','500 ml',10),P('earcl','Ear cleaner','250 ml',8),
+  P('bows','Bows and bandanas','100 pieces',12),P('styptic','Styptic powder','14 g',6),P('dtooth','Finger toothbrushes and paste','50 pieces',15),P('bladewash','Blade wash and coolant','500 ml',9)]);
+addServices('dog',[
+  S('smalldog','Small dog full groom',90,15,6,40,[['dshamp',150],['dcond',150],['cologne',100],['earcl',60],['bows',100],['bladewash',80]]),
+  S('meddog','Medium dog full groom',120,15,5,50,[['dshamp',100],['dcond',100],['cologne',80],['earcl',60],['bows',100],['bladewash',60]]),
+  S('largedog','Large dog full groom',150,20,2,70,[['dshamp',60],['dcond',60],['cologne',60],['earcl',50],['bows',100],['bladewash',40]]),
+  S('puppy','Puppy introduction',45,10,1,25,[['dshamp',200],['cologne',100],['bows',100]]),
+  S('bathtidy','Bath and tidy',60,10,3,30,[['dshamp',120],['dcond',120],['cologne',100],['earcl',60]]),
+  S('handstrip','Hand strip',150,15,1,65,[['dshamp',100],['earcl',60]]),
+  S('deshed','De-shed treatment',90,15,1,45,[['dshamp',60],['dcond',50]]),
+  S('nailclip','Nail clip',10,5,3,10,[['styptic',100]]),
+  S('teeth','Teeth clean',10,0,3,8,[['dtooth',50]],AD),
+  S('demat','De-matting',15,0,2,10,[],{addon:true,unitLabel:'15 minutes'})]);
+
+// ---------- builder or handyman: more ----------
+addProducts([P('plugs','Wall plugs','100 pieces',3),P('grab','Grab adhesive','290 ml',5),P('woodglue','Wood glue','1 litre',9),P('pbscrews','Drywall screws','1000 pieces',9),
+  P('underlay','Laminate underlay','15 m',20),P('hinges','Door hinges (set of 3)','1 pack',8),P('postcrete','Postcrete','20 kg',7),P('bits','Drill bits and blades','10 pieces',15),P('rubble','Rubble sacks','10 pieces',5)]);
+addServices('build',[
+  S('hourly','Small job (first hour)',60,30,4,45,[['screws',40],['plugs',25]]),
+  S('flatpack','Assemble flat-pack furniture',120,20,2,70,[['woodglue',50]]),
+  S('shelves','Hang shelves, pictures or a TV',60,20,2,50,[['screws',20],['plugs',10],['bits',20]]),
+  S('laminate','Lay a laminate floor (one room)',360,45,0.5,280,[['underlay',1],['sealant',3],['bits',10]]),
+  S('studwall','Build a stud wall (labour)',480,60,0.5,300,[['pbscrews',4],['screws',4],['bits',10]]),
+  S('fencepanel','Replace a fence panel and post',120,30,1,110,[['postcrete',1],['screws',20]])]);
+
+// ---------- painting and decorating: more ----------
+addProducts([P('pprimer','Primer or sealer','2.5 litres',22),P('satin','Satinwood paint','2.5 litres',32),P('wpaste','Wallpaper paste (sachets)','5 pieces',10),P('lining','Lining paper (rolls)','4 pieces',20),
+  P('masonry','Masonry paint','10 litres',40),P('wspirit','White spirit','2 litres',6),P('pbrush','Paint brushes','5 pieces',15)]);
+addServices('paint',[
+  S('ceiling','Paint a ceiling',120,30,1,80,[['emul',4],['dust',20],['roller',4],['tape',6]]),
+  S('hsl','Hall, stairs and landing',960,60,0.5,550,[['emul',1],['gloss',2],['under',2],['tape',2],['caulk',2],['fill',3],['sandp',3],['roller',2],['dust',10]]),
+  S('featwall','Wallpaper a feature wall',180,30,1,120,[['wpaste',5],['dust',20]]),
+  S('paperroom','Wallpaper a room',480,60,0.5,320,[['wpaste',2],['lining',1],['dust',10]]),
+  S('strippaper','Strip wallpaper (day)',480,30,0.5,200,[['dust',10],['rubble',5]]),
+  S('frontdoor','Paint a front door',180,30,1,110,[['gloss',6],['under',6],['sandp',5],['tape',10]]),
+  S('cabinets','Paint kitchen cabinets',960,60,0.25,650,[['pprimer',1],['satin',1],['sandp',2],['tape',2],['roller',2],['pbrush',5]]),
+  S('mistcoat','Mist coat new plaster (one room)',180,30,0.5,110,[['emul',2],['dust',20],['roller',4]]),
+  S('masonryday','Exterior masonry (day)',480,60,0.5,230,[['masonry',1],['dust',10],['roller',2]])]);
+
+// ---------- plastering and tiling ----------
+addProducts([P('bonding','Bonding coat','25 kg',11),P('pva','PVA','5 litres',12),P('scrim','Scrim tape','90 m',4),P('beads','Angle beads','10 pieces',14),
+  P('spacers','Tile spacers','1000 pieces',5),P('tprimer','Tile primer','5 litres',20),P('trim','Tile trim (2.5 m lengths)','5 pieces',25)]);
+addServices('plaster',[
+  S('skimwalls','Skim a room (walls)',480,60,1,350,[['mplast',0.25],['pva',5],['scrim',3],['beads',2],['dust',10]]),
+  S('skimceil','Skim a ceiling',240,45,1,180,[['mplast',1],['pva',10],['scrim',4],['dust',10]]),
+  S('patchpl','Patch plaster repair',120,30,1,90,[['bonding',4],['mplast',4],['pva',20]]),
+  S('boardskim','Board and skim a ceiling (labour)',480,60,0.5,420,[['mplast',0.5],['scrim',2],['pbscrews',4],['dust',10]]),
+  S('renderday','Rendering (day, labour)',480,60,0.5,260,[['beads',2],['dust',10]]),
+  S('tilewall2','Tile a bathroom wall (labour)',960,60,0.5,600,[['adhes',0.33],['grout',1],['spacers',5],['sealant',2],['dust',10]]),
+  S('tilefloor','Tile a bathroom floor (labour)',360,45,0.5,280,[['adhes',1],['grout',2],['spacers',10],['tprimer',5]]),
+  S('splash','Tile a kitchen splashback',240,30,0.5,190,[['adhes',2],['grout',3],['spacers',20],['sealant',3],['trim',5]]),
+  S('regrout','Re-grout a bathroom',240,30,0.5,180,[['grout',1],['sealant',2]]),
+  S('reseal','Re-seal a bath or shower',60,20,1,60,[['sealant',1]])]);
+
+// ---------- electrician ----------
+addProducts([P('tecable','Twin and earth cable 2.5 mm','100 m',75),P('lcable','Lighting cable 1.5 mm','100 m',50),P('backbox','Back boxes','10 pieces',8),P('sockets','Double sockets','10 pieces',35),
+  P('switches','Light switches','10 pieces',18),P('wago','Lever connectors','100 pieces',25),P('clips','Cable clips','100 pieces',3),P('downl','LED downlights (fire-rated)','10 pieces',55),
+  P('smoke','Mains smoke alarms','5 pieces',100),P('gromm','Grommets and glands','100 pieces',6),P('etape','Insulation tape','10 pieces',6),P('labels','Circuit labels and notices','100 pieces',8)]);
+addServices('electric',[
+  S('ehour','Call-out (first hour)',60,30,5,70,[['wago',50],['etape',20]]),
+  S('eday','Day rate',480,45,1,360,[['wago',10],['clips',5],['etape',10]]),
+  S('swapsocket','Replace a socket or switch',30,20,3,55,[['sockets',10],['wago',50]]),
+  S('newsocket','Add a new socket',120,30,2,130,[['sockets',10],['backbox',10],['tecable',10],['clips',10],['wago',30]]),
+  S('lightfit','Replace a light fitting',45,20,3,65,[['wago',30],['etape',20]]),
+  S('downlights','Fit 6 downlights',240,30,1,300,[['downl',1.6],['lcable',5],['wago',8]]),
+  S('cunit','Replace a consumer unit (labour)',360,45,0.5,480,[['labels',10],['wago',5],['gromm',10]]),
+  S('eicr','Electrical safety check (EICR)',180,30,2,180,[['labels',20]]),
+  S('evcharger','Install an EV charger (labour)',240,45,0.5,380,[['clips',3],['gromm',10]]),
+  S('outsocket','Fit an outdoor socket',120,30,1,140,[['tecable',10],['clips',10],['gromm',20]]),
+  S('smokeal','Fit a mains smoke alarm',60,20,1,85,[['smoke',5],['lcable',15],['wago',30]])]);
+
+// ---------- plumbing and heating ----------
+addProducts([P('ptfe','PTFE tape','10 pieces',5),P('flux','Flux','100 g',5),P('solder','Solder','500 g',25),P('cu15','15 mm copper pipe (3 m lengths)','10 pieces',70),
+  P('compf','Compression fittings (mixed)','20 pieces',25),P('pushf','Push-fit fittings (mixed)','20 pieces',35),P('flexi','Flexible tap connectors','10 pieces',20),
+  P('isov','Isolating valves','10 pieces',18),P('jointc','Jointing compound','250 g',7),P('radvalve','Radiator valves (pairs)','5 pairs',60),P('inhib','Heating inhibitor','1 litre',15),P('washers','Washers and O-rings (mixed)','200 pieces',8)]);
+addServices('plumb',[
+  S('phour','Call-out (first hour)',60,30,5,75,[['ptfe',50],['washers',40]]),
+  S('pday','Day rate',480,45,1,340,[['ptfe',10],['compf',4],['solder',10],['flux',10]]),
+  S('tap','Replace a tap',60,20,2,90,[['flexi',5],['isov',5],['ptfe',20]]),
+  S('leak','Fix a leak',60,30,3,85,[['compf',10],['ptfe',20],['jointc',20]]),
+  S('toilet','Replace a toilet (labour)',180,30,1,200,[['flexi',10],['isov',10],['sealant',3],['ptfe',20]]),
+  S('unblock','Unblock a sink or toilet',45,20,3,80,[]),
+  S('radiator','Fit or replace a radiator (labour)',120,30,1,150,[['radvalve',5],['ptfe',10],['inhib',2]]),
+  S('boilersvc','Boiler service',60,20,4,90,[['washers',40]]),
+  S('washmach','Install a washing machine or dishwasher',45,20,2,70,[['ptfe',20],['isov',10]]),
+  S('fitshower','Fit a shower (labour)',240,30,0.5,260,[['sealant',2],['ptfe',10],['compf',5]]),
+  S('outtap','Fit an outside tap',90,20,1,110,[['cu15',5],['compf',5],['ptfe',20]]),
+  S('bathday','Bathroom installation (day, labour)',480,45,1,340,[['sealant',2],['ptfe',10],['pushf',4]])]);
+
+// ---------- carpentry and joinery ----------
+addProducts([P('brads','Brad nails','5000 pieces',15),P('deckscrews','Decking screws','500 pieces',18),P('wbolts','Worktop bolts and colour fill','1 pack',12),P('mdf','MDF sheet 18 mm','2 pieces',70),
+  P('latch','Door latch and handles','1 pack',18),P('woodfill','Wood filler','250 ml',6),P('sawblades','Saw and multi-tool blades','5 pieces',20)]);
+addServices('joiner',[
+  S('jday','Day rate',480,45,2,260,[['screws',5],['brads',50],['woodglue',10],['sawblades',10]]),
+  S('hangdoor','Hang an internal door',120,30,2,110,[['hinges',1],['latch',1],['screws',20],['sandp',10]]),
+  S('skirtroom','Fit skirting (one room)',180,30,1,170,[['grab',1],['brads',100],['caulk',2],['woodfill',4]]),
+  S('worktop','Fit a kitchen worktop (labour)',240,30,0.5,260,[['wbolts',1],['sealant',2],['sawblades',5]]),
+  S('wardrobe','Build a fitted wardrobe (day, labour)',480,45,0.5,280,[['screws',4],['woodglue',8],['brads',50]]),
+  S('jlaminate','Lay a laminate or wood floor (one room)',360,45,0.5,300,[['underlay',1],['sawblades',5]]),
+  S('deckday','Decking (day, labour)',480,45,0.5,270,[['deckscrews',1],['sawblades',5]]),
+  S('fitlock','Fit or change a lock',60,20,1,80,[['screws',40]]),
+  S('boxing','Box in pipes',120,30,1,120,[['mdf',2],['screws',10],['grab',2],['caulk',3]]),
+  S('spindles','Replace stair spindles (labour)',240,30,0.25,260,[['woodglue',10],['brads',100],['woodfill',4]])]);
+
+// ---------- gardening and landscaping ----------
+addProducts([P('petrol','Petrol','5 litres',8),P('twostroke','Two-stroke oil','1 litre',10),P('strim','Strimmer line','60 m',12),P('gbags','Garden waste bags','10 pieces',12),
+  P('weedk','Weed killer (concentrate)','1 litre',20),P('lawnfeed','Lawn feed','20 kg',35),P('compost','Compost','50 litres',7),P('chainoil','Chain oil','1 litre',7),P('jetdet','Patio cleaner','5 litres',15)]);
+addServices('garden',[
+  S('mow','Mow a lawn (regular visit)',45,20,12,30,[['petrol',15],['strim',40],['gbags',30]]),
+  S('hedge','Trim a hedge',120,30,3,90,[['petrol',8],['twostroke',40],['gbags',5]]),
+  S('tidyhalf','Garden tidy (half day)',240,30,2,140,[['petrol',5],['strim',10],['gbags',3]]),
+  S('gday','Full day of maintenance',480,45,1,260,[['petrol',3],['strim',6],['gbags',2]]),
+  S('turf','Lay turf (day, labour)',480,45,0.25,280,[['lawnfeed',10]]),
+  S('gfence','Fit a fence panel and post',120,30,1,110,[['postcrete',1],['screws',20]]),
+  S('jetwash','Jet wash a patio or drive',180,30,1,130,[['petrol',4],['jetdet',3]]),
+  S('prune','Prune trees and shrubs',120,30,1,90,[['chainoil',10],['gbags',5]]),
+  S('weedspray','Weed control spray',45,15,2,40,[['weedk',10]]),
+  S('planting','Plant a border (labour)',180,30,0.5,120,[['compost',2]]),
+  S('wasteaway','Take green waste away',15,15,5,15,[['gbags',10]],AD)]);
+
+// ---------- cleaning ----------
+addProducts([P('multi','Multi-surface cleaner','5 litres',12),P('bathcl','Bathroom cleaner','5 litres',14),P('glasscl','Glass cleaner','5 litres',10),P('ovencl','Oven cleaner','5 litres',25),
+  P('carpsh','Carpet shampoo','5 litres',28),P('mfibre','Microfibre cloths','50 pieces',25),P('scour','Sponges and scourers','40 pieces',8),P('binb','Bin bags','200 pieces',12),
+  P('floorcl','Floor cleaner','5 litres',12),P('limesc','Limescale remover','5 litres',18),P('vacbags','Vacuum bags','10 pieces',12),P('squeegee','Squeegee rubbers and pads','1 pack',15)]);
+const CLEANKIT=k=>[['multi',60*k],['bathcl',60*k],['glasscl',100*k],['floorcl',80*k],['mfibre',200*k],['scour',40*k],['gloves',50*k],['vacbags',40*k],['binb',100*k]];
+addServices('clean',[
+  S('regclean','Regular house clean (2 hours)',120,20,10,36,CLEANKIT(1)),
+  S('deepclean','Deep clean (4 hours)',240,30,1,95,CLEANKIT(0.5)),
+  S('eot','End of tenancy clean',360,30,0.5,200,[...CLEANKIT(0.3),['ovencl',10],['limesc',15]]),
+  S('ovenc','Oven clean',120,20,2,65,[['ovencl',10],['scour',20],['gloves',25]]),
+  S('carpetroom','Carpet clean (one room)',45,20,2,35,[['carpsh',25]]),
+  S('windows','Window clean (house, outside)',30,10,15,15,[['squeegee',300],['glasscl',150]]),
+  S('office','Office clean (2 hours)',120,20,3,40,CLEANKIT(1)),
+  S('builders','After-builders clean',360,30,0.25,180,CLEANKIT(0.3)),
+  S('fridge','Inside the fridge',20,0,2,10,[['multi',100]],AD),
+  S('inwindows','Inside windows',30,0,2,12,[['glasscl',60]],AD),
+  S('ironing','Ironing',60,0,2,16,[],{addon:true,unitLabel:'hour'})]);
+
+// ---------- car valeting and detailing ----------
+addProducts([P('snowfoam','Snow foam','5 litres',18),P('carsh','Car shampoo','5 litres',15),P('wheelcl','Wheel cleaner','5 litres',20),P('tyre','Tyre dressing','5 litres',22),
+  P('apc','All-purpose cleaner','5 litres',15),P('intdress','Interior dressing','5 litres',20),P('upcl','Upholstery cleaner','5 litres',18),P('compound','Polish compound','1 litre',25),
+  P('ppads','Polishing pads','6 pieces',20),P('wax','Wax or sealant','500 ml',18),P('ceramic','Ceramic coating','30 ml',45),P('clay','Clay bar','200 g',12),P('airfresh','Air fresheners','50 pieces',15)]);
+addServices('valet',[
+  S('extwash','Exterior wash',40,15,6,15,[['snowfoam',40],['carsh',100],['wheelcl',40],['tyre',80],['mfibre',300]]),
+  S('minivalet','Mini valet',75,15,6,35,[['snowfoam',40],['carsh',100],['wheelcl',40],['tyre',80],['apc',60],['glasscl',80],['intdress',80],['airfresh',50],['mfibre',200]]),
+  S('fullvalet','Full valet',180,20,4,70,[['snowfoam',40],['carsh',100],['wheelcl',30],['tyre',80],['apc',40],['glasscl',60],['intdress',60],['upcl',25],['wax',15],['airfresh',50],['mfibre',150]]),
+  S('intdeep','Interior deep clean',150,20,1,65,[['apc',30],['upcl',15],['glasscl',60],['intdress',50],['mfibre',150],['airfresh',50]]),
+  S('mpolish','Machine polish (single stage)',300,30,0.5,180,[['compound',6],['ppads',2],['clay',4],['wax',12],['snowfoam',40],['carsh',100]]),
+  S('ceramicc','Ceramic coating',480,30,0.25,350,[['ceramic',1],['compound',5],['ppads',2],['clay',4]]),
+  S('enginebay','Engine bay clean',45,15,0.5,35,[['apc',30],['intdress',60]]),
+  S('headlight','Headlight restoration',45,10,0.5,40,[['compound',20],['ppads',6]]),
+  S('pethair','Pet hair removal',30,0,2,15,[],AD),
+  S('seatsh','Seat shampoo',15,0,2,8,[['upcl',40]],{addon:true,unitLabel:'seat'}),
+  S('odour','Odour treatment',15,0,1,15,[['airfresh',50]],AD)]);
+
+// ---------- cakes and baking ----------
+addProducts([P('butter','Butter','2 kg',17),P('flour','Self-raising flour','1.5 kg',1.5),P('caster','Caster sugar','1 kg',1.8),P('eggs','Eggs','12 pieces',3.2,3),P('icings','Icing sugar','1 kg',2.2),
+  P('fondant','Fondant icing','1 kg',6.5),P('choc','Baking chocolate','1 kg',9),P('cocoa','Cocoa powder','250 g',3.5),P('vanilla','Vanilla extract','100 ml',6),P('jam','Jam','454 g',2),
+  P('boards','Cake boards','5 pieces',6),P('cboxes','Cake boxes','10 pieces',12),P('cases','Cupcake cases','200 pieces',4),P('cupboxes','Cupcake boxes','10 pieces',10),
+  P('fcolour','Food colouring gel','28 g',3),P('sprinkles','Sprinkles','100 g',3),P('dowels','Cake dowels','12 pieces',4),P('popst','Cake pop sticks','100 pieces',3),P('cellob','Cello bags','100 pieces',4)]);
+addServices('cake',[
+  S('cake6','6 inch celebration cake',150,30,2,55,[['butter',4],['flour',6],['caster',4],['eggs',3],['icings',2],['fondant',2],['vanilla',10],['jam',4],['boards',5],['cboxes',10],['fcolour',5]]),
+  S('cake8','8 inch celebration cake',210,30,2,80,[['butter',2.5],['flour',4],['caster',3],['eggs',2],['icings',1.3],['fondant',1],['vanilla',8],['jam',3],['boards',5],['cboxes',10],['fcolour',4]]),
+  S('twotier','Two-tier cake',360,45,0.5,160,[['butter',1.5],['flour',2.5],['caster',2],['eggs',1.2],['icings',0.8],['fondant',0.6],['dowels',2],['boards',2.5],['cboxes',5]]),
+  S('wedding3','Three-tier wedding cake',720,90,0.25,420,[['butter',0.8],['flour',1.5],['caster',1],['eggs',0.6],['icings',0.5],['fondant',0.3],['dowels',1],['boards',1.6],['cboxes',3]]),
+  S('cup12','Cupcakes (box of 12)',90,20,3,26,[['butter',5],['flour',10],['caster',8],['eggs',4],['icings',3],['cases',16],['cupboxes',10],['sprinkles',5],['vanilla',15]]),
+  S('cup6','Cupcakes (box of 6)',60,20,2,15,[['butter',10],['flour',20],['caster',16],['eggs',8],['icings',6],['cases',33],['cupboxes',10],['sprinkles',10],['vanilla',30]]),
+  S('brownies','Brownies (tray of 12)',60,15,2,22,[['butter',8],['choc',4],['caster',4],['eggs',4],['cocoa',5],['flour',15],['cboxes',10]]),
+  S('cakepops','Cake pops (dozen)',120,20,1,24,[['choc',3],['popst',8],['cellob',8],['sprinkles',5],['butter',10],['flour',12]]),
+  S('cookies','Decorated cookies (dozen)',150,20,1,30,[['butter',8],['flour',6],['icings',4],['fcolour',6],['cellob',8]]),
+  S('topper','Custom topper',30,0,2,10,[],AD),
+  S('delivery','Local delivery',30,0,2,8,[],AD)]);
+
+// ---------- the trades themselves ----------
+const SERVICE_W={one:'service',many:'services',One:'Service',Many:'Services',item:'product',items:'products',Item:'Product',Items:'Products',cust:'customer'};
+Object.assign(INDUSTRIES.beauty,{sup:'beauty'}); Object.assign(INDUSTRIES.hair,{sup:'beauty'});
+Object.assign(INDUSTRIES.build,{label:'Builder or handyman',sup:'trades',big:true}); Object.assign(INDUSTRIES.paint,{sup:'trades',big:true}); Object.assign(INDUSTRIES.other,{sup:'general'});
+Object.assign(INDUSTRIES,{
+  therapy:{label:'Waxing, facials, massage and tanning',w:BEAUTY_W,hours:false,patch:true,example:'e.g. Dermaplaning facial',newItem:'e.g. Toner',sup:'beauty'},
+  makeup:{label:'Make-up artist',w:{...SERVICE_W,cust:'client'},hours:false,patch:false,example:'e.g. Photo shoot make-up',newItem:'e.g. Highlighter',sup:'beauty'},
+  barber:{label:'Barber',w:{...SERVICE_W,cust:'client'},hours:false,patch:false,example:'e.g. Hair design or pattern',newItem:'e.g. Styling wax',sup:'beauty'},
+  dog:{label:'Dog grooming',w:{...SERVICE_W,one:'groom',many:'grooms',One:'Groom',Many:'Grooms'},hours:false,patch:false,example:'e.g. Cockapoo full groom',newItem:'e.g. Detangling spray',sup:'dog',onLabel:'Minutes with the dog'},
+  plaster:{label:'Plastering and tiling',w:TRADE_W,hours:true,patch:false,example:'e.g. Float and set a wall',newItem:'e.g. Bonding agent',sup:'trades',big:true},
+  electric:{label:'Electrician',w:TRADE_W,hours:true,patch:false,example:'e.g. Fit an electric shower',newItem:'e.g. Junction boxes',sup:'trades',big:true},
+  plumb:{label:'Plumbing and heating',w:TRADE_W,hours:true,patch:false,example:'e.g. Power flush',newItem:'e.g. Pipe clips',sup:'trades',big:true},
+  joiner:{label:'Carpentry and joinery',w:TRADE_W,hours:true,patch:false,example:'e.g. Fit a loft hatch',newItem:'e.g. Panel pins',sup:'trades',big:true},
+  garden:{label:'Gardening and landscaping',w:TRADE_W,hours:true,patch:false,example:'e.g. Clear an overgrown garden',newItem:'e.g. Bark mulch',sup:'trades',big:true},
+  clean:{label:'Cleaning',w:{...TRADE_W,item:'product',items:'products',Item:'Product',Items:'Products'},hours:true,patch:false,example:'e.g. Holiday let changeover',newItem:'e.g. Descaler',sup:'clean'},
+  valet:{label:'Car valeting and detailing',w:SERVICE_W,hours:true,patch:false,example:'e.g. Convertible roof clean',newItem:'e.g. Leather conditioner',sup:'valet',onLabel:'Hours on the car'},
+  cake:{label:'Cakes and baking',w:{one:'bake',many:'bakes',One:'Bake',Many:'Bakes',item:'ingredient',items:'ingredients',Item:'Ingredient',Items:'Ingredients',cust:'customer'},hours:true,patch:false,example:'e.g. Number cake',newItem:'e.g. Cream cheese',sup:'cake',onLabel:'Hours baking and decorating',prepLabel:'Hours shopping, washing up and packing'}
+});
+const IND_GROUPS=[['Beauty, hair and grooming',['beauty','therapy','makeup','hair','barber','dog']],
+  ['Building and home trades',['build','paint','plaster','electric','plumb','joiner','garden','clean']],
+  ['Other',['valet','cake','other']]];
+Object.assign(SUPPLIERS,{
+  trades:['Screwfix','Toolstation','B&Q','Wickes','Travis Perkins','Jewson','City Plumbing','CEF','Topps Tiles','Dulux Decorator Centre','Brewers','Amazon'],
+  dog:['Christies Direct','Groomers','Amazon','Pets at Home'],
+  clean:['Booker','Costco','Screwfix','Toolstation','Amazon'],
+  valet:['Autosmart','Autoglym','ValetPRO','Halfords','Amazon'],
+  cake:['Booker','Costco','Supermarket','The Cake Decorating Company','Hobbycraft','Amazon'],
+  general:['Amazon','Supermarket','Costco','Booker']});
+
+const COMBOS=[['Nails, lashes and brows + waxing and facials',['beauty','therapy']],['Hair + nails and beauty',['hair','beauty']],['Hair + barber',['hair','barber']],
+  ['Hair + make-up (weddings)',['hair','makeup']],['Builder + decorating',['build','paint']],['Builder + plastering and tiling',['build','plaster']],
+  ['Builder + carpentry',['build','joiner']],['Plumbing + tiling (bathrooms)',['plumb','plaster']],['Gardening + cleaning',['garden','clean']],['Cleaning + car valeting',['clean','valet']]];
+function overheadsForAll(keys){ const out=[]; keys.forEach(k=>overheadsFor(k).forEach(o=>{ if(!out.some(x=>x.group===o.group && x.name===o.name)) out.push(o); })); return out; }
+// ---------- running costs to start from, by kind of work ----------
+function overheadsFor(ind){
+  const g={beauty:'salon',therapy:'therapy',makeup:'mobile',hair:'salon',barber:'salon',dog:'dog',build:'van',paint:'van',plaster:'van',electric:'van',plumb:'van',joiner:'van',garden:'van',clean:'clean',valet:'valet',cake:'cake',other:'mobile'}[ind]||'salon';
+  const sets={
+    salon:null,
+    therapy:[['monthly','Room, chair or desk rent',400],['monthly','Booking app subscription',15],['monthly','Phone and internet',20],['monthly','Marketing and ads',30],['monthly','Design and admin apps',11],['monthly','Laundry',20],['yearly','Insurance',180],['yearly','Accountant',300],['yearly','Training and courses',300],['equipment','Treatment couch',180,5],['equipment','Card reader',99,3]],
+    mobile:[['monthly','Phone and internet',20],['monthly','Marketing and ads',30],['monthly','Fuel',60],['yearly','Insurance',120],['yearly','Accountant',300],['yearly','Training and courses',200],['equipment','Kit and cases',400,3]],
+    dog:[['monthly','Room, chair or desk rent',300],['monthly','Booking app subscription',15],['monthly','Phone and internet',20],['monthly','Marketing and ads',20],['monthly','Electricity and heating',60],['yearly','Insurance',180],['yearly','Accountant',300],['yearly','Blade sharpening',120],['equipment','Clippers and scissors',450,3],['equipment','Dryer',350,5],['equipment','Grooming table and bath',600,7]],
+    van:[['monthly','Van finance or lease',250],['monthly','Fuel',200],['monthly','Phone and internet',25],['monthly','Marketing and ads',40],['monthly','Waste disposal',30],['yearly','Insurance',900],['yearly','Accountant',400],['yearly','Trade memberships and certificates',250],['yearly','Van tax, MOT and servicing',600],['equipment','Power tools',1500,4],['equipment','Hand tools',500,5],['equipment','Ladders and access',300,6]],
+    clean:[['monthly','Fuel',120],['monthly','Phone and internet',20],['monthly','Marketing and ads',20],['yearly','Insurance',150],['yearly','Accountant',250],['equipment','Vacuum',250,3],['equipment','Mops, buckets and kit',120,2]],
+    valet:[['monthly','Van finance or lease',220],['monthly','Fuel',150],['monthly','Phone and internet',20],['monthly','Marketing and ads',30],['yearly','Insurance',600],['yearly','Accountant',300],['equipment','Pressure washer',400,3],['equipment','Vacuum',200,3],['equipment','Machine polisher',250,4],['equipment','Water tank and generator',700,5]],
+    cake:[['monthly','Electricity and heating',40],['monthly','Phone and internet',15],['monthly','Marketing and ads',15],['yearly','Insurance',80],['yearly','Food hygiene training and registration',30],['yearly','Accountant',250],['equipment','Stand mixer',400,5],['equipment','Tins, tools and turntable',200,3]]
+  };
+  return sets[g] ? sets[g].map(([group,name,amount,years])=>({id:uid(),group,name,amount,years:years||3})) : defaultOverheads();
+}
+OVERHEAD_GROUPS[0].options.push('Fuel','Storage or lock-up');
+OVERHEAD_GROUPS[2].options.push('Kit and cases','Spray tan machine');
+
+
+// ===================== MODULE: simpler layout =====================
+// Quick start, five buttons along the bottom, prices that lead with what to do, card lists, and More in sections.
+let wizFull=false, openTreat=null, openProd=null, moreOpen=null;
+const pct0=v=>Math.round((v||0)*100)+'%';
+const money=v=>Number.isInteger(+v)?gbp0(+v):gbp(+v);
+const indOn=k=>!!(state.setup._indTouched||state.setup.done) && selInds().includes(k);
+UNDOABLE.add('use-price'); UNDOABLE.add('use-all-prices');
+
+// ---------- keep the keyboard and cursor in place when a box changes ----------
+let deferRender=false; const pendingFns=new Set();
+const mkDefer=fn=>function(){ if(deferRender){ pendingFns.add(fn); return; } fn(); };
+render=mkDefer(render); renderBkForm=mkDefer(renderBkForm); renderHolForm=mkDefer(renderHolForm);
+document.addEventListener('change',()=>{ deferRender=true; setTimeout(()=>{ deferRender=false; },0); },true);
+document.addEventListener('change',()=>{ deferRender=false; if(!pendingFns.size) return; const fns=[...pendingFns]; pendingFns.clear();
+  setTimeout(()=>{ const a=document.activeElement, id=a&&a.id; fns.forEach(f=>f()); if(id){ const el=document.getElementById(id); if(el && el!==document.activeElement){ try{ el.focus(); }catch(e){} } } },0); });
+
+// ---------- quick start ----------
+const wizStepsFull=wizSteps;
+wizSteps=function(){ if(wizFull) return wizStepsFull();
+  const busy=BASIC.find(b=>b.key==='busy'), app=BASIC.find(b=>b.type==='app');
+  return [{type:'welcome'},{type:'industry'},{type:'pickTreat'},{type:'quicklist'},{type:'pay'},{type:'hoursq'},{...busy},{...app},{type:'costq'}]; };
+function quickStep(st){
+  const s=state.setup;
+  if(st.type==='welcome') return {q:'Find out what you should be charging', why:'Answer a few questions about your work and get a suggested price for everything you do.',
+    body:`<div class="stack">
+      <div class="notice info"><b>About 2 minutes.</b> Nine short questions.</div>
+      <div class="notice info"><b>You get:</b> a price for each thing you do, what to put aside for tax, and whether your prices cover what you want to earn.</div>
+      <div class="notice info"><b>Private.</b> Everything you type stays on this phone. We cannot see it.</div></div>`};
+  if(st.type==='quicklist'){
+    const rows=state.treatments.map(t=>{ const h=indOf(t).hours;
+      return `<article class="card" style="gap:8px"><h3 style="font-size:1.02rem">${esc(t.name)}${t.addon?' <span class="pill info">Add-on</span>':''}</h3>
+        <div class="q3">
+          <label class="field">Your price<span class="money-in"><input id="ql-p-${t.id}" type="number" inputmode="decimal" min="0" step="0.5" value="${t.price?esc(t.price):''}" placeholder="${t.exPrice?'e.g. '+nf(t.exPrice):''}" data-tf="${t.id}" data-f="price"></span></label>
+          <label class="field">${h?'Hours':'Minutes'}<input id="ql-m-${t.id}" type="number" inputmode="decimal" min="0" step="${h?0.5:5}" value="${esc(h?nf((+t.clientMin||0)/60):t.clientMin)}" data-tf="${t.id}" data-f="clientMin" data-mul="${h?60:1}"></label>
+          <label class="field">A week<input id="ql-w-${t.id}" type="number" inputmode="decimal" min="0" step="0.5" value="${t.perWeek?esc(t.perWeek):''}" placeholder="${t.exPerWeek?'e.g. '+nf(t.exPerWeek):''}" data-tf="${t.id}" data-f="perWeek"></label>
+        </div></article>`; }).join('');
+    return {q:'Your prices now', why:`For each one: what you charge, how long it takes, and roughly how many you do in a week. The times are typical ones, so change any that are wrong. We add a few minutes to each for setting up and cleaning down. Leave a price empty if you have not set one.`, body:`<div class="stack">${rows}</div>`};
+  }
+  if(st.type==='pay') return {q:'How much do you want in your pocket each month, after tax?', why:'From this work only. Include anything you want to save.',
+    body:`<label class="field">Amount each month<span class="money-in"><input id="wiz-takeHome" type="number" inputmode="decimal" min="0" step="50" value="${esc(s.takeHome)}" data-set="takeHome"></span></label>
+      <div class="chips">${[1000,1500,2000,2500,3000].map(c=>`<button class="chip" data-act="wiz-chip" data-key="takeHome" data-v="${c}" aria-pressed="${+s.takeHome===c}">${gbp0(c)}</button>`).join('')}</div>
+      <label class="field" style="margin-top:6px">Where do you live?<span class="hint">Scotland has different income tax</span><select id="wiz-region" data-setsel="region"><option value="ruk" ${s.region!=='sco'?'selected':''}>England, Wales or Northern Ireland</option><option value="sco" ${s.region==='sco'?'selected':''}>Scotland</option></select></label>`};
+  if(st.type==='hoursq') return {q:'How much do you work?', why:'Count everything: time with clients, breaks, messages and cleaning up.',
+    body:`<div class="fields"><label class="field">Hours a week<input id="wiz-hours" type="number" inputmode="decimal" min="0" step="1" value="${esc(s.hours)}" data-set="hours"></label>
+      <label class="field">Weeks off a year<span class="hint">Holidays, bank holidays, sick days</span><input id="wiz-weeksOff" type="number" inputmode="decimal" min="0" max="51" step="1" value="${esc(s.weeksOff)}" data-set="weeksOff"></label></div>`};
+  if(st.type==='costq') return {q:'What do you pay to run your business?', why:`These are typical costs for your kind of work. Change the amounts, choose a week, a month or a year for each, and tap the cross on anything you do not pay. Leave out the ${W().items} you use on ${W().cust}s.`,
+      body:`${costList()}<p class="small muted">You can change these any time on the Prices screen.</p>`};
+  return null;
+}
+
+// ---------- five buttons along the bottom ----------
+const ICON={prices:'<path d="M20 4h-7L3.5 13.5a2 2 0 0 0 0 2.8l4.2 4.2a2 2 0 0 0 2.8 0L20 11V4z"/><circle cx="15.5" cy="8.5" r="1.5"/>',
+  diary:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  money:'<circle cx="12" cy="12" r="9"/><path d="M15 9a3 3 0 0 0-5.5 1.5c0 2 .8 3-.5 5.5h6M8.5 12.5h5"/>',
+  clients:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/>',
+  more:'<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'};
+function navGroups(){ return [
+  {key:'prices',label:'Prices',views:[['prices','Prices'],['treatments',W().Many],['stock','Products']]},
+  {key:'diary',label:'Diary',views:[['diary','Diary']]},
+  {key:'money',label:'Money',views:[['money','In and out'],['taxyear','Tax']]},
+  {key:'clients',label:W().cust==='client'?'Clients':'Customers',views:[['clients','Clients']]},
+  {key:'more',label:'More',views:[['more','More']]}]; }
+renderTabs=function(){
+  const top=document.getElementById('tabs'), bot=document.getElementById('bottomnav'), off=(view==='wizard'||view==='lock');
+  const groups=navGroups(), g=groups.find(x=>x.views.some(v=>v[0]===view))||groups[0];
+  top.innerHTML = off||g.views.length<2 ? '' : g.views.map(([k,l])=>`<button data-tab="${k}" ${view===k?'aria-current="page"':''}>${esc(l)}</button>`).join('');
+  bot.hidden=off;
+  bot.innerHTML = off ? '' : groups.map(x=>`<button data-tab="${x.views[0][0]}" ${x===g?'aria-current="page"':''}><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[x.key]}</svg><span>${esc(x.label)}</span></button>`).join('');
+  document.getElementById('exflag').hidden=!state.example;
+};
+
+// ---------- prices: what to do first, the working behind a tap ----------
+vPrices=function(){
+  const c=compute(state), s=state.setup;
+  if(!state.treatments.length) return `<div class="card"><h2>Nothing to price yet</h2><p>Add the ${W().many} you do and their prices will appear here.</p><button class="btn" data-tab="treatments">Add ${W().many}</button></div>`;
+  const all=c.treatments, up=all.filter(t=>t.flag==='below'||t.flag==='under'), unpriced=all.filter(t=>t.flag==='none');
+  const hasBookings=c.bookingsMonth>0, anyPrice=all.some(t=>+t.price>0), cur=c.atCurrent, sug=c.atSuggested;
+  const head = up.length ? `<section class="card"><div><h2>Put up ${up.length} price${up.length>1?'s':''}</h2><p class="muted">So you can take home ${gbp0(s.takeHome)} a month after tax.</p></div>
+      <div class="list">${up.map(t=>`<div class="item"><div class="grow"><p style="white-space:normal"><b>${esc(t.name)}</b></p><p class="small muted" style="white-space:normal"><span class="num">${money(t.price)}</span> → <b class="num" style="color:var(--accent)">${money(t.suggested)}</b>${t.flag==='below'?' · does not cover your costs and pay yet':''}</p></div><button class="btn small" data-act="use-price" data-id="${t.id}">Use ${money(t.suggested)}</button></div>`).join('')}</div>
+      ${up.length>1?`<button class="btn ghost" data-act="use-all-prices">Use all the suggested prices</button>`:''}</section>`
+    : !anyPrice ? `<section class="card"><div><h2>Your suggested prices</h2><p class="muted">What to charge to take home ${gbp0(s.takeHome)} a month after tax.</p></div></section>`
+    : `<section class="card"><div><h2>Your prices are right</h2><p class="muted">They cover your costs and the ${gbp0(s.takeHome)} a month you want to take home.</p></div></section>`;
+  const curPct=c.needMonth>0?Math.max(0,Math.min(1,cur.profit/c.needMonth)):0;
+  const earn = !hasBookings ? `<section class="card"><h3>What you earn</h3><p class="muted">Tell us roughly how many of each you do in a week and we will show what you earn in a month.</p><button class="btn ghost" data-tab="treatments">Add how many I do</button></section>`
+    : !anyPrice ? ''
+    : `<section class="card"><h3>What you earn in a month</h3>
+      <div class="bar ${cur.profit<c.needMonth?'short':''}" role="img" aria-label="${pct0(curPct)} of what you need"><i style="width:${curPct*100}%"></i></div>
+      <p>${cur.profit>=c.needMonth?`About <b class="num">${gbp0(cur.profit)}</b> before tax. That is enough to take home ${gbp0(s.takeHome)}.`
+        :`About <b class="num">${gbp0(Math.max(0,cur.profit))}</b> before tax. You need <b class="num">${gbp0(c.needMonth)}</b> to take home ${gbp0(s.takeHome)}.`}</p>
+      ${up.length?`<p class="small muted">With the suggested prices: about ${gbp0(sug.profit)}.</p>`:''}
+      <p class="small muted">Put about <b>${pct0(c.taxShare)}</b> of what you make aside for tax.</p></section>`;
+  const rows=all.map(t=>{ const [cls,lab]=FLAG[t.flag];
+    return `<details class="fold"><summary><span class="grow">${esc(t.name)}</span><span class="num">${+t.price>0?money(t.price):money(t.suggested)}</span><span class="pill ${cls}">${t.flag==='none'?'Suggested':lab}</span></summary>
+      <div class="prices"><div><div class="k">Your price</div><div class="v">${+t.price>0?money(t.price):'–'}</div></div>
+        <div><div class="k">Lowest</div><div class="v">${gbp(t.minimum)}</div></div>
+        <div class="sugg"><div class="k">Suggested</div><div class="v">${money(t.suggested)}</div></div></div>
+      <p class="small muted">Takes ${fmtTime(t.mins,t)} with set-up. ${W().Items} cost ${gbp(t.productCost)} and your time costs ${gbp(t.timeCost)}. 'Lowest' covers your costs and pay with nothing spare. At the suggested price you earn about ${gbp(t.perHour)} an hour before tax.${t.patch?' Needs a patch test.':''}</p>
+      <button class="btn small ghost" data-act="edit-treat" data-id="${t.id}">Change this ${W().one}</button></details>`; }).join('');
+  const fill=c.billable>0?c.hoursBooked/c.billable:0;
+  return `${head}${earn}
+  ${!s._prodEdited?`<div class="notice info">The cost of your ${W().items} is a typical figure for now. <button class="btn small ghost" data-tab="stock">Check my ${W().items}</button></div>`:''}
+  <section class="stack"><h3>All your prices</h3>${rows}</section>
+  <details class="fold"><summary><span class="grow">How we worked this out</span></summary><div class="stack">
+    <p>Every hour you work with ${W().cust}s needs to bring in <b class="num">${gbp(c.hourly)}</b>. That covers your running costs${c.team.people.length?', your team':''} and your pay, before ${W().items}.</p>
+    <p>You have about <b>${Math.round(c.billable)}</b> hours a month for paid work, after breaks, admin, time off and gaps in the diary.</p>
+    ${hasBookings?`<p>${fill>1.05?`The bookings you gave us need about ${Math.round(c.hoursBooked)} hours a month, which is more than you have. Check how many you do a week.`:`The bookings you gave us fill about ${pct0(fill)} of those hours.`}</p>`:''}
+    <p class="small muted">A suggested price is your time and ${W().items}, plus a ${pct0(s.margin)} cushion, card fees and an allowance for no-shows${s.vat?', plus VAT':''}, rounded up. These are estimates, not tax advice.</p></div></details>
+  ${priceExtras(c)}`;
+};
+
+// ---------- treatments and stock as cards ----------
+vTreatments=function(){
+  const c=compute(state), pmap=Object.fromEntries(c.products.map(p=>[p.id,p]));
+  const card=t=>{ if(openTreat!==t.id) return `<button class="rowbtn" data-act="treat-open" data-id="${t.id}"><span class="grow"><b>${esc(t.name)}</b>${t.addon?' <span class="pill info">Add-on</span>':''}<small>${fmtTime(+t.clientMin||0,t)}${+t.prepMin>0?` + ${fmtTime(+t.prepMin,t)} setting up`:''} · ${+t.price>0?money(t.price):'no price yet'} · ${W().items} ${gbp(t.productCost)}</small></span><span aria-hidden="true">›</span></button>`;
+    const unused=state.products.filter(p=>!t.recipe.some(r=>r.productId===p.id));
+    return `<article class="card" id="treat-${t.id}">
+      <label class="field">Name<input id="tn-${t.id}" value="${esc(t.name)}" data-tf="${t.id}" data-f="name"></label>
+      <div class="fields">${timeField('tc-'+t.id,'on',t,'clientMin')}${timeField('tp-'+t.id,'prep',t,'prepMin')}
+        ${numField('tw-'+t.id,'How many a week','',t.perWeek||'',`data-tf="${t.id}" data-f="perWeek"`,'step="0.5"')}
+        ${moneyField('tr-'+t.id,'Your price','',t.price||'',`data-tf="${t.id}" data-f="price"`)}</div>
+      ${IND().patch?`<label class="row small"><input type="checkbox" id="tpt-${t.id}" data-tf="${t.id}" data-f="patch" ${t.patch?'checked':''}> Needs a patch test first</label>`:''}
+      <label class="row small"><input type="checkbox" id="tad-${t.id}" data-tf="${t.id}" data-f="addon" ${t.addon?'checked':''}> This is an add-on to another ${W().one}</label>
+      ${t.addon?`<label class="field">Priced per<input id="ul-${t.id}" value="${esc(t.unitLabel||'')}" placeholder="e.g. nail. Leave empty for a flat price" data-tf="${t.id}" data-f="unitLabel"></label>`:''}
+      <h3 style="font-size:1rem">${W().Items} it uses · ${gbp(t.productCost)} a time</h3>
+      <div class="list">${t.recipe.map((r,i)=>{ const p=pmap[r.productId]; if(!p) return ''; return `<div class="item" style="flex-wrap:wrap"><div class="grow"><p><b>${esc(p.name)}</b></p><p class="small muted">${gbp(lineCost(r,pmap))} a time</p>${+p.packCost>0?'':`<button class="btn small ghost" data-act="prod-go" data-id="${p.id}">Set what it costs</button>`}</div>
+        <label class="field" style="order:3;flex:1 1 100%;font-weight:400;font-size:.85rem">How many uses do you get from ${esc(packLabel(p))}?<input id="rp-${t.id}-${i}" type="number" inputmode="decimal" min="0" step="1" value="${esc(r.perPack||'')}" data-rf="${t.id}" data-i="${i}" data-f="perPack"></label>
+        <button class="iconbtn" style="order:2" aria-label="Remove ${esc(p.name)}" data-act="del-recipe" data-id="${t.id}" data-i="${i}">✕</button></div>`; }).join('') || `<p class="small muted">None yet.</p>`}</div>
+      ${unused.length?`<div class="row" style="flex-wrap:nowrap"><select id="add-existing-${t.id}" aria-label="${W().Item} to add" style="flex:1">${unused.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select><button class="btn small ghost" data-act="wiz-add-prod" data-t="${t.id}">Add</button></div>`:''}
+      <div class="row" style="flex-wrap:nowrap"><input id="add-new-${t.id}" placeholder="Something new, ${esc(IND().newItem)}" style="flex:1"><button class="btn small ghost" data-act="wiz-new-prod" data-t="${t.id}">Add new</button></div>
+      <div class="row" style="justify-content:space-between"><button class="btn" data-act="treat-close">Done</button><button class="btn ghost" data-act="del-treat" data-id="${t.id}">Remove this ${W().one}</button></div></article>`; };
+  return `<section class="stack"><div><h2>${W().Many}</h2><p class="muted">Tap one to change its time, price or ${W().items}.</p></div>
+    ${c.treatments.map(card).join('') || `<p class="muted">Nothing here yet.</p>`}
+    <button class="btn" data-act="add-treat">+ Add your own ${W().one}</button></section>`;
+};
+vStock=function(){
+  const ts=!!state.setup.trackStock, c=compute(state), reorder=c.products.filter(p=>p.reorder), expiring=c.products.filter(p=>p.lost>0.05);
+  const card=p=>{ const n=Math.round((+p.inStock||0)*10)/10;
+    if(openProd!==p.id) return `<div class="rowbtn" style="cursor:default"><button class="grow linkish" data-act="prod-open" data-id="${p.id}"><b>${esc(p.name)}</b><small>${esc(packLabel(p))} · ${gbp(+p.packCost)}${p.supplier?' · '+esc(p.supplier):''}${ts&&p.weeksLeft!=null?` · about ${Math.round(p.weeksLeft)} week${Math.round(p.weeksLeft)===1?'':'s'} left`:''}</small></button>
+        ${ts&&p.reorder?'<span class="pill warn">Reorder</span>':''}
+        <span class="stepper" ${ts?'':'hidden'}><button aria-label="One fewer ${esc(p.name)}" data-act="stock-dec" data-id="${p.id}">−</button><span class="num">${nf(n)}</span><button aria-label="One more ${esc(p.name)}" data-act="stock-inc" data-id="${p.id}">+</button></span></div>`;
+    return `<article class="card">
+      <label class="field">Name<input id="pn-${p.id}" value="${esc(p.name)}" data-pf="${p.id}" data-f="name"></label>
+      <div class="fields">
+        <label class="field">Size you buy<span class="row" style="flex-wrap:nowrap;gap:8px"><input id="pz-${p.id}" type="number" inputmode="decimal" min="0" step="any" aria-label="Size" value="${esc(p.size)}" data-pf="${p.id}" data-f="size" style="flex:1"><select id="pu-${p.id}" aria-label="Unit" data-pf="${p.id}" data-f="unit" style="flex:1">${UNITS.map(u=>`<option ${u===p.unit?'selected':''}>${u}</option>`).join('')}</select></span></label>
+        ${moneyField('pc-'+p.id,'What one costs you','',p.packCost,`data-pf="${p.id}" data-f="packCost"`)}
+        ${numField('pg-'+p.id,'Weeks before it goes off','Leave empty if it keeps',p.shelfWeeks||'',`data-pf="${p.id}" data-f="shelfWeeks" placeholder="Keeps"`,'step="1"')}
+        ${!ts?'':numField('pi-'+p.id,'How many you have','',n,`data-pf="${p.id}" data-f="inStock"`,'step="1"')}
+        ${!ts?'':numField('pr-'+p.id,'Reorder when down to','',p.reorderAt,`data-pf="${p.id}" data-f="reorderAt"`,'step="1"')}</div>
+      <p class="small muted" ${ts?'':'hidden'}>${p.packsPerWeek?`You get through about ${nf(Math.round(p.packsPerWeek*100)/100)} a week${p.weeksLeft!=null?`, so what you have lasts about ${Math.round(p.weeksLeft)} week${Math.round(p.weeksLeft)===1?'':'s'}`:''}.`:`No ${W().one} uses this yet.`}</p>
+      <div class="row" style="justify-content:space-between"><button class="btn" data-act="prod-close">Done</button><button class="btn ghost" data-act="del-product" data-id="${p.id}">Remove</button></div></article>`; };
+  return `<section class="stack">${supData()}<div><h2>${ts?'Stock':'Your products'}</h2><p class="muted">Tap one to change what it costs you${ts?'. Use − and + when you use one up or buy more':''}.</p></div>
+    ${ts&&reorder.length?`<div class="notice warn"><b>Time to reorder:</b> ${reorder.map(p=>esc(p.name)).join(', ')}</div>`:''}
+    ${(ts?expiring:[]).map(p=>`<div class="notice info"><b>${esc(p.name)}</b> goes off before you finish it. About ${pct0(p.lost)} gets thrown away, and your prices already allow for that.</div>`).join('')}
+    ${c.products.map(card).join('') || `<p class="muted">Nothing here yet.</p>`}
+    <button class="btn" data-act="add-product">+ Add ${an(W().item)} ${W().item}</button>
+    <label class="row small" style="flex-wrap:nowrap;align-items:flex-start"><input type="checkbox" id="st-track" data-setbool="trackStock" ${ts?'checked':''} style="flex:none"><span>Keep count of how many I have left, and tell me when to reorder</span></label></section>`;
+};
+
+// ---------- more: sections that open one at a time ----------
+vMore=function(){
+  const s=state.setup;
+  const num=(key,label,hint,stepv,scale)=>`<label class="field">${label}${hint?`<span class="hint">${hint}</span>`:''}<input id="m-${key}" type="number" inputmode="decimal" min="0" step="${stepv||1}" value="${esc(Math.round((+s[key]||0)*(scale||1)*1000)/1000)}" data-set="${key}" data-scale="${scale||1}"></label>`;
+  const sec=(key,title,sub,body)=>`<details class="fold" data-sec="${key}" ${moreOpen===key?'open':''}><summary><span class="grow">${title}<small>${sub}</small></span></summary><div class="stack">${body}</div></details>`;
+  return `<section class="stack"><h2>More</h2>
+  ${sec('pay','Your pay and hours',`${gbp0(s.takeHome)} a month · ${nf(s.hours)} hours a week`,`<div class="fields">
+      <label class="field">Take-home pay you want each month<span class="money-in"><input id="m-takeHome" type="number" inputmode="decimal" step="50" value="${esc(s.takeHome)}" data-set="takeHome"></span></label>
+      ${num('hours','Hours you work a week')}${num('weeksOff','Weeks off a year')}
+      ${num('busy','How full your diary is (%)','100 means no gaps',5,100)}
+      ${num('nonClient','Time not with '+W().cust+'s (%)','Breaks, messages, cleaning up',5,100)}
+      <label class="field">Where you live<select id="m-region" data-setsel="region"><option value="ruk" ${s.region!=='sco'?'selected':''}>England, Wales or Northern Ireland</option><option value="sco" ${s.region==='sco'?'selected':''}>Scotland</option></select></label></div>`)}
+  ${sec('hours','Opening hours',`${openDays()} day${openDays()===1?'':'s'} · ${nf(Math.round(openMinutesWeek()/6)/10)} hours a week`,hoursEditor())}
+  ${sec('costs','Running costs',`${gbp0(overheadsMonth(s))} a month`,overheadEditor())}
+  ${sec('pricing','How prices are worked out','Card fees, no-shows, cushion, VAT',`<div class="fields">
+      ${num('cardPct','Card fee (%)','What your card reader or app takes',0.01,100)}${num('cardFixed','Card fee per payment (£)','',0.01)}
+      ${num('noShow',`${W().cust==='client'?'Clients':'Customers'} who do not turn up (%)`,'',1,100)}${num('deposit','How much of a no-show your deposit covers (%)','0 if you take no deposit',5,100)}
+      ${num('margin','Cushion on top of your costs (%)','For quiet weeks and new kit',1,100)}${num('roundTo','Round prices up to the nearest (£)','1 or 5')}
+      ${IND().patch?num('patchValidDays','How long a patch test lasts (days)','Follow your insurer'):''}</div>
+      <label class="row small"><input type="checkbox" id="m-vat" data-setbool="vat" ${s.vat?'checked':''}> I am VAT registered (most people working alone are not)</label>`)}
+  ${sec('team','People who work for you',(s.staff||[]).length?`${s.staff.length} on the team`:'Nobody yet',staffEditor())}
+  ${sec('tax','A job or student loan',+s.otherIncome>0||s.studentLoan!=='none'?'Added':'Not added',taxExtraEditor())}
+  ${sec('brand','Your name, logo and colours',esc((s.brand||{}).businessName||'Not set'),brandEditor())}
+  ${sec('backup','Back up and restore',s.lastBackup?`Last backup ${fmtDay(s.lastBackup)}`:'No backup yet',`<p class="muted">Everything is kept on this phone only. Copy a backup and keep it somewhere safe, like your notes or an email to yourself.</p>
+      <label class="row small"><input type="checkbox" id="bk-photos"> Include receipt photos (much bigger)</label>
+      <div class="row"><button class="btn ghost" data-act="backup">Copy backup</button><button class="btn ghost" data-act="restore-open">Restore a backup</button></div>`)}
+  ${sec('lock','Lock the app',lockKey?'On':'Off',lockCard())}
+  ${sec('questions','Answer the questions again','Quick or detailed',`<p class="muted">Your money records, diary and ${W().cust}s stay as they are.</p>
+      <div class="row"><button class="btn ghost" data-act="rerun-quick">The quick questions</button><button class="btn ghost" data-act="rerun-full">Every detailed question</button></div>`)}
+  ${sec('privacy','Privacy and feedback','How your data is kept',privacyCard())}
+  ${sec('reset','Start again','Delete everything on this phone',`<p class="muted">This deletes everything on this phone, including receipt photos.</p>
+      <button class="btn ${resetArmed?'danger':'ghost'}" data-act="reset">${resetArmed?'Tap again to delete everything':'Delete all my data'}</button>`)}
+  <p class="small muted">Know Your Worth is a test version. Prices and tax are estimates using 2026/27 rates, not tax or financial advice.</p></section>`;
+};
+
+// ---------- events ----------
+document.addEventListener('toggle', e=>{ const d=e.target; if(d && d.dataset && d.dataset.sec){ if(d.open) moreOpen=d.dataset.sec; else if(moreOpen===d.dataset.sec) moreOpen=null; } }, true);
+document.addEventListener('click', e=>{
+  const el=e.target.closest && e.target.closest('[data-act]'); if(!el) return; const act=el.dataset.act, s=state.setup;
+  if(act==='pick-treat'){ if(!wizFull && el.checked){ const t=state.treatments.find(x=>x.id===el.dataset.id); if(t && !t._q){ t._q=1; t.exPrice=t.price; t.exPerWeek=t.perWeek; t.price=0; t.perWeek=0; save(); } } }
+  else if(act==='costq-typical'){ s.costMode='typical'; s._ohEdited=false; s.overheads=overheadsForAll(selInds()); save(); render(); }
+  else if(act==='costq-own'){ s.costMode='own'; save(); render(); }
+  else if(act==='costq-add'){ const o={id:uid(),group:el.dataset.g||'monthly',name:'',custom:true,amount:0,years:3}; s._ohEdited=true; s.overheads=[...(s.overheads||[]),o]; save(); render(); const n=document.getElementById('oh-name-'+o.id); if(n) n.focus(); }
+  else if(act==='use-price'){ const c=compute(state).treatments.find(t=>t.id===el.dataset.id), t=state.treatments.find(x=>x.id===el.dataset.id); if(c&&t){ t.price=c.suggested; save(); render(); toast(`${t.name} is now ${money(t.price)}`); } }
+  else if(act==='use-all-prices'){ compute(state).treatments.forEach(c=>{ if(c.flag==='below'||c.flag==='under'){ const t=state.treatments.find(x=>x.id===c.id); if(t) t.price=c.suggested; } }); save(); render(); toast('Prices updated'); }
+  else if(act==='edit-treat'){ openTreat=el.dataset.id; view='treatments'; render(); const n=document.getElementById('treat-'+openTreat); if(n&&n.scrollIntoView) n.scrollIntoView({block:'start'}); }
+  else if(act==='treat-open'){ openTreat=el.dataset.id; render(); }
+  else if(act==='treat-close'){ openTreat=null; render(); }
+  else if(act==='add-treat'){ const t=state.treatments[state.treatments.length-1]; if(t){ openTreat=t.id; render(); } }
+  else if(act==='prod-open'){ openProd=el.dataset.id; render(); }
+  else if(act==='prod-close'){ openProd=null; render(); }
+  else if(act==='add-product'){ const p=state.products[state.products.length-1]; if(p){ openProd=p.id; render(); } }
+  else if(act==='stock-inc'||act==='stock-dec'){ const p=state.products.find(x=>x.id===el.dataset.id); if(p){ p.inStock=Math.max(0,Math.round(((+p.inStock||0)+(act==='stock-inc'?1:-1))*10)/10); s._prodEdited=true; save(); render(); } }
+  else if(act==='rerun-quick'||act==='rerun-full'){ wizFull=(act==='rerun-full'); step=wizFull?0:1; view='wizard'; render(); window.scrollTo(0,0); }
+});
+document.addEventListener('change', e=>{
+  const el=e.target, s=state.setup;
+  if(el.dataset.setsel){ s[el.dataset.setsel]=el.value; save(); if(view!=='wizard') render(); }
+  else if(el.dataset.setbool){ s[el.dataset.setbool]=el.checked; save(); render(); }
+  else if(el.dataset.costown){ s.overheads=[{id:uid(),group:'monthly',name:'All running costs',custom:true,amount:+el.value||0,years:3}]; s._ohEdited=true; save(); }
+  else if(el.dataset.pf && el.dataset.f!=='inStock' && el.dataset.f!=='reorderAt'){ s._prodEdited=true; save(); }
+  else if(el.dataset.rf){ s._prodEdited=true; save(); }
+});
+
+
+// ===================== MODULE: beauty only, prices from costs =====================
+// Prices are built from what a treatment costs (products + a share of running costs, which includes any staff wages)
+// plus the profit she wants for each hour with a client. What she wants to take home no longer changes prices:
+// it only feeds the "how many treatments do I need" sum.
+const ALL_TRADES=false; // set to true to bring the other kinds of work back
+if(!ALL_TRADES){ IND_GROUPS.length=0; IND_GROUPS.push(['Tick all that apply',['beauty','therapy','makeup']]); }
+INDUSTRIES.makeup.label='Make-up';
+APPS.other.note='Type in your own fee';
+const profitHourOf=s=>s.profitHour==null?20:(+s.profitHour||0);
+
+wizSteps=function(){ const app=BASIC.find(b=>b.type==='app');
+  return [{type:'welcome'},{type:'industry'},{type:'pickTreat'},{type:'quicklist'},{type:'costq'},{type:'profitq'},{...app},{type:'targetq'}]; };
+const quickStepBase=quickStep;
+quickStep=function(st){
+  const s=state.setup;
+  if(st.type==='welcome') return {q:'Find out what you should be charging', why:'Answer a few questions about your work and see what each treatment really costs you.',
+    body:`<div class="stack">
+      <div class="notice info"><b>About 2 minutes.</b> A few short questions.</div>
+      <div class="notice info"><b>You get:</b> what each treatment costs you, the price that covers it, and how many you need to do to earn what you want.</div>
+      <div class="notice info"><b>Private.</b> Everything you type stays on this phone. We cannot see it.</div></div>`};
+  if(st.type==='profitq'){ const v=profitHourOf(s);
+    return {q:'How much do you want to earn for each hour with a client?', why:'This is what you keep for the hour, after products and running costs and before tax. Not sure? Pick £20. You can change it later.',
+      body:`<div class="choices">${[[0,'Just cover my costs','Nothing on top'],[10,'£10 an hour'],[15,'£15 an hour'],[20,'£20 an hour'],[25,'£25 an hour'],[30,'£30 an hour']].map(([n,l,sub])=>`<button class="choice" data-act="wiz-chip" data-key="profitHour" data-v="${n}" aria-pressed="${v===n}">${l}${sub?`<small>${sub}</small>`:''}</button>`).join('')}</div>
+        <label class="field">Or type your own amount per hour<span class="money-in"><input id="wiz-profitHour" type="number" inputmode="decimal" min="0" step="1" value="${esc(v)}" data-set="profitHour"></span></label>`};
+  }
+  if(st.type==='app') return {q:'How do clients mostly pay you?', why:'Card fees come off every payment, so they are part of what a treatment costs you.',
+    body:`<div class="choices">${Object.entries(APPS).map(([k,a])=>`<button class="choice" data-act="wiz-app" data-k="${k}" aria-pressed="${s.app===k}">${a.label}<small>${a.note}</small></button>`).join('')}</div>
+      ${s.app==='other'?`<div class="fields"><label class="field">Card fee (%)<span class="hint">It is on your card reader's price list</span><input id="wiz-cardPct" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(Math.round((+s.cardPct||0)*10000)/100)}" data-set="cardPct" data-scale="100"></label>
+        <label class="field">Plus pence per payment<span class="hint">0 if there is none</span><input id="wiz-cardFixed" type="number" inputmode="decimal" min="0" step="1" value="${esc(Math.round((+s.cardFixed||0)*100))}" data-set="cardFixed" data-scale="100"></label></div>`:''}`};
+  if(st.type==='targetq') return {q:'What would you like to take home each month?', why:'We use this to work out how many treatments you need to do. It does not change your prices: those come from your costs and what you want to earn an hour.',
+    body:`<label class="field">Amount each month, after tax<span class="money-in"><input id="wiz-takeHome" type="number" inputmode="decimal" min="0" step="50" value="${esc(s.takeHome)}" data-set="takeHome"></span></label>
+      <div class="chips">${[1000,1500,2000,2500,3000].map(c=>`<button class="chip" data-act="wiz-chip" data-key="takeHome" data-v="${c}" aria-pressed="${+s.takeHome===c}">${gbp0(c)}</button>`).join('')}</div>
+      <div class="fields" style="margin-top:6px">
+      <label class="field">Where you live<select id="wiz-region" data-setsel="region"><option value="ruk" ${s.region!=='sco'?'selected':''}>England, Wales or N. Ireland</option><option value="sco" ${s.region==='sco'?'selected':''}>Scotland</option></select></label></div>`};
+  return quickStepBase(st);
+};
+
+vPrices=function(){
+  const c=compute(state), s=state.setup, be=c.profitRate===0, T=W().many;
+  if(!state.treatments.length) return `<div class="card"><h2>Nothing to price yet</h2><p>Add the ${T} you do and their prices will appear here.</p><button class="btn" data-tab="treatments">Add ${T}</button></div>`;
+  const all=c.treatments, up=all.filter(t=>t.flag==='below'||t.flag==='under'), anyPrice=all.some(t=>+t.price>0), hasBookings=c.bookingsMonth>0, cur=c.atCurrent, team=c.team.hours>0;
+  const ns=(+s.noShow||0)*(1-(+s.deposit||0)), also=[(+s.cardPct||+s.cardFixed)?'card fees':'', c.team.commHours>0?"your self-employed team's share":'', ns>0?'clients who do not turn up':''].filter(Boolean), alsoTxt=also.join(', ').replace(/, ([^,]*)$/,' and $1');
+  const aim= be ? 'covers what it costs you' : `covers what it costs you and makes you ${gbp0(c.profitRate)} an hour`;
+  const head = up.length ? `<section class="card"><div><h2>Put up ${up.length} price${up.length>1?'s':''}</h2><p class="muted">So each one ${aim}.</p></div>
+      <div class="list">${up.map(t=>`<div class="item"><div class="grow"><p style="white-space:normal"><b>${esc(t.name)}</b></p><p class="small muted" style="white-space:normal"><span class="num">${money(t.price)}</span> → <b class="num" style="color:var(--accent)">${money(t.suggested)}</b>${t.flag==='below'?' · costs you more than you charge':''}</p></div><button class="btn small" data-act="use-price" data-id="${t.id}">Use ${money(t.suggested)}</button></div>`).join('')}</div>
+      ${up.length>1?`<button class="btn ghost" data-act="use-all-prices">Use all the suggested prices</button>`:''}</section>`
+    : !anyPrice ? `<section class="card"><div><h2>Your suggested prices</h2><p class="muted">Each one ${aim}.</p></div></section>`
+    : `<section class="card"><div><h2>Your prices are right</h2><p class="muted">Each one ${aim}, or more.</p></div></section>`;
+  const region=s.region==='sco'?'sco':'ruk', yr=Math.max(0,cur.profit*12), keep=(yr-taxOnProfit(yr,region,RULES,taxOpts(s)))/12;
+  const earn = !hasBookings ? `<section class="card"><h3>What you make</h3><p class="muted">Tell us roughly how many of each you do in a week and we will show what you make in a month.</p><button class="btn ghost" data-tab="treatments">Add how many I do</button></section>`
+    : !anyPrice ? ''
+    : `<section class="card"><h3>What you make in a month</h3>
+      <p>About <b class="num">${gbp0(Math.max(0,cur.profit))}</b> before tax, from about ${Math.round(c.bookingsMonth)} ${T}${team?", yours and your team's":''}.</p>
+      <p class="small muted">${cur.profit>0?`About ${gbp0(keep)} of that is yours to take home after tax. `:''}That is after ${W().items}, card fees and the ${gbp0(c.overheads)} a month it costs to run your business.</p></section>`;
+  const p=anyPrice?c.planNow:c.planSug, days=Math.max(1,+s.daysPerWeek||5);
+  const target = `<section class="card"><h3>Your target</h3>
+      ${moneyField('tg-takeHome','What you want to take home each month, after tax','',s.takeHome,'data-set="takeHome"')}
+      ${!(+s.takeHome>0) ? `<p class="muted">Type an amount to see how many ${T} you need to do.</p>`
+       : !p ? `<p class="muted">Add your prices to see how many ${T} you need to do.</p>`
+       : `<p>You need to do about <b class="num">${Math.ceil(p.target)}</b> ${T} a month. That is about <b class="num">${Math.ceil(p.perWeek)}</b> a week, or about <b class="num">${Math.ceil(p.perDay)}</b> a day.</p>
+          ${fitLine(c,p)}
+          ${hasBookings?`<p class="small muted">${team?'You and your team do':'You do'} about ${Math.round(c.bookingsMonth)} a month now${Math.round(c.bookingsMonth)>=Math.ceil(p.target)?', so you are there':`, so you need about ${Math.ceil(p.target)-Math.round(c.bookingsMonth)} more`}.</p>`:''}
+          ${up.length&&c.planSug&&anyPrice&&Math.ceil(c.planSug.target)<Math.ceil(p.target)?`<p class="small muted">If you put those prices up, you only need about ${Math.ceil(c.planSug.target)} a month.</p>`:''}
+          `}
+    </section>`;
+  const numbers=`<section class="card"><h3>Your numbers</h3><p class="small muted">Your suggested prices come from these two. Change them here.</p>
+      ${moneyField('pn-profitHour',`What you want to earn for each hour with a ${W().cust}`,'Type 0 if you only want to cover your costs',c.profitRate,'data-set="profitHour"')}
+      <details class="fold" data-sec="p-costs" ${isOpen('p-costs')?'open':''}><summary><span class="grow">Running costs<small>What you pay to run your business · ${gbp0(overheadsMonth(s))} a month · tap to change</small></span></summary><div class="stack">${costList()}</div></details>
+      <p class="live" id="pn-live">${numbersLine(c)}</p></section>`;
+  const nextCard=s._seenNext?'':`<section class="card"><h3>You are set up. What next?</h3><p class="small muted">Your prices are below. When you are ready, put your first booking in the diary or make a price list to share.</p>
+      <div class="row"><button class="btn small" data-tab="diary">Open the diary</button><button class="btn small ghost" data-act="pl-make">Make my price list</button><button class="btn small ghost" data-act="next-done">Got it</button></div></section>`;
+  const plCard=`<section class="card"><h3>Price list for Instagram or your wall</h3><p class="small muted">Pick a design, then your own wording, colours and what to show.</p><button class="btn ghost" data-act="pl-make">Make my price list</button></section>`;
+  const rows=all.map(t=>{ const [cls,lab]=FLAG[t.flag];
+    return `<details class="fold"><summary><span class="grow">${esc(t.name)}</span><span class="num">${+t.price>0?money(t.price):money(t.suggested)}</span><span class="pill ${cls}">${t.flag==='none'?'Suggested':t.flag==='below'?'Below cost':lab}</span></summary>
+      ${t.flag==='ok'?'':`<div class="prices" style="grid-template-columns:repeat(${+t.price>0?2:1},minmax(0,1fr))">${+t.price>0?`<div><div class="k">Your price</div><div class="v">${money(t.price)}</div></div>`:''}
+        <div class="sugg"><div class="k">Suggested</div><div class="v">${money(t.suggested)}</div></div></div>`}
+      <p class="small muted">It costs you about <b>${gbp(t.cost)}</b> to do: ${gbp(t.productCost)} of ${W().items} and ${gbp(t.timeCost)} towards running your business. Charge less than ${gbp(t.minimum)} and you lose money.</p>
+      <p class="small muted">${t.profitNow==null?`At the suggested price you keep <b>${gbp(t.earnings)}</b> each time`:t.profitNow<0?`At your price you lose <b>${gbp(-t.profitNow)}</b> each time`:`At your price you keep <b>${gbp(t.profitNow)}</b> each time`}${also.length?`, after ${alsoTxt}`:''}.${t.flag==='ok'?(+t.price>t.suggested?` That is ${money(+t.price-t.suggested)} more than you need${be?' to cover your costs':` to earn ${gbp0(c.profitRate)} an hour`}.`:''):t.profitNow!=null?` At ${money(t.suggested)} you would keep ${gbp(t.earnings)}${be?'':`, which works out at the ${gbp0(c.profitRate)} an hour you want`}.`:''}${t.patch?' Needs a patch test.':''}</p>
+      <button class="btn small ghost" data-act="edit-treat" data-id="${t.id}">Change this ${W().one}</button></details>`; }).join('');
+  return `${nextCard}${head}${earn}${target}${numbers}${plCard}
+  ${!s._prodEdited?`<div class="notice info">The cost of your ${W().items} is a typical figure for now. <button class="btn small ghost" data-tab="stock">Check my ${W().items}</button></div>`:''}
+  <section class="stack"><h3>All your prices</h3>${rows}</section>
+  <details class="fold"><summary><span class="grow">How we worked this out</span></summary><div class="stack">
+    <p><b>1. What ${an(W().one)} ${W().one} costs you.</b> The ${W().items} you use on it, plus its share of what you pay to run your business${c.team.people.length?' and pay your team':''}.</p>
+    <p>You pay <b class="num">${gbp0(c.overheads)}</b> a month to run your business and do about <b>${Math.round(c.billable)}</b> hours of ${T} a month, so every hour has to bring in <b class="num">${gbp(c.overheadRate)}</b> just for that.${team&&hasBookings?" That includes your team's working hours: we assume they are as busy as you.":''}${hasBookings?'':' We have assumed a typical working month until you tell us how many you do.'}</p>
+    <p><b>2. What you want to earn.</b> ${be?'You chose to just cover your costs, so nothing is added.':`We add the ${gbp0(c.profitRate)} an hour you want to earn. A half-hour ${W().one} gets half of it.`}</p>
+    <p><b>3. What gets taken off.</b> ${also.length?`We add a little for ${alsoTxt}${ns>0?` (about ${nf(Math.round(ns*1000)/10)}% for no-shows)`:''}, then`:'Then we'} round up to the nearest ${gbp0(+s.roundTo||1)}.${s.vat?' VAT is added on top.':''}</p>
+    <p>Under each ${W().one} is the price where you would make nothing at all. Charge less than that and you lose money.</p>
+    <p>You can change your numbers in 'Your numbers' further up this page.</p>
+    ${p?`<p><b>Your target</b> uses ${anyPrice?'your prices':'the suggested prices'} and how many of each ${W().one} you usually do. Just to cover your running costs you need about ${Math.ceil(p.breakEven)} a month. Changing the target does not change your prices.</p>`:''}
+    <p class="small muted">These are estimates, not tax advice.</p></div></details>
+  ${priceExtras(c)}`;
+};
+
+vMore=function(){
+  const s=state.setup;
+  const num=(key,label,hint,stepv,scale)=>`<label class="field">${label}${hint?`<span class="hint">${hint}</span>`:''}<input id="m-${key}" type="number" inputmode="decimal" min="0" step="${stepv||1}" value="${esc(Math.round((+(s[key]??0))*(scale||1)*1000)/1000)}" data-set="${key}" data-scale="${scale||1}"></label>`;
+  const sec=(key,title,sub,body)=>`<details class="fold" data-sec="${key}" ${isOpen(key)?'open':''}><summary><span class="grow">${title}<small>${sub}</small></span></summary><div class="stack">${body}</div></details>`;
+  const ph=profitHourOf(s), where=s.region==='sco'?'Scotland':'England, Wales or Northern Ireland';
+  return `<section class="stack"><div><h2>More</h2><p class="muted">What you change here saves by itself. Changing your costs or what you earn changes your suggested prices.</p></div>
+  ${sec('help','How do I do that?','Step by step for everything in the app',guideCard())}
+  <div><h3>Your business</h3></div>
+  ${sec('hours','Opening hours',`${openDays()} day${openDays()===1?'':'s'} · ${nf(Math.round(openMinutesWeek()/6)/10)} hours a week`,hoursEditor())}
+  ${sec('costs','Running costs',`What you pay to run your business · ${gbp0(overheadsMonth(s))} a month`,costList())}
+  ${sec('pay','Your target and where you live',`${gbp0(s.takeHome)} a month · ${where}`,`<div class="fields">
+      <label class="field">What you want to take home each month<span class="hint">Does not change your prices</span><span class="money-in"><input id="m-takeHome" type="number" inputmode="decimal" min="0" step="50" value="${esc(s.takeHome)}" data-set="takeHome"></span></label>
+      <label class="field">Where you live<span class="hint">This decides which tax rates we use</span><select id="m-region" data-setsel="region"><option value="ruk" ${s.region!=='sco'?'selected':''}>England, Wales or Northern Ireland</option><option value="sco" ${s.region==='sco'?'selected':''}>Scotland</option></select></label></div>`)}
+  ${sec('pricing','What you earn and card fees',`${ph?gbp0(ph)+' an hour':'Just covering costs'}`,`<div class="fields">
+      <label class="field">What you want to earn for each hour with a ${W().cust}<span class="hint">Type 0 if you only want to cover your costs</span><span class="money-in"><input id="m-profitHour" type="number" inputmode="decimal" min="0" step="1" value="${esc(ph)}" data-set="profitHour"></span></label>
+      ${num('cardPct','Card fee (%)','What your card reader or app takes',0.01,100)}</div>
+      <p class="small muted"><b>Fine tuning.</b> Leave these as they are if you are not sure.</p>
+      <div class="fields">${num('roundTo','Round prices up to the nearest (£)','1 or 5')}${num('cardFixed','Card fee per payment (pence)','',1,100)}
+      ${num('noShow','Clients who do not turn up (%)','',1,100)}${num('deposit','How much of a no-show your deposit covers (%)','0 if you take no deposit',5,100)}
+      ${IND().patch?num('patchValidDays','How long a patch test lasts (days)','Follow your insurer'):''}</div>
+      ${s.vat?`<label class="row small"><input type="checkbox" id="m-vat" data-setbool="vat" checked> I am VAT registered (untick to take VAT off your prices)</label>`:''}`)}
+  <div><h3>Extras</h3><p class="small muted">Most people working alone can skip these.</p></div>
+  ${sec('team','People who work for you',(s.staff||[]).length?`${s.staff.length} on the team`:'Nobody yet',staffEditor())}
+  ${sec('tax','A job or student loan',+s.otherIncome>0||s.studentLoan!=='none'?'Added':'Not added',taxExtraEditor())}
+  ${sec('brand','Your name, logo and colours',esc((s.brand||{}).businessName||'Not set'),brandEditor())}
+  ${sec('lock','Lock the app',lockKey?'On':'Off',lockCard())}
+  <div><h3>Your data</h3></div>
+  ${sec('backup','Back up and restore',s.lastBackup?`Last backup ${fmtDay(s.lastBackup)}`:'No backup yet',`<p class="muted">Everything is kept on this phone only. Save a backup file every so often and keep it somewhere safe, like your email.</p>
+      <div class="row"><button class="btn" data-act="backup-file">Save a backup file</button><label class="btn ghost" style="cursor:pointer">Restore from a file<input type="file" accept=".json,application/json,text/plain" data-restorefile="1" hidden></label></div>
+      <label class="row small"><input type="checkbox" id="bk-photos"> Include receipt photos (makes it much bigger)</label>
+      <details class="fold" data-sec="bk-paste" ${isOpen('bk-paste')?'open':''}><summary><span class="grow">Or copy and paste it<small>If saving a file does not work on your phone</small></span></summary><div class="row"><button class="btn ghost" data-act="backup">Copy backup</button><button class="btn ghost" data-act="restore-open">Restore a backup</button></div></details>`)}
+  ${sec('questions','Answer the questions again','Takes about 2 minutes',`<p class="muted">Your money records, diary and ${W().cust}s stay as they are. You can leave the questions at any time.</p><button class="btn ghost" data-act="rerun-quick">Start the questions</button>`)}
+  ${sec('privacy','Privacy and feedback','How your data is kept',privacyCard())}
+  ${sec('reset','Start again','Delete everything on this phone',`<p class="muted">This deletes everything on this phone, including receipt photos.</p>
+      <button class="btn ${resetArmed?'danger':'ghost'}" data-act="reset">${resetArmed?'Tap again to delete everything':'Delete all my data'}</button>`)}
+  <p class="small muted">Know Your Worth is a test version. Prices and tax are estimates using 2026/27 rates, not tax or financial advice.</p></section>`;
+};
+
+
+
+
+// ===================== MODULE: plain lists and the how-to guide =====================
+// No box keeps a number below its minimum or above its maximum, whatever is typed. Capture phase, so it runs before every other change handler.
+document.addEventListener('change', e=>{ const el=e.target; if(!el||el.type!=='number'||el.value==='') return;
+  const v=+el.value; if(el.min!==''&&v<+el.min) el.value=el.min; else if(el.max!==''&&v>+el.max) el.value=el.max; }, true);
+
+// Fold-out sections stay open through a redraw, however many are open at once (the older single 'moreOpen' still works for jumping to one).
+const openSecs=new Set(), isOpen=k=>moreOpen===k||openSecs.has(k);
+document.addEventListener('toggle', e=>{ const d=e.target; if(d&&d.dataset&&d.dataset.sec){ if(d.open) openSecs.add(d.dataset.sec); else openSecs.delete(d.dataset.sec); } }, true);
+
+// ---- running costs as a plain list (set-up, the Prices screen and More all show this one list) ----
+const PERIOD=[['weekly','a week'],['monthly','a month'],['yearly','a year']];
+function costRow(o){ const one=o.group==='equipment';
+  return `<div class="item" style="flex-wrap:wrap;gap:6px 8px">
+    ${o.custom?`<input id="oh-name-${o.id}" aria-label="What is it?" placeholder="What is it?" value="${esc(o.name)}" data-oh="${o.id}" data-f="name" style="flex:1 1 60%">`:`<label for="oh-amt-${o.id}" style="flex:1 1 60%;font-weight:600">${esc(o.name)}</label>`}
+    <button class="iconbtn" aria-label="I do not pay for ${esc(o.name||'this')}. Remove it" data-act="oh-del" data-id="${o.id}">✕</button>
+    <span class="money-in" style="flex:0 0 120px"><input id="oh-amt-${o.id}" type="number" inputmode="decimal" min="0" step="1" value="${esc(o.amount)}" aria-label="${esc(o.name||'Cost')}, amount" data-oh="${o.id}" data-f="amount"></span>
+    ${one?`<span class="small muted">to buy</span>`:`<select aria-label="How often you pay for ${esc(o.name||'this')}" data-ohp="${o.id}" style="flex:0 0 120px">${PERIOD.map(([k,l])=>`<option value="${k}" ${o.group===k?'selected':''}>${l}</option>`).join('')}</select>`}
+  </div>`; }
+// how the monthly figure is made up, in words
+function costWorking(s){ const sum=g=>(s.overheads||[]).filter(o=>o.group===g).reduce((a,o)=>a+(+o.amount||0),0), w=sum('weekly'), m=sum('monthly'), y=sum('yearly'), e=sum('equipment');
+  const parts=[w?`${gbp0(w)} a week`:'', m?`${gbp0(m)} a month`:'', y?`${gbp0(y)} a year`:''].filter(Boolean), reg=parts.join(', ').replace(/, ([^,]*)$/,' and $1');
+  return reg||e ? `That is ${reg||'nothing regular'}${e?`, plus ${gbp0(e)} of one-offs divided over how long they last`:''}.` : 'Nothing added yet.'; }
+function costList(){ const s=state.setup, list=s.overheads||[];
+  return `<div class="stack" style="gap:6px"><h3 style="font-size:1rem">What you pay regularly</h3>
+      <div class="list">${list.filter(o=>o.group!=='equipment').map(costRow).join('')}</div>
+      <button class="btn small ghost" data-act="costq-add" data-g="monthly">+ Add another cost</button></div>
+    <div class="stack" style="gap:6px"><h3 style="font-size:1rem">One-offs</h3><p class="small muted">Things you buy once and keep using, like a lamp, a couch or a trolley.</p>
+      <div class="list">${list.filter(o=>o.group==='equipment').map(costRow).join('')}</div>
+      <button class="btn small ghost" data-act="costq-add" data-g="equipment">+ Add a one-off</button></div>
+    <p class="live" data-live="costs">That comes to about <span class="num">${gbp0(overheadsMonth(s))}</span> a month.</p>
+    <p class="small muted" data-live="costwork">${costWorking(s)}</p>`; }
+// the line under 'Your numbers' on Prices: what her numbers do to her prices, right where she is typing
+function numbersLine(c){ const up=c.treatments.filter(t=>t.flag==='below'||t.flag==='under').length;
+  return !c.treatments.some(t=>+t.price>0) ? 'Your suggested prices are in the list below.'
+    : up ? `With these numbers, ${up} of your prices ${up===1?'is':'are'} lower than suggested. They are listed at the top of this page.` : 'With these numbers, your prices cover your costs and what you want to earn.'; }
+function liveNumbers(){ const s=state.setup;
+  document.querySelectorAll('[data-live="costs"]').forEach(n=>{ n.innerHTML=`That comes to about <span class="num">${gbp0(overheadsMonth(s))}</span> a month.`; });
+  document.querySelectorAll('[data-live="costwork"]').forEach(n=>{ n.textContent=costWorking(s); });
+  const n=document.getElementById('pn-live'); if(n) n.textContent=numbersLine(compute(state)); }
+// figures move as she types, without waiting for her to leave the box (the full redraw still happens when she does)
+document.addEventListener('input', e=>{ const el=e.target, d=(el&&el.dataset)||{};
+  if(d.oh&&d.f==='amount'){ const o=(state.setup.overheads||[]).find(x=>x.id===d.oh); if(o){ o.amount=Math.max(0,+el.value||0); liveNumbers(); } }
+  else if(d.set==='profitHour'&&document.getElementById('pn-live')){ state.setup.profitHour=Math.max(0,+el.value||0); liveNumbers(); } });
+
+// ---- small helpers the screens share ----
+const payDefault=()=>(+state.setup.cardPct||+state.setup.cardFixed)?'Card':'Cash';       // how she is usually paid, from her card fee answer
+const PATCH_PILL={ok:['ok','Patch test OK'],soon:['info','Patch tested, wait 48 hours'],expired:['warn','Patch test out of date'],reaction:['bad','Reacted to patch test']};
+let delArmed=false;                                                                      // 'Delete' on a sheet has been tapped once
+const closeSheet=()=>{ bkDraft=null; holDraft=null; editDraft=null; delArmed=false; document.getElementById('overlay').hidden=true; };
+// Hands a file to the phone: Claude's own Save box when opened inside Claude, otherwise an ordinary download.
+async function saveFile(name,blob){ const dl=await plClaudeSave(); if(dl){ try{ await dl.save({filename:name,data:blob}); return true; }catch(e){ return false; } }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000); return true; }
+async function backupFile(){ const copy=JSON.parse(JSON.stringify(state));
+  if((document.getElementById('bk-photos')||{}).checked){ copy._receipts={}; for(const e of state.expenses) if(e.receiptId){ try{ const b=await getReceipt(e.receiptId); if(b) copy._receipts[e.receiptId]=await blobToDataURL(b); }catch(_){} } }
+  if(await saveFile(`know-your-worth-backup-${todayStr()}.json`,new Blob([JSON.stringify(copy)],{type:'application/json'}))){ state.setup.lastBackup=todayStr(); save(); render(); toast('Backup file saved. Keep it somewhere safe'); } }
+
+document.addEventListener('click', e=>{ const el=e.target.closest&&e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act, s=state.setup;
+  if(a==='bk-del-ask'||a==='ed-del-ask'){ delArmed=true; a==='bk-del-ask'?renderBkForm():renderEdit(); }                   // first tap only arms it
+  else if(a==='bk-del'||a==='del-income'||a==='del-expense'){ closeSheet(); }                                             // the entry is gone, so shut its sheet
+  else if(a==='bk-close'||a==='bk-edit'||a==='bk-new'||a==='inc-edit'||a==='exp-edit'){ if(delArmed){ delArmed=false; if(a!=='bk-close'){ bkDraft?renderBkForm():renderEdit(); } } }
+  else if(a==='bk-reopen'){ const b=state.bookings.find(x=>x.id===el.dataset.id); if(!b) return; if(b.status==='done') useStock(b,-1);
+    state.income=state.income.filter(x=>x.bookingId!==b.id); b.status='booked'; delete b.method; save(); render(); toast('Put back as booked'); }
+  else if(a==='wiz-exit'){ view='prices'; render(); window.scrollTo(0,0); }
+  else if(a==='next-done'){ s._seenNext=true; save(); render(); }
+  else if(a==='prod-go'){ view='stock'; openProd=el.dataset.id; render(); window.scrollTo(0,0); const n=document.getElementById('pc-'+el.dataset.id); if(n){ n.focus(); n.select(); } }
+  else if(a==='add-treat'){ const t=state.treatments[state.treatments.length-1], n=t&&document.getElementById('tn-'+t.id); if(n){ n.focus(); n.select(); } }
+  else if(a==='add-product'){ const p=state.products[state.products.length-1], n=p&&document.getElementById('pn-'+p.id); if(n){ n.focus(); n.select(); } }
+  else if(a==='backup-file'){ backupFile(); }
+  else if(a==='backup'){ setTimeout(()=>{ if(view==='more') render(); },500); }                                           // so the row says when the last backup was
+  else if(a==='guide-go'){ const [v,k]=el.dataset.go.split(':');
+    if(v==='wizard'){ wizFull=false; step=1; view='wizard'; } else { view=v; if(k){ moreOpen=k; openSecs.add(k); } }
+    render(); window.scrollTo(0,0); const d=k&&document.querySelector(`details[data-sec="${k}"]`); if(d) d.scrollIntoView({block:'start'}); }
+});
+document.addEventListener('submit', ()=>{ delArmed=false; });
+document.addEventListener('change', async e=>{ const el=e.target, d=(el&&el.dataset)||{}, s=state.setup;
+  if(d.ohp){ const o=(s.overheads||[]).find(x=>x.id===d.ohp); if(o){ o.group=el.value; s._ohEdited=true; save(); render(); } }
+  else if(d.setbool==='trackStock'&&el.checked&&!s._stockSet){ state.products.forEach(p=>{ p.inStock=0; p.reorderAt=0; }); s._stockSet=true; save(); render(); toast('Now type in how many of each you have'); } // the counts it came with were made up
+  else if(d.restorefile&&el.files&&el.files[0]){ const text=await el.files[0].text(); document.querySelector('[data-act="restore-open"]').click();
+    document.getElementById('restorebox').value=text; document.querySelector('[data-act="restore-do"]').click(); } });
+// Enter in an 'add' box presses the button beside it
+document.addEventListener('keydown', e=>{ const el=e.target; if(e.key!=='Enter'||!el||el.tagName!=='INPUT'||el.form) return;
+  const b=el.nextElementSibling; if(b&&b.tagName==='BUTTON'&&b.dataset.act&&/add|new/.test(b.dataset.act)){ e.preventDefault(); b.click(); } });
+
+// ---- How to do everything. Names in 'single quotes' are the words on the buttons, so keep them exact. The third item is where 'Take me there' goes. ----
+const GUIDE=[
+['Getting started',[
+  ['Set the app up',"Answer the short questions when you first open it. It takes about two minutes. To do them again, tap More, then 'Answer the questions again'. You can leave them at any time.",'more:questions'],
+  ['Try it with made-up figures',"On the very first screen, tap 'Try it with example figures'."],
+  ['Find your way around',"The five buttons along the bottom are Prices, Diary, Money, Clients and More. Prices and Money have extra tabs along the top."]]],
+['Prices',[
+  ['See what to charge',"Tap Prices. Each treatment shows your price and a label: Good, Under-priced or Below cost. Tap a treatment to see what it costs you and what you keep.",'prices'],
+  ['Use a suggested price',"On Prices, the box at the top lists the prices to put up. Tap the Use button beside one, or 'Use all the suggested prices'. An Undo button shows for a few seconds.",'prices'],
+  ['Change a price, a time or how many you do',"Tap Prices, then Treatments at the top, then the treatment. Change 'Your price', 'Minutes with the client' or 'How many a week', then tap Done.",'treatments'],
+  ['Add or remove a treatment',"Tap Prices, then Treatments. The button at the bottom adds your own. To remove one, open it and tap the Remove button.",'treatments'],
+  ['Say which products a treatment uses',"Open the treatment under Treatments. Under 'Products it uses', pick a product and tap Add. Then say how many uses you get from one bottle or pack.",'treatments'],
+  ['Change what a product costs',"Tap Prices, then Products, then the product. Change 'What one costs you' and tap Done. The button at the bottom adds a new product.",'stock'],
+  ['Keep count of your stock',"On Products, tick 'Keep count of how many I have left, and tell me when to reorder'. Type in how many of each you have, then use the minus and plus buttons as you use things up or buy more.",'stock'],
+  ['Change your running costs',"On Prices, under 'Your numbers', tap 'Running costs'. Type over any figure, choose whether you pay it by the week, month or year, and tap the cross on anything you do not pay. The same list is under More.",'prices'],
+  ['Change what you earn an hour',"On Prices, under 'Your numbers', type a new amount. Your suggested prices change to match.",'prices'],
+  ['Set a monthly target',"On Prices, under 'Your target', type what you want to take home each month. It tells you how many treatments that takes. It does not change your prices.",'prices'],
+  ['Make a price list picture',"On Prices, tap 'Make my price list'. Pick a design and a shape (Square or Portrait for an Instagram post, Story for a story). Add a logo or photo, change the wording and colours, and untick anything you do not want on it. A long list is split over two or more pictures to post together. Then tap 'Save or share'.",'prices'],
+  ['See how the prices are worked out',"Near the bottom of Prices, tap 'How we worked this out'.",'prices']]],
+['Diary',[
+  ['Add a booking',"Tap Diary, then '+ Booking' on the day. Pick the treatment, the time and the client, then tap 'Save booking'. For someone new, leave Client on 'New client (type below)' and type their name.",'diary'],
+  ['Understand the warnings',"The booking form warns you if you are closed, on a break, on holiday or double-booked, or if the client needs a patch test. Read it, then tap 'Save anyway' if you still want the booking.",'diary'],
+  ['See another week',"Use the arrows at the top of the diary. 'This week' brings you back.",'diary'],
+  ['Mark a booking as paid',"On the booking, next to 'Paid by', tap Card, Cash or Transfer. It is added to your money in for you. Tapped the wrong one? Tap 'Undo this' on the booking.",'diary'],
+  ['Record a no-show or a cancellation',"On the booking, tap No-show or Cancelled. A no-show keeps any deposit. No-show only appears once the day has come.",'diary'],
+  ['Change or delete a booking',"Tap Change on the booking. To delete it, tap 'Delete this booking' at the bottom of that sheet, then tap it again.",'diary'],
+  ['See the whole month',"At the top of the Diary, tap Month. Each day shows how many bookings it has. Tap a day to see them. Tap Week to go back.",'diary'],
+  ['Put a booking in your phone calendar',"On the booking, tap Calendar, then 'Google Calendar' or 'Apple or other calendar'. Your phone then reminds you like any other event.",'diary'],
+  ['Let clients book online',"At the bottom of Diary, under 'Let clients book online', type your mobile number and tap 'Share my booking link'. Send it to clients or put it in your Instagram bio. They pick a treatment and a free time and send you a request. Tap the link in their message to add it to your diary.",'diary'],
+  ['Send a reminder',"Tap Reminder on the booking, then 'Copy message'. Paste it into a text, WhatsApp or email. The app does not send it for you.",'diary'],
+  ['Record a deposit',"Type it in 'Deposit taken' when you make the booking.",'diary'],
+  ['Book a holiday or a day off',"At the bottom of Diary, tap '+ Add time off'. Pick the dates, then tap Save.",'diary']]],
+['Money',[
+  ['Record money coming in',"Tap Money. Under the quick add heading, tap the treatment you just did. For anything else, open 'Add money in'. A booking you marked as paid is already there, so do not add it twice.",'money'],
+  ['Record something you paid for',"Tap Money and open 'Add money out'. Fill in the date, the amount, what it was for and what kind of cost. Add a receipt photo if you have one.",'money'],
+  ['Record a business trip in your car',"Tap Money and open 'Car trips'. Type the date, the miles there and back and where you went, then tap 'Add trip'.",'money'],
+  ['Fix or delete an entry',"Find it in the list on Money and tap Change. To delete it, tap 'Delete this entry' on that sheet, then tap it again.",'money'],
+  ['See how much to put aside for tax',"Tap Money, then Tax at the top. 'Your tax pot' shows the bill for the year and how much to put aside each month. Type what you have saved in 'Money you have put aside so far'.",'taxyear'],
+  ['Get your figures for a tax return or an accountant',"Tap Money, then Tax. Under 'For your tax return (Self Assessment)', tap 'Copy summary' and paste it into a message or email. 'Copy this list' on the Money lists copies every entry.",'taxyear']]],
+['Clients',[
+  ['Add a client',"Tap Clients, type their name in the box at the top and tap Add. Booking someone new in the diary adds them too.",'clients'],
+  ['See or change the details of a client',"Tap Clients, then Open beside their name. Phone, email and notes are under Details, and their visits are just below.",'clients'],
+  ['Record a patch test',"Open the client. Under 'Patch tests', pick the date, the product and the result, then tap 'Add patch test'.",'clients'],
+  ['Fill in a consultation form',"Open the client. Under 'Consultation form', fill in the answers, let them sign with a finger, then tap 'Save signature and answers'.",'clients'],
+  ['Copy emails for a newsletter',"On Clients, 'Copy email list for a newsletter' appears once a client has an email and has ticked 'Happy to get offers and reminders' on their consultation form.",'clients'],
+  ['Delete a client',"Open the client and tap 'Delete this client' at the bottom.",'clients']]],
+['Settings and your data',[
+  ['Change your opening hours',"Tap More, then 'Opening hours'. Tick the days you work and set the times. '+ Break' adds a lunch break. The days you take off a year are at the bottom.",'more:hours'],
+  ['Add someone who works for you',"Tap More, then 'People who work for you', then '+ Add a person'. Tick 'Works different days or times from your opening hours' to give them their own hours.",'more:team'],
+  ['Tell it about a job or a student loan',"Tap More, then 'A job or student loan'. This keeps the tax estimate right.",'more:tax'],
+  ['Change card fees',"Tap More, then 'What you earn and card fees'.",'more:pricing'],
+  ['Say you live in Scotland',"Tap More, then 'Your target and where you live'.",'more:pay'],
+  ['Add your name, logo and colours',"Tap More, then 'Your name, logo and colours'.",'more:brand'],
+  ['Back up your data',"Tap More, then 'Back up and restore', then 'Save a backup file'. Keep the file somewhere safe, like your email. Everything is kept on this phone only, so do this often.",'more:backup'],
+  ['Get your data back, or move to a new phone',"Open the app on the phone, tap More, then 'Back up and restore', then 'Restore from a file' and pick your backup file.",'more:backup'],
+  ['Lock the app',"Tap More, then 'Lock the app' and choose a passcode. If you forget it, nobody can get your data back.",'more:lock'],
+  ['Delete everything',"Tap More, then 'Start again', then 'Delete all my data'. Tap it a second time to confirm.",'more:reset']]]
+];
+function guideCard(){ return GUIDE.map(([g,qs])=>`<details class="fold"><summary><span class="grow">${g}</span></summary><div class="stack">${qs.map(([q,a,go])=>`<div><p><b>${esc(q)}.</b> ${esc(a)}</p>${go?`<button class="btn small ghost" data-act="guide-go" data-go="${go}">Take me there</button>`:''}</div>`).join('')}</div></details>`).join(''); }
+
+UNDOABLE.add('hr-copy'); UNDOABLE.add('bk-reopen'); // both can be undone from the bar at the bottom
+
+// What she earns an hour is not asked in set-up (beginners could not answer it). It starts at £20 and is changed under 'Your numbers' on Prices.
+const wizStepsAll=wizSteps; wizSteps=function(){ return wizStepsAll().filter(x=>x.type!=='profitq'); };
+
+// ---- diary: a month view, today standing out, and adding a booking to her phone's calendar ----
+let diaryMode='week', diaryMonth=todayStr().slice(0,7)+'-01';
+const diaryToggle=()=>`<div class="chips" role="group" aria-label="Show the diary by"><button class="chip" data-act="dy-mode" data-v="week" aria-pressed="${diaryMode==='week'}">Week</button><button class="chip" data-act="dy-mode" data-v="month" aria-pressed="${diaryMode==='month'}">Month</button></div>`;
+function vMonth(){ const d0=dt(diaryMonth), y=d0.getFullYear(), mo=d0.getMonth(), n=new Date(y,mo+1,0).getDate(), lead=(d0.getDay()+6)%7, ds=i=>`${y}-${pad2(mo+1)}-${pad2(i)}`;
+  const cell=i=>{ const x=ds(i), bk=state.bookings.filter(b=>b.date===x&&b.status!=='cancelled').length, open=dayMins(hoursFor('me')[dayIdx(x)])>0, off=onHoliday('me',x);
+    return `<button class="mday${x===todayStr()?' today':''}${open&&!off?'':' shut'}" data-act="dy-day" data-date="${x}" aria-label="${fmtDay(x)}${bk?`, ${bk} booking${bk>1?'s':''}`:''}${off?', you are off':!open?', closed':''}"><span>${i}</span>${bk?`<span class="c">${bk}</span>`:off?'<span class="o">Off</span>':''}</button>`; };
+  return `<section class="stack"><div class="row" style="justify-content:space-between"><div><h2>Diary</h2><p class="muted">${d0.toLocaleDateString('en-GB',{month:'long',year:'numeric'})}</p></div>
+    <div class="row"><button class="btn small ghost" data-act="dy-prev" aria-label="Previous month">‹</button><button class="btn small ghost" data-act="dy-today">This month</button><button class="btn small ghost" data-act="dy-next" aria-label="Next month">›</button></div></div>
+    ${diaryToggle()}
+    <div class="month">${['M','T','W','T','F','S','S'].map(h=>`<span class="mhead" aria-hidden="true">${h}</span>`).join('')}${'<span></span>'.repeat(lead)}${[...Array(n)].map((_,i)=>cell(i+1)).join('')}</div>
+    <p class="small muted">The number on a day is how many bookings it has. Tap a day to see them.</p></section>`; }
+const vDiaryWeek=vDiary;
+vDiary=function(){ return diaryMode==='month'?vMonth():vDiaryWeek().replace('aria-label="Next week">›</button></div></div>','aria-label="Next week">›</button></div></div>'+diaryToggle()); };
+// the booking in her phone's calendar: Google Calendar link, or a calendar file for Apple, Outlook and the rest
+function calTimes(b){ const s=dt(b.date); const [h,m]=b.time.split(':').map(Number); s.setHours(h,m,0,0); const e=new Date(s.getTime()+(+b.mins||bkMins(b)||60)*60000);
+  const f=d=>`${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}T${pad2(d.getHours())}${pad2(d.getMinutes())}00`; return [f(s),f(e)]; }
+function calText(b){ const cl=clientById(b.clientId); return {title:`${bookingLabel(b)}${cl?' · '+cl.name:''}`, details:`${gbp(+b.price)}${+b.deposit?`, deposit ${gbp(+b.deposit)}`:''}${b.notes?`. ${b.notes}`:''}`}; }
+function showCal(b){ const [s,e]=calTimes(b), t=calText(b), o=document.getElementById('overlay');
+  const g=`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(t.title)}&dates=${s}/${e}&details=${encodeURIComponent(t.details)}&ctz=Europe/London`;
+  o.innerHTML=`<div class="card" style="max-width:480px;width:100%"><div class="treat-head"><h3>Add to my calendar</h3><button class="iconbtn" aria-label="Close" data-act="bk-close">✕</button></div>
+    <p class="small muted">${esc(t.title)}, ${fmtDay(b.date)} at ${fmtT(b.time)}. Your phone will remind you like any other event. If you change the booking here, change it in your calendar too.</p>
+    <a class="btn" style="text-decoration:none;text-align:center" target="_blank" rel="noopener" href="${g}">Google Calendar</a>
+    <button class="btn ghost" data-act="cal-ics" data-id="${b.id}">Apple or other calendar</button></div>`; o.hidden=false; }
+function calFile(b){ const [s,e]=calTimes(b), t=calText(b), x=v=>String(v).replace(/[\\;,]/g,m=>'\\'+m).replace(/\n/g,'\\n'), now=new Date().toISOString().replace(/[-:]/g,'').slice(0,15)+'Z';
+  return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Know Your Worth//EN','BEGIN:VEVENT',`UID:${b.id}@knowyourworth`,`DTSTAMP:${now}`,`DTSTART:${s}`,`DTEND:${e}`,`SUMMARY:${x(t.title)}`,`DESCRIPTION:${x(t.details)}`,'END:VEVENT','END:VCALENDAR'].join('\r\n'); } // local times, so the phone reads them as UK time
+document.addEventListener('click', async e=>{ const el=e.target.closest&&e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act;
+  if(a==='dy-mode'){ diaryMode=el.dataset.v; if(diaryMode==='month') diaryMonth=diaryWeek.slice(0,7)+'-01'; render(); }
+  else if(a==='dy-day'){ const x=el.dataset.date; diaryMode='week'; diaryWeek=weekStart(x); render(); const c=document.getElementById('day-'+x); if(c) c.scrollIntoView({block:'start'}); }
+  else if(diaryMode==='month'&&view==='diary'&&(a==='dy-prev'||a==='dy-next'||a==='dy-today')){ e.stopImmediatePropagation(); const d=dt(diaryMonth);
+    if(a==='dy-today') diaryMonth=todayStr().slice(0,7)+'-01'; else { d.setDate(1); d.setMonth(d.getMonth()+(a==='dy-next'?1:-1)); diaryMonth=`${d.getFullYear()}-${pad2(d.getMonth()+1)}-01`; } render(); }
+  else if(a==='bk-cal'){ const b=state.bookings.find(x=>x.id===el.dataset.id); if(b) showCal(b); }
+  else if(a==='cal-ics'){ const b=state.bookings.find(x=>x.id===el.dataset.id); if(!b) return;
+    if(await plClaudeSave()){ toast('Inside Claude, use Google Calendar, or open the app from its web address'); return; } // Claude does not hand over calendar files
+    const a2=document.createElement('a'); a2.href=URL.createObjectURL(new Blob([calFile(b)],{type:'text/calendar'})); a2.download='booking.ics'; a2.click(); setTimeout(()=>URL.revokeObjectURL(a2.href),5000); }
+}, true);
+
+// ---- online booking: a link clients open to pick a treatment and a free time ----
+// No server: her free times travel inside the link (after the #, so they are never sent to any website), and the
+// client's request comes back to her by WhatsApp, text or email with a link that adds it to her diary.
+// shortcut: the link is a snapshot of her free times when she made it; upgrade to live times with the server add-on.
+const APP_URL=()=>/github\.io$|localhost$/.test(location.hostname)?location.origin+location.pathname:'https://dannyzak23.github.io/know-your-worth/';
+const b64e=o=>btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const b64d=s=>{ try{ s=s.replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4) s+='='; return JSON.parse(decodeURIComponent(escape(atob(s)))); }catch(e){ return null; } };
+const bookPage=()=>({days:14,phone:'',email:'',...(state.setup.bookPage||{})});
+function freeTimes(x){ const h=hoursFor('me')[dayIdx(x)]; if(!(dayMins(h)>0)||onHoliday('me',x)) return [];
+  const busy=state.bookings.filter(b=>b.date===x&&b.staffId==='me'&&b.status!=='cancelled').map(b=>[toMin(b.time),toMin(b.time)+(+b.mins||0)+(+(svc(b.serviceId)||{}).prepMin||0)]);
+  if(breakMins(h)>0) busy.push([toMin(h.bFrom),toMin(h.bTo)]);
+  let free=[[toMin(h.from),toMin(h.to)]];
+  busy.forEach(([s,e])=>{ free=free.flatMap(([a,b])=>e<=a||s>=b?[[a,b]]:[[a,Math.min(s,b)],[Math.max(e,a),b]].filter(([p,q])=>q-p>=15)); });
+  return free; }
+const slots=(free,len)=>free.flatMap(([a,b])=>{ const o=[]; for(let t=Math.ceil(a/15)*15;t+len<=b;t+=15) o.push(t); return o; });
+function bookLink(){ const bp=bookPage(), c=compute(state), days=[];
+  for(let i=1;i<=bp.days;i++){ const x=addDays(todayStr(),i), f=freeTimes(x); if(f.length) days.push([x,f]); }
+  return APP_URL()+'#book='+b64e({b:(state.setup.brand||{}).businessName||'',t:c.treatments.filter(t=>!t.addon).map(t=>[t.id,t.name,+t.price||t.suggested,+t.clientMin||0,+t.prepMin||0]),d:days,w:bp.phone,e:bp.email,m:todayStr()}); }
+function bookCard(){ const bp=bookPage();
+  return `<article class="card"><h3>Let clients book online</h3>
+    <p class="small muted">Share a link. Clients pick a treatment and a free time, and it sends you the request by WhatsApp, text or email. Tap the link in their message to add it to your diary.</p>
+    <label class="field">Your mobile number<span class="hint">Requests come to this by WhatsApp or text</span><input id="bp-phone" type="tel" autocomplete="tel" value="${esc(bp.phone)}" data-bp="phone"></label>
+    <label class="field">Your email<span class="hint">Optional</span><input id="bp-email" type="email" autocomplete="email" value="${esc(bp.email)}" data-bp="email"></label>
+    <label class="field">How far ahead clients can book<select id="bp-days" data-bp="days">${[[7,'1 week'],[14,'2 weeks'],[28,'4 weeks']].map(([v,l])=>`<option value="${v}" ${+bp.days===v?'selected':''}>${l}</option>`).join('')}</select></label>
+    <div class="row"><button class="btn" data-act="bp-share">Share my booking link</button><button class="btn ghost" data-act="bp-preview">See what clients see</button></div>
+    <p class="small muted">The link shows your free times as they are when you share it, so share a fresh one when your diary changes, say once a week. Nothing is booked until you add it.</p></article>`; }
+
+// ---- what the client sees ----
+let BK=null, bf={t:null,d:null,time:null,name:'',phone:'',note:'',sent:false};
+function bookFace(){ const B=BK, live=B.d.filter(([x])=>x>todayStr()), tr=B.t.find(t=>t[0]===bf.t), len=tr?tr[3]+tr[4]:0;
+  const head=`<div><h2>${esc(B.b||'Book an appointment')}</h2><p class="muted">Choose a treatment and a time, then send your request.</p></div>`;
+  if(!live.length) return `<section class="stack">${head}<div class="notice warn">This booking link is out of date. Send a message to ask for a time.</div></section>`;
+  const days=tr?live.filter(([,f])=>slots(f,len).length):[], day=days.find(([x])=>x===bf.d), times=day?slots(day[1],len):[];
+  return `<section class="stack">${head}
+  <article class="card"><h3>1. Choose a treatment</h3><div class="choices">${B.t.map(t=>`<button class="choice" data-act="bf-t" data-v="${esc(t[0])}" aria-pressed="${bf.t===t[0]}">${esc(t[1])}<small>${money(t[2])} · about ${t[3]} min</small></button>`).join('')}</div></article>
+  ${tr?`<article class="card" id="bf-days"><h3>2. Choose a day</h3>${days.length?`<div class="chips">${days.map(([x])=>`<button class="chip" data-act="bf-d" data-v="${x}" aria-pressed="${bf.d===x}">${fmtDay(x)}</button>`).join('')}</div>`:'<p class="muted">No free times for this one at the moment. Send a message to ask.</p>'}</article>`:''}
+  ${day?`<article class="card" id="bf-times"><h3>3. Choose a time</h3><div class="chips">${times.map(t=>`<button class="chip" data-act="bf-time" data-v="${t}" aria-pressed="${bf.time===t}">${fmtT(fromMin(t))}</button>`).join('')}</div></article>`:''}
+  ${day&&bf.time!=null?`<article class="card" id="bf-you"><h3>4. Your details</h3>
+    <label class="field">Your name<input id="bf-name" autocomplete="name" value="${esc(bf.name)}" data-bf="name"></label>
+    <label class="field">Your mobile number<input id="bf-phone" type="tel" autocomplete="tel" value="${esc(bf.phone)}" data-bf="phone"></label>
+    <label class="field">Anything we should know?<span class="hint">Optional</span><input id="bf-note" value="${esc(bf.note)}" data-bf="note"></label>
+    <p class="live">${esc(tr[1])}, ${fmtDay(bf.d)} at ${fmtT(fromMin(bf.time))}, ${money(tr[2])}</p>
+    <div class="stack">${B.w?`<button class="btn" data-act="bf-send" data-via="wa">Send by WhatsApp</button><button class="btn ghost" data-act="bf-send" data-via="sms">Send by text</button>`:''}${B.e?`<button class="btn ghost" data-act="bf-send" data-via="email">Send by email</button>`:''}</div>
+    ${bf.sent?`<div class="notice ok">Once you have sent the message, that is it. ${esc(B.b||'They')} will reply to confirm.</div>`:'<p class="small muted">This sends a booking request. It is not booked until you hear back.</p>'}</article>`:''}
+  <p class="small muted">Free times as of ${fmtDay(B.m)}.</p></section>`; }
+function bfMessage(){ const B=BK, tr=B.t.find(t=>t[0]===bf.t), n=bf.name.trim(), p=bf.phone.trim(), o=bf.note.trim();
+  const link=location.origin+location.pathname+'#add='+b64e({t:bf.t,n:tr[1],d:bf.d,h:fromMin(bf.time),c:n,p,o});
+  return `Hi${B.b?' '+B.b:''}, I would like to book ${tr[1]} on ${fmtDay(bf.d)} at ${fmtT(fromMin(bf.time))}.\nName: ${n}${p?`\nPhone: ${p}`:''}${o?`\nNote: ${o}`:''}\n\nTo add this to your diary, tap: ${link}`; }
+const HASH=(typeof location!=='undefined'&&location.hash)||'';
+if(HASH.startsWith('#book=')){ const d=b64d(HASH.slice(6)); if(d&&Array.isArray(d.t)&&Array.isArray(d.d)){ BK=d;
+  render=function(){ ['header','#bottomnav'].forEach(q=>{ const n=document.querySelector(q); if(n) n.hidden=true; }); document.title=(BK.b||'Book')+' · Book an appointment'; document.getElementById('main').innerHTML=bookFace(); }; } }
+
+// ---- her side: a request link adds the booking in one tap ----
+let addReq=null;
+function showAdd(A){ const t=svc(A.t), o=document.getElementById('overlay'), w=t?bkWarnings({date:A.d,time:A.h,staffId:'me',serviceId:t.id,addons:[],clientId:''}):[]; addReq=A;
+  o.innerHTML=`<div class="card" style="max-width:480px;width:100%"><h3>Booking request</h3>
+    <p><b>${esc(A.c||'Someone')}</b> would like ${esc(A.n||'a booking')} on ${fmtDay(A.d)} at ${fmtT(A.h)}.</p>${A.p?`<p class="small muted">Phone: ${esc(A.p)}</p>`:''}${A.o?`<p class="small muted">Note: ${esc(A.o)}</p>`:''}
+    ${t?'':`<div class="notice warn">${esc(A.n||'That treatment')} is not in your list any more, so it cannot be added. Reply to them instead.</div>`}${w.map(x=>`<div class="notice warn">${esc(x)}</div>`).join('')}
+    <div class="row">${t?'<button class="btn" data-act="add-req">Add to my diary</button>':''}<button class="btn ghost" data-act="add-req-no">Not now</button></div>
+    <p class="small muted">Remember to reply to them to confirm.</p></div>`; o.hidden=false; }
+if(HASH.startsWith('#add=')){ const A=b64d(HASH.slice(5)); if(A&&A.d&&A.h) setTimeout(function tryAdd(){ if(view==='lock'){ setTimeout(tryAdd,1000); return; } showAdd(A); },0); }
+function addRequest(A){ const t=svc(A.t); if(!t) return null; const nm=(A.c||'').trim();
+  let cl=nm&&state.clients.find(c=>c.name.trim().toLowerCase()===nm.toLowerCase()); if(!cl&&nm){ cl={id:uid(),name:nm,phone:A.p||'',patchTests:[]}; state.clients.push(cl); } else if(cl&&A.p&&!cl.phone) cl.phone=A.p;
+  const d={date:A.d,time:A.h,staffId:'me',serviceId:t.id,addons:[]}, b={id:uid(),...d,clientId:cl?cl.id:'',mins:bkMins(d),price:bkAutoPrice(d),deposit:0,notes:A.o||'',status:'booked'};
+  state.bookings.push(b); return b; }
+
+document.addEventListener('click', e=>{ const el=e.target.closest&&e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act, v=el.dataset.v;
+  if(a==='bf-t'||a==='bf-d'||a==='bf-time'){ if(a==='bf-t'){ bf.t=v; bf.d=null; bf.time=null; } else if(a==='bf-d'){ bf.d=v; bf.time=null; } else bf.time=+v;
+    render(); const n=document.getElementById(a==='bf-t'?'bf-days':a==='bf-d'?'bf-times':'bf-you'); if(n) n.scrollIntoView({behavior:'smooth',block:'start'}); }
+  else if(a==='bf-send'){ if(!bf.name.trim()){ toast('Type your name first'); const n=document.getElementById('bf-name'); if(n) n.focus(); return; }
+    const msg=encodeURIComponent(bfMessage()), via=el.dataset.via;
+    if(via==='wa') window.open(`https://wa.me/${waNumber(BK.w)}?text=${msg}`,'_blank'); else location.href= via==='sms'?`sms:${String(BK.w).replace(/\s/g,'')}?&body=${msg}`:`mailto:${BK.e}?subject=${encodeURIComponent('Booking request')}&body=${msg}`;
+    bf.sent=true; render(); }
+  else if(a==='bp-share'||a==='bp-preview'){ const bp=bookPage(); if(!bp.phone.trim()&&!bp.email.trim()){ toast('Add your mobile number or email first, so requests reach you'); const n=document.getElementById('bp-phone'); if(n) n.focus(); return; }
+    const url=bookLink(); if(a==='bp-preview'){ window.open(url,'_blank'); return; }
+    if(navigator.share) navigator.share({title:'Book with '+((state.setup.brand||{}).businessName||'me'),url}).catch(()=>{}); else copyText(url); }
+  else if(a==='add-req'||a==='add-req-no'){ const A=addReq; addReq=null; document.getElementById('overlay').hidden=true; try{ history.replaceState(null,'',location.pathname); }catch(_){}
+    if(a==='add-req'&&A){ const b=addRequest(A); if(b){ save(); view='diary'; diaryMode='week'; diaryWeek=weekStart(b.date); render(); toast('Added to your diary. Reply to them to confirm'); } } }
+});
+document.addEventListener('input', e=>{ const d=(e.target&&e.target.dataset)||{}; if(d.bf) bf[d.bf]=e.target.value; });
+document.addEventListener('change', e=>{ const el=e.target, f=el&&el.dataset&&el.dataset.bp; if(!f) return; state.setup.bookPage={...bookPage(),[f]:f==='days'?+el.value:el.value.trim()}; save(); });
+const vDiaryMonthWeek=vDiary;
+vDiary=function(){ const h=vDiaryMonthWeek(); if(diaryMode==='month') return h; const i=h.lastIndexOf('</section>'); return h.slice(0,i)+bookCard()+h.slice(i); };
+
+// ===================== MODULE: price list designer =====================
+// Her choices live in state.setup.priceList; anything she has not set falls back to her branding.
+const PL_TPL={ band:{name:'Band',page:'bg',band:true}, clean:{name:'Clean',page:'white',centre:true,rule:true},
+               bold:{name:'Bold',page:'accent'}, frame:{name:'Framed',page:'bg',centre:true,frame:true} };
+// top/bot on Story keep clear of the parts Instagram covers with its own buttons
+const PL_FMT={ square:{name:'Square 1:1',h:1080}, portrait:{name:'Portrait 4:5',h:1350}, story:{name:'Story 9:16',h:1920,top:220,bot:250}, long:{name:'Long',h:0} };
+function plOptions(){ const s=state.setup, b=s.brand||{}, pal=PALETTES[b.palette]||PALETTES.berry, p=s.priceList||{};
+  return {tpl:PL_TPL[p.tpl]?p.tpl:'band', fmt:PL_FMT[p.fmt]?p.fmt:'portrait', title:p.title??'Price list', name:p.name??(b.businessName||''), footer:p.footer||'', hours:p.hours!==false,
+          hide:p.hide||[], accent:p.accent||pal.accent, bg:p.bg||pal.soft, kind:p.kind==='suggested'?'suggested':'current', photo:p.photo??(b.logo||'')}; }
+function plRows(o){ return compute(state).treatments.filter(t=>!o.hide.includes(t.id)).map(t=>({name:t.name+(t.addon&&t.unitLabel?` (per ${t.unitLabel})`:t.addon?' (add-on)':''), price:o.kind==='suggested'?t.suggested:(+t.price||t.suggested)})); }
+// What goes on each picture. A list that nearly fits is shrunk a little; a longer one is shared out over
+// two or more pictures at full size, with the opening hours on the last. Long is one tall picture.
+function plPages(o){ const T=PL_TPL[o.tpl], F=PL_FMT[o.fmt], rows=plRows(o), hrs=o.hours?hoursSummary():[], n=rows.length;
+  const top=F.top||0, bot=(F.bot||0)+(T.frame?90:50), base=top+(T.band?320:350), foot=o.footer?100:0, need=hrs.length?84+hrs.length*52:0;
+  if(!F.h) return [{rows,hrs,H:Math.max(1350,base+n*92+need+foot+bot),top,bot,y0:base,f:1,n:1,of:1}];
+  const room=F.h-base-foot-bot, body=(r,h)=>r.length*92+(h.length?need:0), fit=(r,h)=>room/Math.max(1,body(r,h)), ok=(r,h)=>fit(r,h)>=0.85; // shrink by 15% at most
+  const split=P=>{ const per=Math.ceil(n/P), c=[]; for(let i=0;i<n;i+=per) c.push(rows.slice(i,i+per)); return c.length?c:[[]]; };
+  let c=[rows];
+  if(!ok(rows,hrs)){ c=split(Math.ceil(n/Math.max(1,Math.floor(room/92)))||1);
+    if(need&&!ok(c[c.length-1],hrs)) c=split(c.length+1); }      // one more picture, shared out evenly, often makes room for the hours
+  const out=c.map((r,i)=>[r,need&&i===c.length-1&&ok(r,hrs)?hrs:[]]);
+  if(need&&!out[out.length-1][1].length) out.push([[],hrs]);     // still no room: the hours get a picture of their own
+  const f=Math.min(1,...out.map(([r,h])=>fit(r,h)));             // the same size writing on every picture
+  return out.map(([r,h],i)=>({rows:r,hrs:h,H:F.h,top,bot,f,n:i+1,of:out.length,y0:base+(F.top?Math.max(0,(room-body(r,h)*f)/2):0)})); } // a short list sits in the middle of a Story
+// dark or white writing, whichever shows up on that colour (so any colour she picks stays readable)
+const plInk=hex=>{ const n=parseInt(String(hex).slice(1),16)||0, l=(0.299*(n>>16&255)+0.587*(n>>8&255)+0.114*(n&255))/255; return l>0.6?'#1d1a26':'#ffffff'; };
+let plPic=null, plTimer=0;
+function plPhotoImg(src){ if(!src) return null;
+  if(!plPic||plPic.src!==src){ const img=new Image(); plPic={src,img}; img.onload=plRefresh; img.src=src; }
+  return plPic.img.complete&&plPic.img.naturalWidth?plPic.img:null; }
+function plDraw(o,L){ const T=PL_TPL[o.tpl], W=1080, {H,f}=L, X=T.frame?120:72, ph=plPhotoImg(o.photo);
+  const big=o.name||o.title, small=o.name?o.title:'';
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const x=cv.getContext('2d');
+  const page=T.page==='accent'?o.accent:T.page==='white'?'#ffffff':o.bg, ink=plInk(page), strong=T.page==='accent'?ink:o.accent, line=ink==='#ffffff'?'rgba(255,255,255,.25)':'rgba(0,0,0,.12)';
+  x.fillStyle=page; x.fillRect(0,0,W,H);
+  if(T.frame){ x.strokeStyle=o.accent; x.lineWidth=6; x.strokeRect(44,44,W-88,H-88); }
+  let head=strong; if(T.band){ x.fillStyle=o.accent; x.fillRect(0,0,W,L.top+230); head=plInk(o.accent); }
+  if(ph){ const r=75, cx=W-X-r, cy=L.top+(T.band?115:140), k=Math.max(2*r/ph.naturalWidth,2*r/ph.naturalHeight), w=ph.naturalWidth*k, h=ph.naturalHeight*k; // a round picture in the top corner
+    x.save(); x.beginPath(); x.arc(cx,cy,r,0,Math.PI*2); x.clip(); x.drawImage(ph,cx-w/2,cy-h/2,w,h); x.restore();
+    x.beginPath(); x.arc(cx,cy,r,0,Math.PI*2); x.lineWidth=6; x.strokeStyle=T.band||T.page==='accent'?'#ffffff':o.accent; x.stroke(); }
+  const tx=T.centre?W/2:X, room=W-2*X-(ph?(T.centre?340:170):0); x.textAlign=T.centre?'center':'left';
+  x.fillStyle=head; x.font='800 72px "Bricolage Grotesque", "Segoe UI", sans-serif'; x.fillText(big,tx,L.top+(T.band?140:170),room);
+  if(small){ x.fillStyle=T.band?head:ink; x.font='500 34px Figtree, "Segoe UI", sans-serif'; x.fillText(small,tx,L.top+(T.band?195:225),room); }
+  if(T.rule){ x.fillStyle=o.accent; x.fillRect(W/2-60,L.top+255,120,4); }
+  let y=L.y0-50+50*f; x.textAlign='left';
+  const fmt=new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2,minimumFractionDigits:0}), font=(wt,px)=>`${wt} ${Math.round(px*f)}px Figtree, "Segoe UI", sans-serif`;
+  L.rows.forEach(r=>{ const ps=fmt.format(r.price); x.font=font(700,44); const w=x.measureText(ps).width; x.fillStyle=strong; x.fillText(ps,W-X-w,y);
+    x.fillStyle=ink; x.font=font(600,40); x.fillText(r.name,X,y,W-2*X-w-30); x.fillStyle=line; x.fillRect(X,y+28*f,W-2*X,2); y+=92*f; });
+  if(L.hrs.length){ y+=30*f; x.fillStyle=strong; x.font=font(700,36); x.fillText('Opening hours',X,y); y+=54*f;
+    x.fillStyle=ink; x.font=font(500,34); L.hrs.forEach(l=>{ x.fillText(l,X,y,W-2*X); y+=52*f; }); }
+  const more=L.of>1;
+  if(o.footer){ x.textAlign='center'; x.fillStyle=strong; x.font='700 38px Figtree, "Segoe UI", sans-serif'; x.fillText(o.footer,W/2,H-L.bot-20,W-2*X-(more?220:0)); }
+  if(more){ x.textAlign='right'; x.fillStyle=ink; x.globalAlpha=.65; x.font='600 28px Figtree, "Segoe UI", sans-serif'; x.fillText(`${L.n} of ${L.of}`,W-X,H-L.bot-20); x.globalAlpha=1; }
+  return cv; }
+function plCanvases(){ const o=plOptions(); return plPages(o).map(L=>plDraw(o,L)); }
+function plRefresh(){ clearTimeout(plTimer); plTimer=setTimeout(()=>{ const box=document.getElementById('pl-imgs'); if(!box) return;
+    const cvs=plCanvases(), n=document.getElementById('pl-count');
+    box.innerHTML=cvs.map((c,i)=>`<img src="${c.toDataURL('image/png')}" alt="Your price list${cvs.length>1?`, picture ${i+1} of ${cvs.length}`:''}" style="width:100%;border-radius:10px">`).join('');
+    if(n){ n.hidden=cvs.length<2; n.textContent=`Your list is on ${cvs.length} pictures so the writing stays big. Post them together.`; } },80); }
+function plSet(k,v){ state.setup.priceList={...(state.setup.priceList||{}),[k]:v}; save(); plRefresh(); }
+function plOpen(){ const o=document.getElementById('overlay'), op=plOptions();
+  const chip=(k,v,l)=>`<button class="chip" data-act="pl-set" data-k="${k}" data-v="${v}" aria-pressed="${op[k]===v}">${l}</button>`;
+  o.innerHTML=`<div class="card" style="max-width:520px;width:100%;max-height:92vh;overflow:auto">
+    <div id="pl-imgs" class="stack" style="gap:10px"></div>
+    <p id="pl-count" class="notice info" hidden></p>
+    <div class="row"><button class="btn" data-act="pl-save">Save or share</button><button class="btn ghost" data-act="bk-close">Close</button></div>
+    <p class="small muted">If that does not work on your phone, press and hold a picture to save it.</p>
+    <h3>Make it yours</h3>
+    <div class="field">Design<div class="chips">${Object.entries(PL_TPL).map(([k,t])=>chip('tpl',k,t.name)).join('')}</div></div>
+    <div class="field">Shape<div class="chips">${Object.entries(PL_FMT).map(([k,t])=>chip('fmt',k,t.name)).join('')}</div>
+      <p class="small muted">Square and Portrait suit Instagram posts. Story suits stories. A long list is split over two or more pictures. Long puts everything on one tall picture, for printing.</p></div>
+    <div class="field">Logo or photo<p class="small muted">Shows as a circle in the top corner.</p><div class="row">
+      <label class="btn small ghost" style="cursor:pointer">${op.photo?'Change the picture':'Choose a picture'}<input type="file" accept="image/*" data-plphoto="1" hidden></label>
+      ${op.photo?`<button class="btn small ghost" data-act="pl-photo-del">Remove it</button>`:''}</div></div>
+    <label class="field">Heading<input id="pl-title" value="${esc(op.title)}" data-pl="title"></label>
+    <label class="field">Your business name<span class="hint">Leave it empty to show none</span><input id="pl-name" value="${esc(op.name)}" placeholder="e.g. Nails by Sophie" data-pl="name"></label>
+    <label class="field">Line at the bottom<span class="hint">How to book, or where to find you</span><input id="pl-footer" value="${esc(op.footer)}" placeholder="e.g. Message me to book" data-pl="footer"></label>
+    <div class="fields"><label class="field">Main colour<input id="pl-accent" type="color" value="${esc(op.accent)}" data-pl="accent" style="height:46px;padding:4px"></label>
+      <label class="field">Background<input id="pl-bg" type="color" value="${esc(op.bg)}" data-pl="bg" style="height:46px;padding:4px"></label></div>
+    <button class="btn small ghost" data-act="pl-reset">Back to my usual colours</button>
+    <div class="field">Prices to show<div class="chips">${chip('kind','current','My prices')}${chip('kind','suggested','Suggested prices')}</div></div>
+    <label class="row small"><input type="checkbox" id="pl-hours" data-pl="hours" ${op.hours?'checked':''}> Show my opening hours</label>
+    <div class="field">What to show<div class="stack" style="gap:8px">${state.treatments.map(t=>`<label class="row small" style="flex-wrap:nowrap"><input type="checkbox" data-plt="${t.id}" ${op.hide.includes(t.id)?'':'checked'} style="flex:none"><span>${esc(t.name)}</span></label>`).join('')}</div></div>
+    <button class="btn ghost" data-act="bk-close">Close</button></div>`;
+  o.hidden=false; plRefresh(); plClaudeSave(); } // ask early, so Save does not wait on it
+// redraw the whole sheet (a button has to appear or go) without losing her place on it
+function plReopen(){ const c=document.getElementById('overlay').firstElementChild, t=c?c.scrollTop:0; plOpen(); document.getElementById('overlay').firstElementChild.scrollTop=t; }
+function makePriceList(kind){ if(kind) state.setup.priceList={...(state.setup.priceList||{}),kind}; plOpen(); }
+async function plPhoto(file){ const url=await blobToDataURL(await shrinkTo(file,400)); if(!url){ toast('That picture could not be read'); return; } plSet('photo',url); plReopen(); }
+// Opened inside Claude, a page may not save files itself: Claude offers its own Save box for each picture instead. Anywhere else this is null.
+const plClaudeSave=()=>window.claude&&typeof window.claude.use==='function'?window.claude.use('downloads').catch(()=>null):Promise.resolve(null);
+async function plSave(){ const cvs=plCanvases(), blobs=await Promise.all(cvs.map(c=>new Promise(r=>c.toBlob(r,'image/png'))));
+  const name=i=>cvs.length>1?`price-list-${i+1}.png`:'price-list.png', files=blobs.map((b,i)=>new File([b],name(i),{type:'image/png'}));
+  const dl=await plClaudeSave();
+  if(dl){ for(let i=0;i<blobs.length;i++){ try{ await dl.save({filename:name(i),data:blobs[i]}); }catch(e){ if(!e||e.code!=='declined') toast('Press and hold a picture to save it'); return; } } return; }
+  try{ if(navigator.canShare&&navigator.canShare({files})){ await navigator.share({files}); return; } }catch(e){ if(e&&e.name==='AbortError') return; }
+  blobs.forEach((b,i)=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name(i); a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000); }); }
+document.addEventListener('click', e=>{ const el=e.target.closest&&e.target.closest('[data-act]'); if(!el) return; const a=el.dataset.act;
+  if(a==='pl-set'){ plSet(el.dataset.k,el.dataset.v); el.parentElement.querySelectorAll('.chip').forEach(c=>c.setAttribute('aria-pressed',String(c===el))); }
+  else if(a==='pl-reset'){ const p={...(state.setup.priceList||{})}; delete p.accent; delete p.bg; state.setup.priceList=p; save(); plReopen(); }
+  else if(a==='pl-photo-del'){ plSet('photo',''); plReopen(); }
+  else if(a==='pl-save') plSave(); });
+document.addEventListener('input', e=>{ const el=e.target, d=el.dataset||{};
+  if(d.pl) plSet(d.pl, el.type==='checkbox'?el.checked:el.value);
+  else if(d.plt){ const hide=plOptions().hide.filter(id=>id!==d.plt); if(!el.checked) hide.push(d.plt); plSet('hide',hide); }
+  else if(d.plphoto&&el.files&&el.files[0]) plPhoto(el.files[0]); });
+
+// ===================== MODULE: opening hours =====================
+// A day is {open, from, to, bFrom?, bTo?} (bFrom/bTo = one break). A staff member with their own
+// week keeps it in m.openHours; without it they follow the business hours.
+const DAYS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+function defaultOpenHours(){ return DAYS.map((d,i)=>({open:i<5, from:'09:00', to:'17:00'})); }
+function openHours(){ const s=state.setup; if(!Array.isArray(s.openHours)||s.openHours.length!==7) s.openHours=defaultOpenHours(); return s.openHours; }
+const staffById=pid=>pid&&pid!=='me'?(state.setup.staff||[]).find(x=>x.id===pid):null;
+const ownHours=m=>!!m&&Array.isArray(m.openHours)&&m.openHours.length===7;
+function hoursFor(pid){ const m=staffById(pid); return ownHours(m)?m.openHours:openHours(); }
+const dayIdx=dateStr=>(dt(dateStr).getDay()+6)%7;
+const breakMins=h=>h.open&&h.bFrom&&h.bTo?Math.max(0,Math.min(toMin(h.bTo),toMin(h.to))-Math.max(toMin(h.bFrom),toMin(h.from))):0; // only the part inside the day counts
+const dayMins=h=>h.open?Math.max(0,toMin(h.to)-toMin(h.from)-breakMins(h)):0;
+const openMinutesWeek=(hs=openHours())=>hs.reduce((a,h)=>a+dayMins(h),0);
+const openDays=(hs=openHours())=>hs.filter(h=>dayMins(h)>0).length;
+const weekHours=hs=>Math.round(openMinutesWeek(hs)/6)/10;
+function fmtT(t){ const [h,m]=(t||'0:0').split(':').map(Number); return `${((h+11)%12)+1}${m?'.'+pad2(m):''}${h<12?'am':'pm'}`; }
+const dayText=(h,brk)=>dayMins(h)>0?`${fmtT(h.from)} to ${fmtT(h.to)}${breakMins(h)>0?`${brk} ${fmtT(h.bFrom)} to ${fmtT(h.bTo)}`:''}`:'';
+function syncHours(){ const s=state.setup; s.daysPerWeek=Math.max(1,openDays()); s.hours=weekHours(); s._hoursSet=true;
+  if(s.daysOff!=null) s.weeksOff=Math.min(51,(+s.daysOff||0)/s.daysPerWeek); // she types days off; the sums still run on weeks
+  (s.staff||[]).forEach(m=>{ if(ownHours(m)) m.hours=weekHours(m.openHours);
+    if(m.daysOff!=null) m.weeksOff=Math.min(51,(+m.daysOff||0)/Math.max(1,openDays(hoursFor(m.id)))); }); }
+function hoursSummary(hs=openHours()){ // "Monday to Friday 9am to 5pm, closed 1pm to 2pm", "Saturday and Sunday closed"
+  const key=h=>dayText(h,', closed')||'closed', out=[]; let i=0;
+  while(i<7){ let j=i; while(j+1<7 && key(hs[j+1])===key(hs[i])) j++;
+    out.push(`${j===i?DAYS[i]:j===i+1?`${DAYS[i]} and ${DAYS[j]}`:`${DAYS[i]} to ${DAYS[j]}`} ${key(hs[i])}`); i=j+1; }
+  return out; }
+function openLine(dateStr){ // one line for a diary day; anyone with their own hours gets a mention
+  const i=dayIdx(dateStr), t=dayText(openHours()[i],' · break');
+  const away=m=>(state.holidays||[]).some(h=>h.staffId===m.id&&h.from<=dateStr&&h.to>=dateStr); // the day already says who is off, so do not also print their hours
+  const team=(state.setup.staff||[]).filter(m=>ownHours(m)&&!away(m)).map(m=>{ const x=dayText(m.openHours[i],', break'); return ` · ${esc(m.name||'Team member')} ${x||'not in'}`; }).join('');
+  return (t?`Open ${t}`:'Closed')+team; }
+// copy the first open day's times and break to every other open day
+function copyHours(hs){ const m=hs.find(x=>x.open); if(!m) return;
+  hs.forEach(x=>{ if(x.open&&x!==m){ x.from=m.from; x.to=m.to; delete x.bFrom; delete x.bTo; if(m.bFrom&&m.bTo){ x.bFrom=m.bFrom; x.bTo=m.bTo; } } }); }
+// change one time on a day; if the day no longer makes sense, put the old value back and say why
+function setHour(h,f,v){ const old=h[f]; h[f]=v; const brk=h.bFrom&&h.bTo;
+  const bad= toMin(h.to)<=toMin(h.from) ? 'Closing time has to be after opening time'
+    : brk&&toMin(h.bTo)<=toMin(h.bFrom) ? 'A break has to end after it starts'
+    : brk&&!(dayMins({...h,open:true})>0) ? 'A break has to be shorter than the day'
+    : brk&&(toMin(h.bFrom)<toMin(h.from)||toMin(h.bTo)>toMin(h.to)) ? (f==='from'||f==='to'?'Your break is outside those times. Move or remove the break first':'A break has to be inside your opening times') : '';
+  if(bad) h[f]=old; return bad; }
+function hoursEditor(hs=openHours(), who='me'){
+  const first=hs.findIndex(h=>h.open), tm=(i,f,lab)=>`<input type="time" id="hr-${f}-${who}-${i}" aria-label="${DAYS[i]} ${lab}" value="${esc(hs[i][f]||'')}" data-hr="${i}" data-who="${who}" data-f="${f}" style="width:auto">`;
+  return `<div class="stack">
+    <div class="list">${hs.map((h,i)=>`<div class="item" style="flex-wrap:wrap;gap:8px">
+      <label class="row" style="flex:1 1 130px;font-weight:600;gap:10px"><input type="checkbox" id="hr-open-${who}-${i}" data-hr="${i}" data-who="${who}" data-f="open" ${h.open?'checked':''}> ${DAYS[i]}</label>
+      ${h.open?`<span class="row" style="flex-wrap:nowrap;gap:6px">${tm(i,'from','opens')}<span class="muted">to</span>${tm(i,'to','closes')}</span>
+        <span class="row small" style="flex-basis:100%;flex-wrap:nowrap;gap:6px">${h.bFrom&&h.bTo
+          ?`<span class="muted">Break</span>${tm(i,'bFrom','break starts')}<span class="muted">to</span>${tm(i,'bTo','break ends')}<button class="iconbtn" aria-label="Remove the ${DAYS[i]} break" data-act="hr-brk-del" data-hr="${i}" data-who="${who}">✕</button>`
+          :`<button class="btn small ghost" data-act="hr-brk" data-hr="${i}" data-who="${who}">+ Break</button>`}</span>`
+        :`<span class="muted">${who==='me'?'Closed':'Not in'}</span>`}</div>`).join('')}</div>
+    ${hs.filter(h=>h.open).length>1?`<button class="btn small ghost" data-act="hr-copy" data-who="${who}">Use ${DAYS[first]}'s times for every ${who==='me'?'open':'working'} day</button>`:''}
+    <p class="live">${who==='me'?'Open':'Works'} ${openDays(hs)} day${openDays(hs)===1?'':'s'}, <span class="num">${nf(weekHours(hs))}</span> hours a week${hs.some(h=>breakMins(h)>0)?' (breaks taken off)':''}.</p>
+    ${who==='me'?`<label class="field">Days you take off a year<span class="hint">Days you would normally work: holidays, bank holidays and sick days</span><input id="hr-daysOff" type="number" inputmode="numeric" min="0" max="300" step="1" value="${esc(state.setup.daysOff??Math.round((+state.setup.weeksOff||0)*Math.max(1,openDays())))}" data-set="daysOff"></label>`:''}</div>`;
+}
+// staff card: the tick box, and their own week once it is ticked
+function staffHoursBlock(m){
+  return `<label class="row small" style="flex-wrap:nowrap;align-items:flex-start"><input type="checkbox" id="st-own-${m.id}" data-sth="${m.id}" ${ownHours(m)?'checked':''} style="flex:none"><span>Works different days or times from your opening hours</span></label>
+    ${ownHours(m)?hoursEditor(m.openHours,m.id):''}`;
+}
+// does the target fit into the hours worked?
+function fitLine(c,p){
+  const team=(state.setup.staff||[]).reduce((a,m)=>a+(+m.hours||0),0), wkOpen=openMinutesWeek()/60+team; if(!(wkOpen>0)||!p) return '';
+  const mix=c.treatments.filter(t=>(+t.perWeek||0)>0), list=mix.length?mix:c.treatments.filter(t=>!t.addon), w=t=>mix.length?(+t.perWeek||0):1;
+  const tot=list.reduce((a,t)=>a+w(t),0)||1, avgH=list.reduce((a,t)=>a+w(t)*t.mins,0)/tot/60, need=p.perWeek*avgH, open=nf(Math.round(wkOpen*10)/10);
+  const have=team>0?`${open} hours you and your team work`:`${open} hours you are open`;
+  return need>wkOpen ? `<div class="notice warn">That is about <b>${Math.round(need)} hours</b> of ${W().many} a week, which is more than the ${have}. To get there you would need higher prices, longer hours or lower costs.</div>`
+    : `<p class="small muted">That is about ${Math.round(need)} hours of ${W().many} a week. ${team>0?`You and your team work ${open} hours.`:`You are open ${open} hours.`}</p>`;
+}
+
+// set-up: one extra question
+const wizStepsBeauty=wizSteps;
+wizSteps=function(){ const st=wizStepsBeauty().slice(), i=st.findIndex(x=>x.type==='targetq'); st.splice(i<0?st.length:i,0,{type:'openq'}); return st; };
+const quickStepBeauty=quickStep;
+quickStep=function(st){
+  if(st.type==='openq') return {q:'When are you open?', why:'Tick the days you work and set the times. Add a break if you stop for lunch. Your diary uses them, and we check your target fits into your week. You can change them any time under More.', body:hoursEditor()};
+  return quickStepBeauty(st);
+};
+
+// diary: warn about bookings outside the hours of whoever is doing them
+const bkWarningsBase=bkWarnings;
+bkWarnings=function(d){
+  const w=bkWarningsBase(d); if(!d.date||!d.time) return w;
+  const m=staffById(d.staffId), own=ownHours(m), h=hoursFor(d.staffId)[dayIdx(d.date)], nm=own?(m.name||'This person'):'';
+  if(!(dayMins(h)>0)) w.unshift(own?`${nm} does not work on ${DAYS[dayIdx(d.date)]}s.`:`You are closed on ${DAYS[dayIdx(d.date)]}s.`);
+  else { const start=toMin(d.time), end=start+bkMins(d);
+    if(start<toMin(h.from)||end>toMin(h.to)) w.unshift(`This is outside ${own?nm+"'s hours":'your opening hours'} (${fmtT(h.from)} to ${fmtT(h.to)}).`);
+    else if(breakMins(h)>0 && start<toMin(h.bTo) && end>toMin(h.bFrom)) w.unshift(`This runs into ${own?nm+"'s":'your'} break (${fmtT(h.bFrom)} to ${fmtT(h.bTo)}).`); }
+  return w;
+};
+
+document.addEventListener('click', e=>{
+  const el=e.target.closest && e.target.closest('[data-act]'); if(!el) return; const act=el.dataset.act, hs=hoursFor(el.dataset.who), h=hs[+el.dataset.hr];
+  const done=msg=>{ syncHours(); save(); render(); if(msg) toast(msg); };
+  if(act==='hr-copy'){ copyHours(hs); done('Times copied'); }
+  else if(act==='hr-brk' && h){ const mid=Math.round((toMin(h.from)+toMin(h.to))/60)*30; h.bFrom=fromMin(mid-30); h.bTo=fromMin(mid+30); done(); } // an hour in the middle of the day
+  else if(act==='hr-brk-del' && h){ delete h.bFrom; delete h.bTo; done(); }
+  else if(act==='bk-new' && bkDraft && !bkDraft.id){ const d=hoursFor(bkDraft.staffId)[dayIdx(bkDraft.date)]; if(dayMins(d)>0){ // start a new booking at the first free time after opening
+      const taken=state.bookings.filter(b=>b.date===bkDraft.date && b.staffId===bkDraft.staffId && b.status!=='cancelled').map(b=>toMin(b.time)+(+b.mins||0));
+      let start=Math.max(toMin(d.from), ...taken); if(breakMins(d)>0 && start>=toMin(d.bFrom) && start<toMin(d.bTo)) start=toMin(d.bTo);
+      bkDraft.time=fromMin(Math.min(start, Math.max(toMin(d.from),toMin(d.to)-15))); }
+    renderBkForm(); }
+});
+document.addEventListener('change', e=>{
+  const el=e.target;
+  if(el.dataset.set==='daysOff'||(el.dataset.st&&el.dataset.f==='daysOff')){ syncHours(); save(); return; } // the box itself is saved by the general handler; this turns it into weeks
+  if(el.dataset.sth){ const m=staffById(el.dataset.sth); if(!m) return;
+    if(el.checked) m.openHours=JSON.parse(JSON.stringify(openHours())); else delete m.openHours;
+    syncHours(); save(); render(); return; }
+  if(el.dataset.hr==null) return;
+  const h=hoursFor(el.dataset.who)[+el.dataset.hr], f=el.dataset.f; if(!h) return;
+  if(f==='open') h.open=el.checked; else if(el.value){ const bad=setHour(h,f,el.value); if(bad){ render(); toast(bad); return; } }
+  syncHours(); save(); render();
+});
+
+
+let errs=0; const chk=(name,fn)=>{ try{ const h=fn(); if(typeof h==='string' && /undefined|NaN|\[object|Infinity/.test(h)){ const m=h.match(/.{70}(undefined|NaN|\[object|Infinity).{40}/); console.log('BAD',name,m&&m[0]); errs++; } return h; }catch(e){ console.log('ERR',name,e.message,(e.stack||'').split('\n')[1]); errs++; } };
+// the tester's case: a nail tech with her own prices
+state=blankState(); state.setup._indTouched=true; state.setup.overheads=overheadsForAll(['beauty']);
+const mine={gelmani:[30,5],biabfull:[45,3],biabinfill:[35,4],lashfull:[60,1],brow:[18,3],art:[2,6]};
+CATALOGUE.filter(t=>mine[t.id]).forEach(cc=>{ const t=clone(cc); [t.price,t.perWeek]=mine[t.id]; state.treatments.push(t); cc.recipe.forEach(r=>{ if(!state.products.some(p=>p.id===r.productId)) state.products.push(clone(LIBRARY.find(x=>x.id===r.productId))); }); });
+for(const ph of [0,15,20,30]){ state.setup.profitHour=ph; const c=compute(state);
+  console.log('profit £'+ph+'/h:', c.treatments.map(t=>t.name.split(' ')[0]+' cost £'+t.cost.toFixed(2)+' be £'+t.minimum.toFixed(2)+' sugg £'+t.suggested).join(' | ')); }
+state.setup.profitHour=20; let c=compute(state);
+console.log('overheads',c.overheads.toFixed(0),'shared over',c.billable.toFixed(1),'h =',c.overheadRate.toFixed(2),'/h | month profit now',c.atCurrent.profit.toFixed(0),'| bookings/month',c.bookingsMonth.toFixed(0));
+console.log('plan now: avg contribution',c.planNow.avg.toFixed(2),'break-even',c.planNow.breakEven.toFixed(1),'target',c.planNow.target.toFixed(1),'per week',c.planNow.perWeek.toFixed(1),'per day',c.planNow.perDay.toFixed(1),'| needMonth',c.needMonth.toFixed(0));
+// hand check: gel mani
+const g=c.treatments[0]; const hrs=55/60; console.log('gel mani check: products',g.productCost.toFixed(2),'share',(hrs*c.overheadRate).toFixed(2),'cost',g.cost.toFixed(2),'| net at £30 =',(30/1.025*(1-0.014)-0.25).toFixed(2),'profit now',g.profitNow.toFixed(2));
+// changing the target must not change prices
+const before=c.treatments.map(t=>t.suggested).join(); state.setup.takeHome=4000; const after=compute(state).treatments.map(t=>t.suggested).join(); console.log('prices unchanged by target:',before===after, '| target count at £4000:',Math.ceil(compute(state).planNow.target)); state.setup.takeHome=2000;
+// every screen
+for(const ks of [['beauty'],['therapy'],['makeup'],['beauty','therapy','makeup']]){
+  state=blankState(); state.setup.industries=ks; state.setup.industry=ks[0]; state.setup._indTouched=true; state.setup.overheads=overheadsForAll(ks);
+  CAT().slice(0,7).forEach(cc=>{ const t=clone(cc); t._q=1; t.exPrice=t.price; t.exPerWeek=t.perWeek; t.price=0; t.perWeek=0; state.treatments.push(t); cc.recipe.forEach(r=>{ if(!state.products.some(p=>p.id===r.productId)) state.products.push(clone(LIBRARY.find(x=>x.id===r.productId))); }); });
+  view='wizard'; const st=wizSteps(); for(step=0;step<st.length;step++) chk(ks+' quick '+st[step].type, vWizard);
+  state.setup.app='other'; step=st.findIndex(x=>x.type==='app'); const ah=chk(ks+' own fee', vWizard); if(!/wiz-cardPct/.test(ah)||/under More/.test(ah)){ console.log('OWN FEE BOX MISSING'); errs++; }
+  [vPrices,vTreatments,vStock,vMoney,vTaxYear,vReport,vMore,vDiary,vClients].forEach(v=>chk(ks+' blank',v));
+  state.setup.takeHome=0; chk(ks+' no target',vPrices); state.setup.takeHome=2000;
+  state.treatments.forEach(t=>{ t.price=t.exPrice||40; t.perWeek=t.exPerWeek||2; }); state.setup.profitHour=0; chk(ks+' break-even',vPrices); state.setup.profitHour=20;
+  [vPrices,vTreatments,vStock,vMore].forEach(v=>chk(ks+' filled',v));
+  console.log(ks.join('+').padEnd(24),'steps',st.length,'| picker options',IND_GROUPS.flatMap(g=>g[1]).length);
+}
+state=exampleState(); chk('example prices',vPrices); console.log('example suggested:',compute(state).treatments.map(t=>t.suggested).join(','));
+console.log('errors',errs);
+
+state=exampleState(); console.log('summary:',hoursSummary().join(' | '),'| week hours',openMinutesWeek()/60,'| days',openDays());
+openHours()[5]={open:true,from:'10:00',to:'14:30'}; syncHours(); console.log('after Saturday:',hoursSummary().join(' | '),'| days',state.setup.daysPerWeek,'hours',state.setup.hours);
+const sun=addDays(weekStart(todayStr()),6), mon=weekStart(todayStr());
+console.log('sunday warn:',bkWarnings({date:sun,time:'10:00',staffId:'me',clientId:'ex1',serviceId:'gelmani',addons:[]})[0]);
+console.log('late warn:',bkWarnings({date:mon,time:'16:45',staffId:'me',clientId:'ex1',serviceId:'gelmani',addons:[]})[0]);
+console.log('ok:',bkWarnings({date:addDays(mon,1),time:'11:00',staffId:'x',clientId:'ex1',serviceId:'gelmani',addons:[]}).length);
+const cc=compute(state); console.log('fit:',fitLine(cc,cc.planNow).replace(/<[^>]+>/g,''));
+state.setup.takeHome=6000; const c2=compute(state); console.log('fit big target:',fitLine(c2,c2.planNow).replace(/<[^>]+>/g,''));
+
+// ---- breaks and staff hours ----
+let fails=0; const ok=(c,l)=>{ if(!c){ fails++; console.log('FAIL',l); } };
+state=exampleState(); const mon2=weekStart(todayStr()), sat2=addDays(mon2,5), bk=(date,time,staffId)=>bkWarnings({date,time,staffId,clientId:'ex1',serviceId:'gelmani',addons:[]});
+ok(openMinutesWeek()===2400,'40 hours to start');
+Object.assign(openHours()[0],{bFrom:'13:00',bTo:'14:00'}); syncHours();
+ok(openMinutesWeek()===2340 && state.setup.hours===39,'break comes off the week: '+state.setup.hours);
+ok(hoursSummary()[0]==='Monday 9am to 5pm, closed 1pm to 2pm','summary: '+hoursSummary().join(' | '));
+ok(/runs into your break \(1pm to 2pm\)/.test(bk(mon2,'12:30','me')[0]),'break warning: '+bk(mon2,'12:30','me')[0]);
+ok(!bk(mon2,'14:00','me').some(x=>/break|opening hours|closed/.test(x)),'2pm is fine');
+ok(!bk(addDays(mon2,1),'12:30','me').some(x=>/break/.test(x)),'no break on Tuesday');
+Object.assign(openHours()[1],{bFrom:'07:00',bTo:'09:30'}); ok(dayMins(openHours()[1])===450,'break half outside the day only counts the inside part');
+delete openHours()[1].bFrom; delete openHours()[1].bTo;
+state.setup.staff=[{id:'s1',name:'Sam',pay:'hourly',rate:13,hours:30,weeksOff:6}];
+ok(/closed on Saturdays/.test(bk(sat2,'10:00','s1')[0]),'staff without own hours follow the business');
+const sam=state.setup.staff[0]; sam.openHours=defaultOpenHours().map(h=>({...h,open:false})); Object.assign(sam.openHours[5],{open:true,from:'10:00',to:'14:00'}); syncHours();
+ok(sam.hours===4,'Sam hours from own week: '+sam.hours);
+ok(bk(mon2,'10:00','s1')[0]==='Sam does not work on Mondays.','staff closed: '+bk(mon2,'10:00','s1')[0]);
+ok(!bk(sat2,'10:00','s1').some(x=>/hours|work|closed/.test(x)),'Sam on Saturday is fine: '+bk(sat2,'10:00','s1').join(';'));
+ok(/outside Sam's hours \(10am to 2pm\)/.test(bk(sat2,'13:30','s1')[0]),'staff outside: '+bk(sat2,'13:30','s1')[0]);
+ok(/closed on Saturdays/.test(bk(sat2,'10:00','me')[0]),'owner still closed Saturday');
+ok(/Sam 10am to 2pm/.test(openLine(sat2)) && /Sam not in/.test(openLine(mon2)),'diary lines: '+openLine(mon2)+' || '+openLine(sat2));
+const c9=compute(state); ok(/you and your team work 43 hours/i.test(fitLine(c9,c9.planNow)),'fit with team: '+fitLine(c9,c9.planNow).replace(/<[^>]+>/g,''));
+view='more'; for(const [n,f] of [['staffEditor',staffEditor],['hoursEditor',()=>hoursEditor()],['vDiary',vDiary],['vMore',vMore],['vPrices',vPrices]]){ const h=chk(n,f); ok(typeof h==='string'&&h.length>50,n+' renders'); }
+ok(/id="hr-bFrom-me-0"/.test(hoursEditor()) && /data-act="hr-brk" data-hr="1"/.test(hoursEditor()),'break inputs and + Break button');
+ok(/id="hr-from-s1-5"/.test(staffEditor()) && /st-hrs-s1[^>]*disabled/.test(staffEditor()),'staff editor has own week and locked hours');
+console.log('limits tests: fails',fails,'render errs',errs);
+
+// ---- fixes from the persona round ----
+fails=0; state=exampleState(); const hs2=openHours(); hs2[0].open=false; Object.assign(hs2[1],{from:'10:00',to:'18:00',bFrom:'13:00',bTo:'14:00'}); copyHours(hs2);
+ok(hs2[4].from==='10:00'&&hs2[4].bFrom==='13:00'&&hs2[1].bFrom==='13:00'&&hs2[0].from==='09:00'&&!hs2[5].bFrom,'copy uses the first open day and keeps its break');
+ok(/Use Tuesday's times/.test(hoursEditor(hs2)),'copy button names the first open day');
+ok(setHour(hs2[1],'to','09:00')!==''&&hs2[1].to==='18:00','closing before opening is refused');
+ok(setHour(hs2[1],'bFrom','06:00')!==''&&hs2[1].bFrom==='13:00'&&setHour(hs2[1],'bTo','23:00')!==''&&hs2[1].bTo==='14:00','a break outside the day is refused');
+ok(setHour(hs2[2],'to','20:00')===''&&hs2[2].to==='20:00','a sensible time is kept');
+state=exampleState(); const c0=compute(state); state.setup.staff=[{id:'s1',name:'Kelly',pay:'hourly',rate:12.6,hours:24,weeksOff:6}]; const c1=compute(state);
+ok(c1.team.hours>0 && Math.abs(c1.billable-(c1.hoursBooked+c1.team.hours))<1e-9 && Math.abs(c1.bookingsMonth/c0.bookingsMonth-c1.billable/c0.billable)<1e-9,'team hours add treatments: '+Math.round(c0.bookingsMonth)+' -> '+Math.round(c1.bookingsMonth));
+ok(c1.atCurrent.takings>c0.atCurrent.takings,'team takings are counted');
+console.log('example gel manicure suggested, alone then with Kelly:',c0.treatments[0].suggested,c1.treatments[0].suggested,'| a month before tax',Math.round(c0.atCurrent.profit),Math.round(c1.atCurrent.profit));
+view='prices'; const hp=chk('vPrices',vPrices); ok(/clients who do not turn up/.test(hp)&&/about 2.5% for no-shows/.test(hp),'no-show allowance is explained');
+ok(/yours and your team's/.test(hp)&&/You and your team do about/.test(hp),'prices screen counts the team');
+state.setup.staff[0].pay='self'; ok(/team's share/.test(chk('vPrices',vPrices)),'self-employed share is named');
+state.treatments.forEach(t=>t.price=0); view='money'; const hm=chk('vMoney',vMoney); ok(!/\$\{/.test(hm)&&/Add prices on the \w+ tab/.test(hm),'no raw code on the money screen');
+ok(!/Pressure washer|Stand mixer|Power tools|Van finance/.test(JSON.stringify(OVERHEAD_GROUPS))&&/Spray tan machine/.test(JSON.stringify(OVERHEAD_GROUPS)),'only beauty choices in running costs');
+ok(!/press Next/.test(staffEditor()),'no set-up wording on the staff card');
+console.log('fix tests: fails',fails,'render errs',errs);
+
+// ---- running costs step ----
+fails=0; state=exampleState(); const cq=quickStep({type:'costq'}), so=state.setup.overheads;
+ok(cq && !/I know my own figure|Use typical costs/.test(cq.body),'no either/or choice');
+ok(so.every(o=>cq.body.includes('id="oh-amt-'+o.id+'"')),'a box for every cost');
+ok(cq.body.includes('about <span class="num">'+gbp0(overheadsMonth(state.setup))+'</span> a month'),'total shown');
+so[0].amount=0; ok(quickStep({type:'costq'}).body.includes(gbp0(overheadsMonth(state.setup))) && overheadsMonth(state.setup)<500,'total follows a change: '+gbp0(overheadsMonth(state.setup)));
+so.push({id:'zz',group:'monthly',name:'',custom:true,amount:40,years:3}); ok(/id="oh-name-zz"/.test(quickStep({type:'costq'}).body),'an added cost gets a name box');
+const th=overheadsFor('therapy').map(o=>o.name); ok(!th.includes('UV/LED lamp')&&!th.includes('E-file / drill')&&th.includes('Treatment couch'),'no nail kit for waxing and massage: '+th.join(', '));
+ok(overheadsFor('beauty').some(o=>o.name==='UV/LED lamp'),'nails keep the lamp');
+console.log('cost step tests: fails',fails,'render errs',errs);
+
+// ---- simpler screens ----
+fails=0; state=exampleState(); view='more'; const hm2=chk('vMore',vMore), secs2=[...hm2.matchAll(/data-sec="(\w+)"/g)].map(x=>x[1]);
+ok(secs2.join()==='help,hours,costs,pay,pricing,team,tax,brand,lock,backup,questions,privacy,reset','more order: '+secs2.join());
+ok(/<h3>Your business<\/h3>/.test(hm2)&&/<h3>Extras<\/h3>/.test(hm2)&&/<h3>Your data<\/h3>/.test(hm2)&&/Fine tuning/.test(hm2)&&/id="hr-daysOff"/.test(hm2),'more headings, fine tuning and weeks off');
+view='stock'; let hs3=chk('vStock',vStock); ok(/Your products/.test(hs3)&&!/Time to reorder|weeks left|pill warn/.test(hs3)&&/class="stepper" hidden/.test(hs3),'products screen hides stock counting');
+state.setup.trackStock=true; hs3=chk('vStock',vStock); ok(/<h2>Stock<\/h2>/.test(hs3)&&/weeks left/.test(hs3)&&!/class="stepper" hidden/.test(hs3),'ticking the box brings counting back');
+state.setup.trackStock=false; view='taxyear'; ok(!/put aside about/.test(chk('vTaxYear',vTaxYear)),'recorded money: no guess shown');
+state.income=[]; state.expenses=[]; const ht=chk('vTaxYear',vTaxYear), est=(ht.match(/put aside about <b class="num">(£[\d,]+)<\/b> a month for tax/)||[])[1];
+const c5=compute(state), want=gbp0(taxOnProfit(c5.atCurrent.profit*12,'ruk',RULES,taxOpts(state.setup))/12); ok(est===want&&est!=='£0','tax guess before any records: '+est+' vs '+want);
+state=exampleState(); view='prices'; const hp2=chk('vPrices',vPrices); ok(!/>Break-even</.test(hp2)&&/and you lose money/.test(hp2)&&/you keep <b>/.test(hp2)&&!/with set-up\)/.test(hp2),'prices in plain words');
+ok((hp2.match(/Just to cover your running costs/g)||[]).length===1,'cover-your-costs line lives in the working only');
+view='diary'; const hd=chk('vDiary',vDiary); ok(/Paid by<\/span>/.test(hd)&&/aria-label="Paid by bank transfer"/.test(hd)&&!/add-on/.test(hd),'diary buttons grouped');
+ok(/to earn for each hour/.test(quickStep({type:'profitq'}).q)&&/id="hr-daysOff"/.test(quickStep({type:'openq'}).body),'set-up wording and weeks off');
+state.setup.staff=[{id:'s1',name:'Sam',pay:'hourly',rate:13,hours:30,weeksOff:6}]; state.setup.staff[0].openHours=defaultOpenHours(); ok(!/hr-daysOff/.test(hoursEditor(state.setup.staff[0].openHours,'s1')),'weeks off only on the owner hours');
+console.log('simple tests: fails',fails,'render errs',errs);
+
+state=exampleState(); state.income=[]; state.expenses=[]; state.treatments.forEach(t=>t.perWeek=0.2); view='taxyear'; ok(/there is no tax to put aside yet/.test(chk('vTaxYear',vTaxYear)),'low earner is told there is nothing to put aside'); console.log('tax note test: fails',fails);
+
+// ---- numbers on the Prices screen, and the how-to guide ----
+fails=0; state=exampleState(); view='prices'; const hp3=chk('vPrices',vPrices);
+ok(/<h3>Your numbers<\/h3>/.test(hp3)&&/data-slide="1"/.test(hp3)&&/data-sec="p-costs"/.test(hp3)&&state.setup.overheads.every(o=>hp3.includes('id="oh-amt-'+o.id+'"')),'running costs and hourly rate can be changed on Prices');
+moreOpen='p-costs'; ok(/data-sec="p-costs" open/.test(vPrices()),'the running costs list stays open while she types'); moreOpen=null;
+const cq2=quickStep({type:'costq'}); ok(state.setup.overheads.every(o=>cq2.body.includes('id="oh-amt-'+o.id+'"'))&&/That comes to about/.test(cq2.body),'set-up step still has the list');
+view='more'; ok(/data-sec="help"/.test(chk('vMore',vMore))&&GUIDE.every(([g,qs])=>qs.length&&guideCard().includes(g)),'guide is on More');
+// every button name the guide quotes must be wording that is really in the app (so it appears here at least twice: guide and app)
+const src=require('fs').readFileSync(__filename,'utf8'), made=['+ Break','Minutes with the client','Products it uses','New client (type below)','Delete this client']; // built from parts in the app; read off the real screens
+const quoted=[...new Set(GUIDE.flatMap(([g,qs])=>qs.flatMap(([q,a])=>[...a.matchAll(/'([^']{3,70})'/g)].map(x=>x[1]))))];
+const missing=quoted.filter(l=>!made.includes(l)&&src.split(l).length-1<2); ok(!missing.length,'guide quotes wording that is not in the app: '+missing.join(' | '));
+state.setup.staff=[]; holDraft={staffId:'me',from:todayStr(),to:addDays(todayStr(),7),note:''};
+console.log('guide tests: fails',fails,'render errs',errs,'| quoted labels checked',quoted.length,'| answers',GUIDE.reduce((a,[g,qs])=>a+qs.length,0));
+require('fs').writeFileSync('how-to.md','# How to use Know Your Worth\n\nNames in \'single quotes\' are the words on the buttons.\n\n'+GUIDE.map(([g,qs])=>'## '+g+'\n\n'+qs.map(([q,a])=>'**'+q+'.** '+a).join('\n\n')).join('\n\n')+'\n');
+
+// ---- days off a year ----
+fails=0; state=exampleState(); ok(/Days you take off a year/.test(hoursEditor())&&/id="hr-daysOff"[^>]*value="30"/.test(hoursEditor()),'six weeks of five days shows as 30 days');
+const b0=compute(state).bookingsMonth; state.setup.daysOff=20; syncHours(); ok(state.setup.weeksOff===4&&compute(state).bookingsMonth>b0,'20 days off a five-day week is 4 weeks, so more working weeks');
+openHours()[4].open=false; syncHours(); ok(state.setup.weeksOff===5&&/value="20"/.test(hoursEditor().match(/id="hr-daysOff"[^>]*/)[0]),'closing a day keeps her 20 days and makes it 5 weeks');
+state.setup.daysOff=999; syncHours(); ok(state.setup.weeksOff===51,'a silly number cannot wipe out the whole year');
+state=exampleState(); view='diary'; ok(/out of about 30</.test(chk('vDiary',vDiary)),'diary speaks in days');
+console.log('days off tests: fails',fails,'render errs',errs);
+
+// ---- price list designer ----
+fails=0; state=exampleState(); let po=plOptions();
+ok(po.name===''&&po.title==='Price list'&&po.tpl==='band'&&po.hours===true&&po.accent===PALETTES.berry.accent,'defaults: no name, her usual colours');
+ok(!/Know Your Worth/.test(String(plDraw)+String(plOpen)),'the picture never says Know Your Worth');
+state.setup.brand={...state.setup.brand,businessName:'Nails by Sophie'}; ok(plOptions().name==='Nails by Sophie','her business name is used');
+state.setup.priceList={name:'',title:'Autumn prices',tpl:'bold',accent:'#112233',kind:'suggested',hide:[state.treatments[0].id]}; po=plOptions();
+ok(po.name===''&&po.title==='Autumn prices'&&po.tpl==='bold'&&po.accent==='#112233','her own wording, design and colour win; an emptied name stays empty');
+const pr=plRows(po), c7=compute(state); ok(pr.length===state.treatments.length-1&&!pr.some(r=>r.name===state.treatments[0].name)&&pr[0].price===c7.treatments[1].suggested,'unticked treatment is left off; suggested prices used');
+state.setup.priceList={tpl:'nonsense'}; ok(plOptions().tpl==='band','an unknown design falls back');
+ok(plInk('#ffffff')==='#1d1a26'&&plInk('#112233')==='#ffffff'&&plInk('#f6e3ec')==='#1d1a26','writing colour flips to stay readable');
+view='prices'; ok(/data-act="pl-make">Make my price list/.test(chk('vPrices',vPrices)),'one button on Prices');
+console.log('price list tests: fails',fails,'render errs',errs);
+
+// ---- price list shapes, the corner picture, and long lists over several pictures ----
+fails=0; state=exampleState(); let o2=plOptions(); ok(o2.fmt==='portrait'&&o2.photo==='','portrait by default, no picture');
+const pg=(fmt,more)=>plPages({...plOptions(),fmt,...more}), all=state.treatments.map(t=>t.id), keep=n=>({hide:all.slice(n)});
+state.setup.priceList={footer:'Message me to book'}; const wf=plPages({...plOptions(),fmt:'square'}); ok(wf.length===2&&wf.every(p=>p.f===wf[0].f&&p.f>=0.85&&p.f<1),'with a bottom line: still two squares, same slightly smaller writing on both: '+wf.length+' at '+wf[0].f.toFixed(2)); state.setup.priceList={};
+const total=ps=>ps.reduce((a,p)=>a+p.rows.length,0), used=p=>(p.rows.length*92+(p.hrs.length?84+p.hrs.length*52:0))*p.f;
+ok(pg('square')[0].H===1080&&pg('portrait')[0].H===1350,'Instagram sizes: 1080 square, 1080x1350');
+let ps=pg('square'); ok(ps.length===2&&ps[0].rows.length===6&&ps[1].rows.length===5&&total(ps)===11&&ps.every(p=>p.f===1),'11 treatments on a square: two pictures of 6 and 5, full size');
+ok(!ps[0].hrs.length&&ps[1].hrs.length===2&&ps[1].n===2&&ps[1].of===2,'opening hours on the last picture, numbered 2 of 2');
+for(const f of ['square','portrait']) for(let n=0;n<=11;n++){ const q=pg(f,keep(n)); ok(total(q)===n&&q.filter(p=>p.hrs.length).length===1&&q.every(p=>p.f>=0.85&&p.y0+used(p)<=p.H-p.bot-(0)+0.5),f+' with '+n+' treatments fits on '+q.length); }
+ok(pg('portrait',{hours:false}).length===1&&pg('portrait',{hours:false})[0].f<1&&pg('portrait',{hours:false})[0].f>=0.85,'a list that nearly fits is shrunk a little, not split');
+ok(pg('square',keep(5)).length===1&&pg('square',keep(5))[0].f===1,'a short list is one picture');
+ok(!PL_FMT.story,'no Story size');
+const big=state.treatments.concat(state.treatments,state.treatments).map((t,i)=>({...t,id:'x'+i})); const keepT=state.treatments; state.treatments=big;
+ps=pg('square'); ok(ps.length>=5&&total(ps)===33&&ps.every(p=>p.rows.length<=7),'33 treatments on squares: '+ps.length+' pictures, none over 7 rows');
+ok(pg('long').length===1&&pg('long')[0].f===1&&pg('long')[0].H>33*92+350,'Long keeps everything on one tall picture'); state.treatments=keepT;
+state.setup.brand={...state.setup.brand,logo:'data:image/png;base64,AAA'}; ok(plOptions().photo==='data:image/png;base64,AAA','her logo is used as the corner picture');
+state.setup.priceList={photo:''}; ok(plOptions().photo==='','removing the picture sticks even with a logo set');
+console.log('price list picture tests: fails',fails,'render errs',errs);
+
+let all_src='';
+// ---- faults that were already known ----
+fails=0; state=exampleState(); const oh=openHours(); Object.assign(oh[1],{from:'09:00',to:'17:00',bFrom:'13:00',bTo:'14:00'});
+ok(setHour(oh[1],'from','13:30')!==''&&oh[1].from==='09:00','opening time cannot move past the break');
+ok(setHour(oh[1],'bFrom','12:00')===''&&setHour(oh[1],'bTo','12:00')!==''&&oh[1].bTo==='14:00','a break has to end after it starts');
+ok(setHour(oh[1],'bFrom','09:00')===''&&setHour(oh[1],'bTo','17:00')!==''&&oh[1].bTo==='14:00','a break cannot be the whole day');
+state=exampleState(); state.setup.staff=[{id:'k1',name:'Kelly',pay:'hourly',rate:12.6,hours:24,weeksOff:6}]; const k=state.setup.staff[0]; k.openHours=defaultOpenHours().map((h,i)=>({...h,open:i>=2&&i<=5}));
+ok(/id="st-off-k1"[^>]*value="24"[^>]*data-f="daysOff"/.test(staffEditor())&&/Days off a year/.test(staffEditor()),'staff card asks for days off: six weeks of four days shows 24');
+k.daysOff=12; syncHours(); ok(k.weeksOff===3,'12 days off a four-day week is 3 weeks: '+k.weeksOff);
+const mon3=weekStart(todayStr()); state.holidays=[{id:'h1',staffId:'k1',from:mon3,to:addDays(mon3,6),note:''},{id:'h2',staffId:'me',from:mon3,to:addDays(mon3,6),note:''}]; view='diary'; const hd3=chk('vDiary',vDiary);
+ok(/Kelly<\/b><\/p><p class="small muted">4 days off booked/.test(hd3)&&/You<\/b><\/p><p class="small muted">5 days off booked/.test(hd3),'a week off counts her working days only: Kelly 4, owner 5');
+state=exampleState(); const t9=state.treatments; view='prices'; const hp9=vPrices(), m9=hp9.match(/need to do about <b class="num">(\d+)<\/b>/), d9=hp9.match(/do about (\d+) a month now(?:, so you need about (\d+) more)?/);
+ok(m9&&d9&&(d9[2]?+d9[2]===+m9[1]-+d9[1]:+d9[1]>=+m9[1]),'the "more" figure is the difference of the two numbers shown: need '+(m9&&m9[1])+', do '+(d9&&d9[1])+', more '+(d9&&d9[2]));
+ok(!/Next you go through each/.test(all_src=require('fs').readFileSync(__filename,'utf8').split('// ---- faults that were already known')[0]),'set-up no longer promises a products step');
+ok(/id="bk-newclient"[^>]*required/.test(all_src),'a new booking needs a name');
+ok(/id="m-\$\{key\}" type="number" inputmode="decimal" min="0"/.test(all_src),'settings boxes refuse negatives');
+console.log('known fault tests: fails',fails,'render errs',errs);
+
+// ---- diary line leaves out staff who are on holiday that day ----
+fails=0; state=exampleState(); state.setup.staff=[{id:'k1',name:'Kelly',pay:'hourly',rate:12.6,hours:24,weeksOff:6}]; state.setup.staff[0].openHours=defaultOpenHours();
+const mon5=weekStart(todayStr()); ok(/Kelly 9am to 5pm/.test(openLine(mon5)),'her hours show on a normal day: '+openLine(mon5));
+state.holidays=[{id:'h1',staffId:'k1',from:mon5,to:mon5,note:''}]; ok(!/Kelly/.test(openLine(mon5))&&/Kelly 9am to 5pm/.test(openLine(addDays(mon5,1))),'on her day off the line leaves her out');
+console.log('diary line tests: fails',fails,'render errs',errs);
+
+// ---- fixes from the three beginner testers ----
+{ // a block, so these names cannot clash with the app's own
+fails=0; state=exampleState(); const S=state.setup; const txt=h=>h.replace(/<[^>]+>/g,' ');
+S.overheads=[{id:'w1',group:'weekly',name:'Chair rent',amount:60,years:3},{id:'m1',group:'monthly',name:'Phone',amount:25,years:3},{id:'y1',group:'yearly',name:'Insurance',amount:120,years:3},{id:'e1',group:'equipment',name:'Lamp',amount:36,years:3}];
+ok(Math.abs(overheadsMonth(S)-(260+25+10+1))<0.01,'a week, a month, a year and a one-off add up: '+overheadsMonth(S));
+let cl2=costList(); ok(/What you pay regularly/.test(cl2)&&/One-offs/.test(cl2)&&(cl2.match(/data-ohp="/g)||[]).length===3&&(cl2.match(/data-act="oh-del"/g)||[]).length===4,'one list: a period for each regular cost and a cross on every row');
+ok(/data-ohp="w1"[^>]*><option value="weekly" selected>a week/.test(cl2),'the weekly cost shows as a week');
+ok(costWorking(S)==='That is £60 a week, £25 a month and £120 a year, plus £36 of one-offs divided over how long they last.','the working is spelt out: '+costWorking(S));
+state=exampleState(); view='prices'; let hp7=vPrices();
+ok(!/What if I change my prices/.test(hp7)&&hp7.indexOf('Make my price list')<hp7.indexOf('All your prices')&&hp7.indexOf('Make my price list')>0,'no what-if slider; price list button sits above the list of prices');
+ok(/You are set up. What next\?/.test(hp7),'first visit shows what to do next'); state.setup._seenNext=true; ok(!/What next\?/.test(vPrices()),'and it goes once she has seen it');
+ok(!/class="sugg"/.test(hp7)&&!/Covers costs/.test(hp7),'a good price is not shown beside a lower suggested one');
+state.treatments[0].price=10; hp7=vPrices(); ok(/class="sugg"/.test(hp7)&&/you would keep/.test(hp7)&&/and you lose money/.test(hp7),'an under-priced treatment shows the suggested price');
+ok(/id="pn-live"/.test(hp7)&&/1 of your prices is lower than suggested/.test(hp7),'the numbers card says what her numbers do: '+numbersLine(compute(state)));
+state=exampleState(); view='taxyear'; const ht7=txt(vTaxYear()); ok(/Tax bill for the year, about/.test(ht7)&&!/so far\s+£/i.test(ht7)&&!/\bNI\b/.test(ht7)&&!/Turnover\s*£/.test(ht7),'tax screen: one bill, no NI or bare Turnover');
+state.setup.potSaved=0; const billTxt=(txt(vTaxYear()).match(/tax bill will be about\s+(£[\d,]+)/)||[])[1], statTxt=(txt(vTaxYear()).match(/Tax bill for the year, about\s+(£[\d,]+)/)||[])[1];
+ok(billTxt&&billTxt===statTxt,'the bill in the sentence matches the bill in the box: '+billTxt+' / '+statTxt);
+view='money'; const hm7=vMoney(); ok(!/data-act="del-income"|data-act="del-expense"/.test(hm7)&&/Car trips/.test(hm7)&&/Copy this list/.test(hm7)&&!/Copy for Excel/.test(hm7),'money rows have Change only; plainer labels');
+ok(state.treatments.some(t=>t.addon&&+t.price>0)&&!state.treatments.filter(t=>t.addon).some(t=>hm7.includes('data-act="quick-income" data-id="'+t.id+'"')),'no quick buttons for add-ons');
+state.trips=[{id:'t1',date:todayStr(),route:'Client',miles:12}]; ok(/Plus £5\.40 for the 12 miles/.test(vMoney()),'miles show beside money out');
+view='diary'; const tom=addDays(todayStr(),1), yes=addDays(todayStr(),-1), svc0=state.treatments.find(t=>!t.addon).id;
+state.bookings=[{id:'b1',date:tom,time:'14:00',staffId:'me',clientId:'',serviceId:svc0,addons:[],mins:45,price:30,deposit:0,status:'booked'},{id:'b2',date:yes,time:'10:30',staffId:'me',clientId:'',serviceId:svc0,addons:[],mins:45,price:30,deposit:0,status:'done',method:'Cash'},{id:'b3',date:yes,time:'12:00',staffId:'me',clientId:'',serviceId:svc0,addons:[],mins:45,price:30,deposit:0,status:'booked'}];
+diaryWeek=weekStart(tom); let hd7=vDiary(); ok(!/data-act="bk-del"/.test(hd7)&&/>2pm</.test(hd7),'no bare delete cross on a booking; times read 2pm');
+ok(!/data-act="bk-noshow" data-id="b1"/.test(hd7),'a booking tomorrow cannot be a no-show yet');
+diaryWeek=weekStart(yes); hd7=vDiary(); ok(/data-act="bk-reopen" data-id="b2"/.test(hd7)&&/data-act="bk-noshow" data-id="b3"/.test(hd7)&&/>10\.30am</.test(hd7),'a paid booking can be undone; a past one can be a no-show');
+state.clients=[{id:'c9',name:'Chloe',patchTests:[{id:'p1',date:todayStr(),product:'Lash glue',result:'clear'}]}]; view='clients'; clOpen=null; ok(/Patch tested, wait 48 hours/.test(vClients())&&!/Patch test due/.test(vClients()),'a patch test today is not called due');
+ok(!/Copy email list/.test(vClients()),'newsletter button hidden until someone can get one'); state.clients[0].email='c@example.com'; state.clients[0].consult={answers:{marketing:true}}; ok(/Copy email list for a newsletter/.test(vClients()),'and shown when someone can');
+const cc7=clientCard(state.clients[0]); ok(cc7.indexOf('<h3>Visits</h3>')<cc7.indexOf('<h3>Patch tests</h3>')&&cc7.indexOf('<h3>Visits</h3>')>cc7.indexOf('<h3>Details</h3>'),'visits sit straight under details');
+state=exampleState(); view='more'; let hmo=vMore(); ok(/What you pay regularly/.test(hmo)&&!/Monthly costs/.test(hmo),'More shows the same running costs list as Prices');
+ok(!/id="m-vat"/.test(hmo)&&/What you earn and card fees/.test(hmo)&&/Your target and where you live/.test(hmo)&&/Save a backup file/.test(hmo)&&/Restore from a file/.test(hmo),'More: no VAT tick, plainer names, file backup');
+state.setup.vat=true; ok(/id="m-vat"/.test(vMore()),'someone already VAT registered can still untick it'); state.setup.vat=false;
+openSecs.add('hours'); openSecs.add('brand'); hmo=vMore(); ok(/data-sec="hours" open/.test(hmo)&&/data-sec="brand" open/.test(hmo),'two open sections both stay open'); openSecs.clear();
+const keys=[...vMore().matchAll(/data-sec="([\w-]+)"/g)].map(x=>x[1]), views=['prices','treatments','stock','diary','money','taxyear','clients','more'];
+const badGo=GUIDE.flatMap(([g,qs])=>qs.map(q=>q[2])).filter(Boolean).filter(go=>{ const [v,k]=go.split(':'); return !views.includes(v)||(k&&!keys.includes(k)); }); ok(!badGo.length,'every Take me there goes somewhere real: '+badGo.join(','));
+ok(/data-act="guide-go"/.test(guideCard()),'guide answers have a Take me there button');
+state.setup.staff=[]; ok(!/National Insurance is 15%/.test(staffEditor()),'no employer footnote with nobody added');
+state.setup.staff=[{id:'s1',name:'',pay:'hourly',rate:0,hours:0,weeksOff:6}]; ok(/Costs you about <b class="num">£0<\/b>/.test(staffEditor())&&/National Insurance is 15%/.test(staffEditor()),'a new person starts at nothing, not a made-up wage'); state.setup.staff=[];
+state.products[0].inStock=0; state.products[0].reorderAt=0; ok(productCosts(state)[0].reorder===false,'no reorder level means no reorder warning');
+state=blankState(); view='wizard'; step=0; ok(!/data-act="wiz-back"/.test(vWizard())&&!/wiz-exit/.test(vWizard())&&/About 10 minutes/.test(vWizard()),'first screen has no Back and no way-out button yet');
+state.setup.done=true; step=3; ok(/data-act="wiz-exit"/.test(vWizard())&&/data-act="wiz-back"/.test(vWizard()),'doing the questions again, every step has a way out');
+const app_src=require('fs').readFileSync(__filename,'utf8').split('// ---- faults that were already known')[0];
+ok(!app_src.includes("['report','Report']]}")&&!app_src.includes('See how the month went'),'Report tab and its guide answer are gone');
+console.log('tester fix tests: fails',fails,'render errs',errs);
+}
+
+// ---- set-up no longer asks what she earns an hour ----
+{ fails=0; state=blankState(); const st=wizSteps().map(x=>x.type);
+ok(!st.includes('profitq')&&st.includes('openq')&&st.includes('costq')&&!st.includes('targetq')&&st.length===7,'set-up is 7 steps (target set on Prices) without the hourly question: '+st.join(','));
+ok(compute(state).profitRate===20,'it starts at £20 an hour');
+console.log('no hourly step tests: fails',fails,'render errs',errs); }
+
+// ---- month view, today, and calendar ----
+{ fails=0; state=exampleState(); view='diary'; diaryMode='week'; diaryWeek=weekStart(todayStr());
+let h=vDiary(); ok(/data-act="dy-mode" data-v="month"/.test(h)&&new RegExp('class="card today" id="day-'+todayStr()+'"').test(h),'week view has the Week/Month switch and today stands out');
+ok(/data-act="bk-cal"/.test(h),'bookings have a Calendar button');
+diaryMode='month'; diaryMonth=todayStr().slice(0,7)+'-01'; h=vDiary(); const n=new Date(+todayStr().slice(0,4),+todayStr().slice(5,7),0).getDate();
+ok((h.match(/data-act="dy-day"/g)||[]).length===n&&/class="mday today/.test(h)&&/This month/.test(h),'month view: one box per day, today marked: '+n);
+const bd=state.bookings[0].date; ok(bd.slice(0,7)!==diaryMonth.slice(0,7)||new RegExp('data-date="'+bd+'" aria-label="[^"]*booking').test(h),'a day with a booking says so');
+const b=state.bookings[0]; b.time='14:00'; b.mins=45; const [s,e]=calTimes(b); ok(s.endsWith('T140000')&&e.endsWith('T144500'),'calendar times: '+s+' to '+e);
+const ics=calFile(b); ok(/BEGIN:VEVENT[\s\S]*DTSTART:\d{8}T140000[\s\S]*SUMMARY:[^\r]+/.test(ics)&&ics.split('\r\n').length===12,'calendar file is well formed');
+diaryMode='week'; console.log('month and calendar tests: fails',fails,'render errs',errs); }
+
+// ---- online booking ----
+{ fails=0; state=exampleState(); globalThis.location={hostname:'x.github.io',origin:'https://x.github.io',pathname:'/kyw/',hash:''};
+const o={b:'Nails by Zoë £',t:[['a','Gel',30,45,10]]}; ok(JSON.stringify(b64d(b64e(o)))===JSON.stringify(o)&&!/[+/=]/.test(b64e(o)),'link data survives the round trip, with £ and accents');
+const mon=addDays(weekStart(todayStr()),7); Object.assign(openHours()[0],{open:true,from:'09:00',to:'17:00',bFrom:'13:00',bTo:'14:00'});
+state.bookings=[{id:'b1',date:mon,time:'10:00',staffId:'me',clientId:'',serviceId:state.treatments[0].id,addons:[],mins:45,price:36,status:'booked'}];
+const pr=+state.treatments[0].prepMin||0; ok(JSON.stringify(freeTimes(mon))===JSON.stringify([[540,600],[645+pr,780],[840,1020]]),'free times leave out the booking, its clean-down and the break: '+JSON.stringify(freeTimes(mon)));
+state.holidays=[{id:'h',staffId:'me',from:mon,to:mon,note:''}]; ok(freeTimes(mon).length===0,'a day off has no free times'); state.holidays=[];
+ok(JSON.stringify(slots([[540,600]],45))===JSON.stringify([540,555]),'a 45-minute slot fits at 9 and 9.15 only');
+state.setup.bookPage={phone:'07700 900123',days:14}; const url=bookLink(); BK=b64d(url.split('#book=')[1]);
+ok(url.startsWith('https://x.github.io/kyw/#book=')&&BK.d.length>0&&BK.d.every(([x])=>x>todayStr())&&BK.t.length===state.treatments.filter(t=>!t.addon).length&&BK.w==='07700 900123','her link: own address, future days only, treatments, her number ('+url.length+' characters)');
+bf={t:null,d:null,time:null,name:'',phone:'',note:'',sent:false}; let h=bookFace(); ok(/Choose a treatment/.test(h)&&!/Choose a day and time/.test(h),'client first sees only the treatments');
+bf.t=BK.t[0][0]; h=bookFace(); const d1=(h.match(/data-act="bf-d" data-v="([\d-]+)"/)||[])[1]; ok(!!d1,'then the days'); bf.d=d1; h=bookFace(); const t1=(h.match(/data-act="bf-time" data-v="(\d+)"/)||[])[1]; ok(!!t1,'then the times'); bf.time=+t1; bf.name='Chloe Adams'; h=bookFace();
+ok(/Send by WhatsApp/.test(h)&&/Send by text/.test(h)&&!/Send by email/.test(h),'send buttons follow what she gave');
+const msg=bfMessage(), A=b64d(msg.split('#add=')[1]); ok(/I would like to book/.test(msg)&&A&&A.c==='Chloe Adams'&&A.t===BK.t[0][0]&&A.d===d1,'the message carries a link that adds the booking');
+const n0=state.bookings.length, nb=addRequest(A); ok(nb&&state.bookings.length===n0+1&&nb.time===A.h&&state.clients.some(c=>c.name==='Chloe Adams'&&c.id===nb.clientId),'the link adds the booking and the client');
+addRequest(A); ok(state.clients.filter(c=>c.name==='Chloe Adams').length===1,'the same client is not added twice');
+const old={...BK,d:[['2020-01-01',[[540,600]]]]}; BK=old; ok(/out of date/.test(bookFace()),'an old link says so');
+view='diary'; diaryMode='week'; ok(/Let clients book online/.test(vDiary()),'the card is on the diary');
+delete globalThis.location; console.log('online booking tests: fails',fails,'render errs',errs); }
