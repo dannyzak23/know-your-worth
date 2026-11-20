@@ -24,7 +24,10 @@ Every group should end `fails 0 render errs 0`. The test run also writes `how-to
 
 ```
 copy wrapped.html ..\index.html
+copy tester.html ..	est\index.html
 ```
+
+`test/` is the tester version (prices, diary and clients only). The same code hides the other screens when the address ends in `/test/`.
 
 The Claude artifact version is `taxpot.html` on its own.
 

@@ -4042,5 +4042,18 @@ const todayCardBeforeMkt=todayCard;
 todayCard=function(){ const h=todayCardBeforeMkt(), due=postsToday(); if(!due.length) return h; const i=h.lastIndexOf('</article>');
   return h.slice(0,i)+`<span class="small" style="font-weight:600">Post today</span><div class="list">${due.map(p=>`<div class="item"><div class="grow"><p><b>${esc(p.idea)}</b></p><p class="small muted">${p.date<todayStr()?'Was due '+fmtDay(p.date):'Today'}</p></div><button class="btn small" data-act="mk-goto" data-id="${p.id}">Open</button></div>`).join('')}</div>`+h.slice(i); };
 
+// ---- tester edition: /test/ address (or ?test) shows only prices, diary and clients; tax, money and marketing hidden ----
+const TESTER=typeof location!=='undefined'&&(/\/test\/?$/.test(location.pathname)||/[?&]test\b/.test(location.search||''));
+const TESTER_OFF=['money','taxyear','marketing'];
+function testerApply(on){
+  if(!on) return;
+  const ng=navGroups; navGroups=function(){ return ng().map(g=>({...g,views:g.views.filter(v=>!TESTER_OFF.includes(v[0]))})).filter(g=>g.views.length); };
+  GUIDE.forEach(g=>{ const keep=g[1].filter(q=>!TESTER_OFF.includes(q[2])); g[1].length=0; g[1].push(...keep); });
+  const r=render; render=function(){ if(TESTER_OFF.includes(view)) view='prices'; return r(); };
+  todayCard=todayCardBeforeMkt;
+  try{ const b=document.getElementById('aibtn'); if(b) b.remove(); }catch(_){}
+}
+testerApply(TESTER);
+
 render();
 </script>

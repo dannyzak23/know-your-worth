@@ -212,3 +212,12 @@ view='marketing'; let e0=errs; try{ let h=vMarketing(); mkOpen=posts()[0].id; h=
 ok(navGroups().find(g=>g.key==='clients').views.some(v=>v[0]==='marketing'),'Marketing tab sits with Clients');
 posts()[0].date=todayStr(); ok(/Post today/.test(todayCard()),'the Diary reminds her on the day');
 console.log('marketing tests: fails',fails,'render errs',errs); }
+
+// ---- tester edition (keep last: it changes the menus for good) ----
+{ fails=0; state=exampleState(); ok(!TESTER,'the normal address is the full app'); testerApply(true);
+const keys=navGroups().flatMap(g=>g.views.map(v=>v[0]));
+ok(['prices','diary','clients'].every(k=>keys.includes(k))&&!keys.some(k=>TESTER_OFF.includes(k)),'tester menus: prices, diary, clients only: '+keys.join(','));
+ok(!GUIDE.some(g=>g[1].some(q=>TESTER_OFF.includes(q[2]))),'help guide has no money, tax or marketing steps');
+state.posts=[{id:'p1',date:todayStr(),idea:'X',caption:'c',type:'Tip'}]; ok(!/Post today/.test(todayCard()),'no post reminders');
+view="taxyear"; try{ render(); }catch(_){} ok(view==="prices",'a hidden screen falls back to Prices');
+console.log('tester tests: fails',fails,'render errs',errs); }
